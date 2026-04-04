@@ -176,9 +176,11 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
         {/* CLIENT NAME */}
 <div>
   <div style={COL_HEADER}>Client Name</div>
-  <a href={`/referrals/${r.id}`} style={{ textDecoration: 'none' }}>
-    <div style={{ ...COL_VALUE, fontSize: '13px', color: '#2A7F6F' }}>{r.clientName}</div>
-  </a>
+  <Tooltip label="View Client Detail">
+    <a href={`/referrals/${r.id}`} style={{ textDecoration: 'none' }}>
+      <div style={{ ...COL_VALUE, fontSize: '13px', color: '#2A7F6F' }}>{r.clientName}</div>
+    </a>
+  </Tooltip>
 </div>
 
         {/* ADDRESS */}
