@@ -85,6 +85,30 @@ function ReferralCard({ referral }: { referral: Referral }) {
     </div>
   )
 }
+function GroupSection({ title, accent, referrals, defaultOpen }: {
+  title: string; accent: string; referrals: Referral[]; defaultOpen: boolean
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  if (referrals.length === 0) return null
+
+  return (
+    <div style={{ marginBottom: '32px' }}>
+      <button onClick={() => setOpen(!open)}
+        style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px', width: '100%', background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 800, letterSpacing: '0.10em', textTransform: 'uppercase', color: accent, fontFamily: 'var(--font-montserrat)' }}>
+            {title}
+          </span>
+          <span style={{ fontSize: '11px', color: '#7A8899' }}>{open ? '▲' : '▼'}</span>
+        </div>
+        <span style={{ fontSize: '13px', color: '#7A8899', fontWeight: 600, paddingRight: '10px' }}>
+          {referrals.length} referral{referrals.length !== 1 ? 's' : ''}
+        </span>
+      </button>
+      {open && referrals.map(r => <ReferralCard key={r.id} referral={r} />)}
+    </div>
+  )
+}
 
 export default function ScheduledPage() {
   const [referrals, setReferrals] = useState<Referral[]>([])
@@ -121,12 +145,25 @@ export default function ScheduledPage() {
           style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', width: '320px', outline: 'none', marginBottom: '20px', display: 'block', background: 'white' }} />
 
         {loading ? (
-          <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899' }}>Loading...</div>
-        ) : filtered.length === 0 ? (
-          <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899', fontSize: '14px' }}>No scheduled referrals found.</div>
-        ) : (
-          filtered.map(r => <ReferralCard key={r.id} referral={r} />)
-        )}
+  <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899' }}>Loading...</div>
+) : filtered.length === 0 ? (
+  <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899', fontSize: '14px' }}>No scheduled referrals found.</div>
+) : (
+  <>
+    <GroupSection
+      title="Pending Schedule"
+      accent="#5B8DB8"
+      referrals={filtered.filter(r => r.appointmentStatus === 'Pending Schedule')}
+      defaultOpen={true}
+    />
+    <GroupSection
+      title="Scheduled"
+      accent="#2A7F6F"
+      referrals={filtered.filter(r => r.appointmentStatus === 'Scheduled')}
+      defaultOpen={true}
+    />
+  </>
+)}
       </div>
     </div>
   )
