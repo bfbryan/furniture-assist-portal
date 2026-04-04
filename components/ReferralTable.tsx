@@ -174,10 +174,12 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
       <div style={{ display: 'grid', gridTemplateColumns: '130px 130px 160px 180px 140px 120px 1fr', alignItems: 'start', gap: '10px', padding: '14px 16px' }}>
 
         {/* CLIENT NAME */}
-        <div>
-          <div style={COL_HEADER}>Client Name</div>
-          <div style={{ ...COL_VALUE, fontSize: '13px' }}>{r.clientName}</div>
-        </div>
+<div>
+  <div style={COL_HEADER}>Client Name</div>
+  <a href={`/referrals/${r.id}`} style={{ textDecoration: 'none' }}>
+    <div style={{ ...COL_VALUE, fontSize: '13px', color: '#2A7F6F' }}>{r.clientName}</div>
+  </a>
+</div>
 
         {/* ADDRESS */}
         <div>
