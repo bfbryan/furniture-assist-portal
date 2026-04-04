@@ -161,7 +161,7 @@ function SaturdayCard({ sat }: { sat: Saturday }) {
 
   {/* Print */}
   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-    {!past && !isBlackout && sat.mailMergeComplete && (
+    {!past && !isBlackout && (
   <a href={`/dawson/schedule/${sat.date}/print`} title="Print Forms"
     style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2A7F6F', textDecoration: 'none' }}>
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
