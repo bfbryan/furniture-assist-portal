@@ -9,6 +9,9 @@ const DAWSON_USER_IDS = [
 
 export default async function RedirectPage() {
   const { userId } = await auth()
+  console.log('REDIRECT PAGE HIT - userId:', userId)
+  console.log('IS DAWSON:', userId ? DAWSON_USER_IDS.includes(userId) : false)
+  
   if (!userId) redirect('/sign-in')
   
   if (DAWSON_USER_IDS.includes(userId)) {
