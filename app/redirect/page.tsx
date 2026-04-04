@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 const DAWSON_USER_IDS = [
   'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj',
   'user_3BodwTW4I7Vamt4t7wD3qeA7boM',
+  'user_3BtKn01OMXSmi7eSsWvzvnEroCg',
 ]
 
 export default async function RedirectPage() {
