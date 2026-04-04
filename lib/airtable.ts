@@ -350,6 +350,7 @@ export async function getSaturdaySchedule() {
     totalFilled: record.fields['Total Slots Filled'] as number ?? 0,
     totalCapacity: record.fields['Total Capacity'] as number ?? 50,
     slotsRemaining: record.fields['Slots Remaining'] as number ?? 0,
+     mailMergeComplete: record.fields['Mail Merge Complete'] as boolean ?? false,
   }))
 }
 export async function updateAgencyNotes(id: string, notes: string) {

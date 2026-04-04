@@ -14,6 +14,7 @@ type Saturday = {
   totalFilled: number
   totalCapacity: number
   slotsRemaining: number
+  mailMergeComplete: boolean
 }
 
 const SLOT_MAX: Record<string, number> = {
@@ -160,16 +161,16 @@ function SaturdayCard({ sat }: { sat: Saturday }) {
 
   {/* Print */}
   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-    {!past && !isBlackout && (
-      <a href={`/dawson/schedule/${sat.date}/print`} title="Print Forms"
-        style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2A7F6F', textDecoration: 'none' }}>
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <polyline points="6 9 6 2 18 2 18 9"/>
-          <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-          <rect x="6" y="14" width="12" height="8"/>
-        </svg>
-      </a>
-    )}
+    {!past && !isBlackout && sat.mailMergeComplete && (
+  <a href={`/dawson/schedule/${sat.date}/print`} title="Print Forms"
+    style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2A7F6F', textDecoration: 'none' }}>
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <polyline points="6 9 6 2 18 2 18 9"/>
+      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+      <rect x="6" y="14" width="12" height="8"/>
+    </svg>
+  </a>
+)}
   </div>
 
 </div>
