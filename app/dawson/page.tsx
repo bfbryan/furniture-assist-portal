@@ -214,7 +214,7 @@ export default async function DawsonDashboard() {
                   </div>
                   <a href="/dawson/agencies?status=pending" style={{ fontSize: '12px', fontWeight: 600, color: '#2A7F6F', textDecoration: 'none' }}>View all →</a>
                 </div>
-                {stats.pendingAgencyList.map(agency => {
+                {stats.pendingAgencyList.map((agency: any) => {
                   const initials = agency.name.split(' ').map((w: string) => w[0]).slice(0, 2).join('')
                   return (
                     <a key={agency.id} href={`/dawson/agencies/${agency.id}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 20px', borderBottom: '1px solid #F7F5F1', textDecoration: 'none' }}
