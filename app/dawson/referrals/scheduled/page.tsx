@@ -40,7 +40,7 @@ function ReferralCard({ referral }: { referral: Referral }) {
       {/* Client */}
       <div style={{ width: '220px', flexShrink: 0, padding: '14px 20px' }}>
         <a href={`/dawson/referrals/${referral.id}`} style={{ textDecoration: 'none' }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '15px', color: '#1B2B4B', marginBottom: '2px' }}>{referral.clientName}</div>
+          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '15px', color: '#2A7F6F', marginBottom: '2px' }}>{referral.clientName}</div>
         </a>
         <div style={{ fontSize: '11px', color: '#7A8899' }}>{referral.phone ?? '—'}</div>
       </div>

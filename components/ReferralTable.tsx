@@ -177,9 +177,9 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
 <div>
   <div style={COL_HEADER}>Client Name</div>
   <Tooltip label="View Client Detail">
-    <a href={`/referrals/${r.id}`} style={{ textDecoration: 'none' }}>
-      <div style={{ ...COL_VALUE, fontSize: '13px', color: '#2A7F6F' }}>{r.clientName}</div>
-    </a>
+    <a href={`/dawson/referrals/${r.id}`} style={{ textDecoration: 'none' }}>
+  <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '15px', color: '#2A7F6F', marginBottom: '2px' }}>{referral.clientName}</div>
+</a>
   </Tooltip>
 </div>
 
