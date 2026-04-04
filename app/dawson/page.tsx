@@ -127,12 +127,12 @@ export default async function DawsonDashboard() {
               </a>
             </div>
 
-            {stats.recentReferrals.filter(r => r.referralReview === 'Pending').length === 0 ? (
+            {stats.recentReferrals.filter((r: any) => r.referralReview === 'Pending').length === 0 ? (
               <div style={{ padding: '36px', textAlign: 'center', color: '#7A8899', fontSize: '14px' }}>
                 No referrals awaiting review 🎉
               </div>
             ) : (
-              stats.recentReferrals.filter(r => r.referralReview === 'Pending').map(r => {
+              stats.recentReferrals.filter((r: any) => r.referralReview === 'Pending').map((r: any) => {
                 const days = daysSince(r.referralDate)
                 return (
                   <a key={r.id} href={`/dawson/referrals/${r.id}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 20px', borderBottom: '1px solid #F7F5F1', textDecoration: 'none', cursor: 'pointer' }}
