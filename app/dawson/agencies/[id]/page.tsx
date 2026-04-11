@@ -71,12 +71,7 @@ const REFERRAL_STATUS: Record<string, { bg: string; color: string }> = {
   Cancelled:          { bg: 'rgba(192,57,43,0.1)',    color: '#C0392B' },
 }
 
-const [fromPage, setFromPage] = useState('active')
 
-useEffect(() => {
-  const p = new URLSearchParams(window.location.search)
-  setFromPage(p.get('from') ?? 'active')
-}, [])
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -136,6 +131,13 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
   const [agencyId, setAgencyId] = useState<string>('')
   const [notesModal, setNotesModal] = useState(false)
   const [notesSaving, setNotesSaving] = useState(false)
+  const [fromPage, setFromPage] = useState('active') 
+
+  useEffect(() => {
+  const p = new URLSearchParams(window.location.search)
+  setFromPage(p.get('from') ?? 'active')
+}, [])
+
 
   async function handleStatusChange(newStatus: string) {
     if (!agency) return

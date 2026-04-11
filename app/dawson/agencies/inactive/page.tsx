@@ -104,7 +104,7 @@ function AgencyCard({ agency, onStatusChange }: { agency: Agency; onStatusChange
             </div>
           </a>
           {agency.website && (
-            <a href={agency.website} target="_blank" rel="noreferrer" style={{ fontSize: '14px', color: '#2A7F6F', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', marginTop: '2px' }}>
+            <a href={agency.website} target="_blank" rel="noreferrer" style={{ fontSize: '14px', color: '#1B2B4B', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', marginTop: '2px' }}>
               {agency.website.replace(/^https?:\/\//, '')}
             </a>
           )}
