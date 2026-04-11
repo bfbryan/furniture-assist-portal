@@ -333,41 +333,58 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
           </div>
 
           {/* Referrals */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B' }}>Referrals</div>
-              <span style={{ fontSize: '12px', color: '#7A8899' }}>{agency.referralCount} total</span>
-            </div>
-            {agency.referrals.length === 0 ? (
-              <div style={{ padding: '24px', textAlign: 'center', color: '#7A8899', fontSize: '13px' }}>No referrals submitted yet</div>
-            ) : (
-              agency.referrals.map(r => {
-                const isReview = r.referralReview === 'Pending'
-                const statusKey = isReview ? 'Pending' : r.appointmentStatus
-                const s = REFERRAL_STATUS[statusKey] ?? { bg: '#F0F0F0', color: '#7A8899' }
-                return (
-                  <a key={r.id} href={`/dawson/referrals/${r.id}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 24px', borderBottom: '1px solid #F7F5F1', textDecoration: 'none' }}>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 600, fontSize: '13px', color: '#1B2B4B' }}>{r.clientName}</div>
-                      <div style={{ fontSize: '11px', color: '#7A8899' }}>{r.referredBy} · {formatDate(r.referralDate)}</div>
-                    </div>
-                    <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '2px 9px', borderRadius: '20px', background: s.bg, color: s.color }}>
-                      {isReview ? 'Pending Review' : r.appointmentStatus}
-                    </span>
-                  </a>
-                )
-              })
-            )}
-            {agency.referralCount > 5 && (
-              <div style={{ padding: '12px 24px', textAlign: 'center' }}>
-                <a href={`/dawson/referrals?agency=${agency.name}`} style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', textDecoration: 'none' }}>
-                  View all {agency.referralCount} referrals →
-                </a>
-              </div>
-            )}
+<div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
+  <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+    <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B' }}>Referrals</div>
+    <span style={{ fontSize: '12px', color: '#7A8899' }}>{agency.referralCount} total</span>
+  </div>
+  {agency.referrals.length === 0 ? (
+    <div style={{ padding: '24px', textAlign: 'center', color: '#7A8899', fontSize: '13px' }}>No referrals submitted yet</div>
+  ) : (
+    [...agency.referrals].sort((a, b) => {
+      const statusOrder: Record<string, number> = {
+        'Pending': 0,
+        'Pending Schedule': 1,
+        'Scheduled': 2,
+        'Completed': 3,
+        'Cancelled': 4,
+        'Rejected': 5,
+        'Withdrawn': 6,
+      }
+      const getOrder = (r: Referral) => {
+        if (r.referralReview === 'Pending') return 0
+        if (r.referralReview === 'Rejected') return 5
+        if (r.referralReview === 'Withdrawn') return 6
+        return statusOrder[r.appointmentStatus] ?? 9
+      }
+      return getOrder(a) - getOrder(b)
+    }).map(r => {
+      const isReview = r.referralReview === 'Pending'
+      const statusKey = isReview ? 'Pending' : r.appointmentStatus
+      const s = REFERRAL_STATUS[statusKey] ?? { bg: '#F0F0F0', color: '#7A8899' }
+      return (
+        <a key={r.id} href={`/dawson/referrals/${r.id}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 24px', borderBottom: '1px solid #F7F5F1', textDecoration: 'none' }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 600, fontSize: '13px', color: '#2A7F6F' }}>{r.clientName}</div>
+            <div style={{ fontSize: '11px', color: '#7A8899' }}>{r.referredBy} · {formatDate(r.referralDate)}</div>
           </div>
+          <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '2px 9px', borderRadius: '20px', background: s.bg, color: s.color }}>
+            {isReview ? 'Pending Review' : r.appointmentStatus}
+          </span>
+        </a>
+      )
+    })
+  )}
+  {agency.referralCount > 5 && (
+    <div style={{ padding: '12px 24px', textAlign: 'center' }}>
+      <a href={`/dawson/referrals?agency=${agency.name}`} style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', textDecoration: 'none' }}>
+        View all {agency.referralCount} referrals →
+      </a>
+    </div>
+  )}
+</div>
 
-        </div>
+</div>
 
         {/* RIGHT COLUMN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
