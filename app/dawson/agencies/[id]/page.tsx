@@ -71,6 +71,13 @@ const REFERRAL_STATUS: Record<string, { bg: string; color: string }> = {
   Cancelled:          { bg: 'rgba(192,57,43,0.1)',    color: '#C0392B' },
 }
 
+const [fromPage, setFromPage] = useState('active')
+
+useEffect(() => {
+  const p = new URLSearchParams(window.location.search)
+  setFromPage(p.get('from') ?? 'active')
+}, [])
+
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1' }}>
@@ -205,10 +212,10 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
         position: 'sticky', top: 0, zIndex: 50,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <a href="/dawson/agencies" style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            Agencies
-          </a>
+          <a href={`/dawson/agencies/${fromPage}`} style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+  Agencies
+</a>
           <span style={{ color: '#EDE9E1' }}>→</span>
           <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>{agency.name}</div>
           {agency.possibleDuplicate && (

@@ -99,8 +99,8 @@ function PendingCard({ agency, onStatusChange }: { agency: Agency; onStatusChang
         <div style={{ width: '4px', alignSelf: 'stretch', background: '#C9A84C', flexShrink: 0 }} />
 
         <div style={{ width: '270px', flexShrink: 0, padding: '14px 20px', alignSelf: 'flex-start' }}>
-          <a href={`/dawson/agencies/${agency.id}`} style={{ textDecoration: 'none' }}>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#1B2B4B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+         <a href={`/dawson/agencies/${agency.id}?from=pending`} style={{ textDecoration: 'none' }}>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#2A7F6F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {agency.name}
             </div>
           </a>
