@@ -29,6 +29,7 @@ export async function getAgencyUserByClerkId(clerkUserId: string) {
     role: record.fields['Role'] as string,
     agencyId: (record.fields['Agency'] as string[])?.[0] ?? null,
     phone: record.fields['Phone Number'] as string ?? null,
+    status: record.fields['Status'] as string,
   }
 }
 
@@ -326,12 +327,13 @@ export async function getReferralById(referralId: string) {
     appointmentStatus: data.fields['Appointment Status'] as string,
     appointmentDate: (data.fields['Appointment Date'] as string[])?.[0] ?? null,
     appointmentTime: data.fields['Appointment Time'] as string ?? null,
-    appointmentSlipUrl: data.fields['Appt Slip'] as string ?? null,
+    appointmentSlipUrl: (data.fields['Appt Slip'] as any[])?.[0]?.url ?? null,
     dataPageUrl: data.fields['Data Page URL'] as string ?? null,
     referredBy: data.fields['Referring Staff'] as string ?? null,
     referringAgency: data.fields['Referring Agency'] as string ?? null,
     agencyEmail: data.fields['Agency Email'] as string ?? null,
     possibleDuplicate: data.fields['Possible Duplicate'] as boolean ?? false,
+   
     
   }
 }
@@ -365,3 +367,35 @@ export async function updateAgencyNotes(id: string, notes: string) {
   if (!res.ok) throw new Error(await res.text())
   return res.json()
 }
+
+export async function getAgencyUsersByAgencyId(agencyId: string) {
+  const formula = encodeURIComponent(`{Agency} = "${agencyId}"`)
+  const data = await airtableFetch('Agency Users', `?filterByFormula=${formula}&sort[0][field]=Last%20Name&sort[0][direction]=asc`)
+  
+  return data.records.map((r: any) => ({
+    id: r.id,
+    name: `${r.fields['First Name']} ${r.fields['Last Name']}`,
+    firstName: r.fields['First Name'] as string,
+    lastName: r.fields['Last Name'] as string,
+    email: r.fields['Email'] as string,
+    phone: r.fields['Phone Number'] as string ?? null,
+    role: r.fields['Role'] as string,
+    status: r.fields['Status'] as string,
+    clerkUserId: r.fields['Clerk User ID'] as string ?? null,
+    invitedDate: r.fields['Invited Date'] as string ?? null,
+  }))
+}
+
+export async function updateAgencyUserStatus(recordId: string, status: 'Active' | 'Inactive' | 'Pending') {
+  const res = await fetch(
+    `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Agency Users')}/${recordId}`,
+    {
+      method: 'PATCH',
+      headers: HEADERS,
+      body: JSON.stringify({ fields: { Status: status } }),
+    }
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+

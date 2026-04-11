@@ -227,7 +227,7 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
 
         {/* ACTIONS */}
 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', paddingTop: '14px' }}>
-  {(isScheduled || isCompleted) && (
+  {(false && isScheduled || isCompleted) && (
     <Tooltip label="Appointment Slip">
       <a href={r.appointmentSlipUrl || 'Appt Slip'} target="_blank" rel="noreferrer"
         style={{ width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2A7F6F', textDecoration: 'none' }}>

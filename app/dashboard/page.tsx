@@ -17,15 +17,16 @@ export default async function DashboardPage() {
   }
 }
   const agencyUser = await getAgencyUserByClerkId(userId)
-  if (!agencyUser) {
-    return (
-      <main className="p-8">
-        <p className="text-red-600">
-          Your account is not linked to an agency yet. Please contact Furniture Assist.
-        </p>
-      </main>
-    )
-  }
+if (!agencyUser) {
+  return (
+    <main className="p-8">
+      <p className="text-red-600">
+        Your account is not linked to an agency yet. Please contact Furniture Assist.
+      </p>
+    </main>
+  )
+}
+if (agencyUser.status === 'Inactive') redirect('/inactive')
 
   const agency = await getAgencyById(agencyUser.agencyId!)
 

@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import QRCode from 'qrcode'
 
 type Client = {
   id: string
@@ -108,10 +109,25 @@ function formatSaturdayDate(dateStr: string) {
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
 
-function CategoryBlock({ cat, isRequested }: { cat: { name: string; items: string[] }; isRequested: (item: string) => boolean }) {
+function QRCodeImage({ value, size = 64 }: { value: string; size?: number }) {
+  const canvasRef = useRef<HTMLCanvasElement>(null)
+
+  useEffect(() => {
+    if (canvasRef.current) {
+      QRCode.toCanvas(canvasRef.current, value, {
+        width: size,
+        margin: 1,
+        color: { dark: '#000000', light: '#ffffff' },
+      })
+    }
+  }, [value, size])
+
+  return <canvas ref={canvasRef} style={{ display: 'block' }} />
+}
+
+function CategoryBlock({ cat }: { cat: { name: string; items: string[] } }) {
   return (
     <div style={{ border: '1px solid #999', borderRadius: '3px', overflow: 'hidden', marginBottom: '5px' }}>
-      {/* Category header — force color print */}
       <div style={{
         background: '#1B2B4B', color: 'white', padding: '3px 7px',
         fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
@@ -119,7 +135,6 @@ function CategoryBlock({ cat, isRequested }: { cat: { name: string; items: strin
       } as React.CSSProperties}>
         {cat.name}
       </div>
-      {/* Column headers */}
       <div style={{
         display: 'grid', gridTemplateColumns: '1fr 60px 38px',
         background: '#e8e8e8', borderBottom: '1px solid #999', padding: '2px 5px',
@@ -129,27 +144,22 @@ function CategoryBlock({ cat, isRequested }: { cat: { name: string; items: strin
         <div style={{ fontSize: '10px', fontWeight: 700, color: '#333', textTransform: 'uppercase', textAlign: 'center' }}>Hash</div>
         <div style={{ fontSize: '10px', fontWeight: 700, color: '#333', textTransform: 'uppercase', textAlign: 'center' }}>Qty</div>
       </div>
-      {/* Items */}
-      {cat.items.map((item, i) => {
-        const requested = isRequested(item)
-        return (
-          <div key={item} style={{
-            display: 'grid',
-            gridTemplateColumns: '1fr 60px 38px',
-            borderBottom: i < cat.items.length - 1 ? '1px solid #e0e0e0' : 'none',
-            background: 'white',
-            minHeight: '20px',
-            WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
-          } as React.CSSProperties}>
-            <div style={{ padding: '2px 5px', fontSize: '12px', color: '#1a1a1a', fontWeight: 400, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
-              
-              {item}
-            </div>
-            <div style={{ borderLeft: '1px solid #ddd', borderRight: '1px solid #ddd' }} />
-            <div />
+      {cat.items.map((item, i) => (
+        <div key={item} style={{
+          display: 'grid',
+          gridTemplateColumns: '1fr 60px 38px',
+          borderBottom: i < cat.items.length - 1 ? '1px solid #e0e0e0' : 'none',
+          background: 'white',
+          minHeight: '20px',
+          WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
+        } as React.CSSProperties}>
+          <div style={{ padding: '2px 5px', fontSize: '12px', color: '#1a1a1a', fontWeight: 400, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
+            {item}
           </div>
-        )
-      })}
+          <div style={{ borderLeft: '1px solid #ddd', borderRight: '1px solid #ddd' }} />
+          <div />
+        </div>
+      ))}
     </div>
   )
 }
@@ -158,9 +168,6 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
   const requestedItems = client.items
     ? (Array.isArray(client.items) ? client.items : client.items.split(',')).map((i: string) => i.trim().toLowerCase())
     : []
-
-  const isRequested = (item: string) =>
-    requestedItems.some(r => r.includes(item.toLowerCase()) || item.toLowerCase().includes(r))
 
   return (
     <div style={{
@@ -200,10 +207,20 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
           </div>
         </div>
 
-        {/* Client # box */}
-        <div style={{ textAlign: 'center', border: '3px solid #1B2B4B', borderRadius: '8px', padding: '6px 14px', minWidth: '75px' }}>
-          <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Client #</div>
-          <div style={{ fontSize: '26px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, minWidth: '55px', minHeight: '30px' }}>&nbsp;</div>
+        {/* Right side — Client # box + QR code */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* Client # box */}
+          <div style={{ textAlign: 'center', border: '3px solid #1B2B4B', borderRadius: '8px', padding: '6px 14px', minWidth: '75px' }}>
+            <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Client #</div>
+            <div style={{ fontSize: '26px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, minWidth: '55px', minHeight: '30px' }}>&nbsp;</div>
+          </div>
+          {/* QR Code */}
+          <div style={{ textAlign: 'center' }}>
+            <QRCodeImage value={client.id} size={64} />
+            <div style={{ fontSize: '7px', color: '#aaa', marginTop: '2px', fontFamily: 'monospace' }}>
+              {client.id.slice(-6)}
+            </div>
+          </div>
         </div>
       </div>
 
@@ -219,10 +236,10 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
         </div>
       </div>
 
-      {/* Agency box + HH/Items box — agency smaller, items larger */}
+      {/* Agency box + HH/Items box */}
       <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '10px', marginBottom: '15px' }}>
 
-        {/* Agency box — narrower */}
+        {/* Agency box */}
         <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '6px 9px', background: '#fafafa' }}>
           <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '3px' }}>Agency / Staff</div>
           <div style={{ fontSize: '11px', color: '#1a1a1a', fontWeight: 700 }}>{client.referringAgency ?? '—'}</div>
@@ -234,10 +251,9 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
           )}
         </div>
 
-        {/* HH + Items box — wider */}
+        {/* HH + Items box */}
         <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '6px 9px', background: '#fafafa' }}>
           <div style={{ display: 'flex', gap: '10px' }}>
-            {/* Left — Items Requested */}
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Items Requested</div>
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
@@ -254,7 +270,6 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
                 )}
               </div>
             </div>
-            {/* Right — Household */}
             <div style={{ textAlign: 'right', flexShrink: 0, borderLeft: '1px solid #eee', paddingLeft: '10px' }}>
               <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Household</div>
               <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
@@ -277,33 +292,44 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '8px' }}>
         <div>
           {LEFT_CATEGORIES.map(cat => (
-            <CategoryBlock key={cat.name} cat={cat} isRequested={isRequested} />
+            <CategoryBlock key={cat.name} cat={cat} />
           ))}
         </div>
         <div>
           {RIGHT_CATEGORIES.map(cat => (
-            <CategoryBlock key={cat.name} cat={cat} isRequested={isRequested} />
+            <CategoryBlock key={cat.name} cat={cat} />
           ))}
         </div>
       </div>
 
       {/* Footer */}
-      <div style={{ display: 'flex', gap: '12px', borderTop: '2px solid #ccc', paddingTop: '8px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '130px', flexShrink: 0 }}>
-          <div>
-            <div style={{ fontSize: '9px', color: '#888', marginBottom: '14px' }}>Volunteer Initials</div>
-            <div style={{ borderBottom: '1px solid #999', width: '70px' }} />
-          </div>
-          <div>
-            <div style={{ fontSize: '9px', color: '#888', marginBottom: '14px' }}>Check-out Time</div>
-            <div style={{ borderBottom: '1px solid #999', width: '70px' }} />
-          </div>
-        </div>
-        <div style={{ flex: 1 }}>
-          <div style={{ fontSize: '9px', color: '#888', marginBottom: '5px' }}>Additional Notes</div>
-          <div style={{ border: '1px solid #ccc', borderRadius: '4px', height: '52px', background: 'white' }} />
-        </div>
+<div style={{ display: 'flex', gap: '12px', borderTop: '2px solid #ccc', paddingTop: '8px' }}>
+  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '130px', flexShrink: 0 }}>
+    <div>
+      <div style={{ fontSize: '9px', color: '#888', marginBottom: '14px' }}>Volunteer Initials</div>
+      <div style={{ borderBottom: '1px solid #999', width: '70px' }} />
+    </div>
+    <div>
+      <div style={{ fontSize: '9px', color: '#888', marginBottom: '14px' }}>Check-out Time</div>
+      <div style={{ borderBottom: '1px solid #999', width: '70px' }} />
+    </div>
+    {/* No Show checkbox */}
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+      <div style={{
+        width: '20px', height: '20px', border: '2px solid #C0392B',
+        borderRadius: '3px', flexShrink: 0,
+        WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
+      } as React.CSSProperties} />
+      <div style={{ fontSize: '11px', fontWeight: 700, color: '#C0392B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        No Show
       </div>
+    </div>
+  </div>
+  <div style={{ flex: 1 }}>
+    <div style={{ fontSize: '9px', color: '#888', marginBottom: '5px' }}>Additional Notes</div>
+    <div style={{ border: '1px solid #ccc', borderRadius: '4px', height: '52px', background: 'white' }} />
+  </div>
+</div>
 
     </div>
   )
@@ -395,3 +421,4 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
     </>
   )
 }
+
