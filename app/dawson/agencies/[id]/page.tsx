@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 
+import AgencyReferralsPanel from "@/components/AgencyReferralsPanel";
+
 type AgencyUser = {
   id: string
   name: string
