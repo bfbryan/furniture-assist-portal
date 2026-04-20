@@ -32,6 +32,7 @@ type Agency = {
   state: string
   zip: string
   county: string | null
+  officeName: string | null
   phone: string
   website: string | null
   email: string
@@ -309,8 +310,9 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
               </div>
               <div style={{ borderTop: '1px solid #F7F5F1', paddingTop: '4px' }}>
                 <InfoRow label="EIN" value={agency.ein} />
-                <InfoRow label="Address" value={<>{agency.address}{agency.address2 ? `, ${agency.address2}` : ''}<br />{agency.city}, {agency.state} {agency.zip}{agency.county ? ` · ${agency.county} County` : ''}</>} />
-                <InfoRow label="Main Phone" value={agency.phone} />
+                {agency.officeName && <InfoRow label="Office" value={agency.officeName} />}
+                <InfoRow label="Address" value={<>{agency.address}{agency.address2 ? `, ${agency.address2}` : ''}<br />{agency.city}, {agency.state} {agency.zip}</>} />
+                {agency.county && <InfoRow label="County" value={`${agency.county} County`} />}<InfoRow label="Main Phone" value={agency.phone} />
                 <InfoRow label="Email" value={<a href={`mailto:${agency.email}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{agency.email}</a>} />
                 <InfoRow label="Website" value={agency.website ? <a href={agency.website} target="_blank" rel="noreferrer" style={{ color: '#2A7F6F', textDecoration: 'none' }}>{agency.website}</a> : null} />
                 <InfoRow label="Registration Date" value={formatDate(agency.registrationDate)} />

@@ -256,6 +256,7 @@ const [users, referrals] = await Promise.all([
     state: agency.fields['State'] as string,
     zip: agency.fields['Zip'] as string,
     county: agency.fields['County'] as string ?? null,
+    officeName: agency.fields['Office Name'] as string ?? null,
     phone: agency.fields['Main Phone Number'] as string,
     website: agency.fields['Website'] as string ?? null,
     email: agency.fields['Email'] as string,
