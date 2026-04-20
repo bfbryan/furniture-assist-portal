@@ -13,6 +13,7 @@ type Agency = {
   phone: string
   email: string
   website: string | null
+  officeName: string | null
   contactName: string
   status: string
   registrationDate: string
@@ -103,6 +104,11 @@ function AgencyCard({ agency, onStatusChange }: { agency: Agency; onStatusChange
               {agency.name}
             </div>
           </a>
+          {agency.officeName && (
+            <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+              {agency.officeName}
+            </div>
+          )}
           {agency.website && (
             <a href={agency.website} target="_blank" rel="noreferrer" style={{ fontSize: '14px', color: '#1B2B4B', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', marginTop: '2px' }}>
               {agency.website.replace(/^https?:\/\//, '')}
@@ -206,7 +212,8 @@ export default function InactiveAgenciesPage() {
   const filtered = agencies.filter(a =>
     a.name.toLowerCase().includes(search.toLowerCase()) ||
     a.city.toLowerCase().includes(search.toLowerCase()) ||
-    a.contactName.toLowerCase().includes(search.toLowerCase())
+    a.contactName.toLowerCase().includes(search.toLowerCase()) ||
+    (a.officeName ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
   const inactive = filtered.filter(a => a.status === 'Inactive')

@@ -1,8 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-
-import AgencyReferralsPanel from "@/components/AgencyReferralsPanel";
+import AgencyReferralsPanel, { AgencyReferral, ReferralStatus } from "@/components/AgencyReferralsPanel"
 
 type AgencyUser = {
   id: string
@@ -63,18 +62,6 @@ const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText
   Inactive: { accent: '#7A8899', badgeBg: '#F0F0F0',                 badgeText: '#7A8899' },
 }
 
-const REFERRAL_STATUS: Record<string, { bg: string; color: string }> = {
-  Pending:            { bg: 'rgba(201,168,76,0.15)',  color: '#C9A84C' },
-  Approved:           { bg: 'rgba(42,127,111,0.12)',  color: '#2A7F6F' },
-  Rejected:           { bg: 'rgba(192,57,43,0.1)',    color: '#C0392B' },
-  Scheduled:          { bg: 'rgba(42,127,111,0.12)',  color: '#2A7F6F' },
-  'Pending Schedule': { bg: 'rgba(91,141,184,0.12)',  color: '#5B8DB8' },
-  Completed:          { bg: 'rgba(27,43,75,0.08)',    color: '#1B2B4B' },
-  Cancelled:          { bg: 'rgba(192,57,43,0.1)',    color: '#C0392B' },
-}
-
-
-
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1' }}>
@@ -125,6 +112,37 @@ function NotesModal({ currentNotes, onSave, onCancel, saving }: {
   )
 }
 
+// Map the existing Referral type (from the API) to AgencyReferral (for the panel component)
+function toAgencyReferral(r: Referral): AgencyReferral {
+  const isPendingReview = r.referralReview === 'Pending'
+  const isRejected = r.referralReview === 'Rejected'
+  const isWithdrawn = r.referralReview === 'Withdrawn'
+
+  let status: ReferralStatus
+  if (isPendingReview) {
+    status = 'Pending Review'
+  } else if (isRejected || isWithdrawn) {
+    status = 'Cancelled'
+  } else {
+    // Map appointmentStatus to ReferralStatus
+    const map: Record<string, ReferralStatus> = {
+      'Pending Schedule': 'Pending Schedule',
+      'Scheduled':        'Scheduled',
+      'Completed':        'Completed',
+      'Cancelled':        'Cancelled',
+    }
+    status = map[r.appointmentStatus] ?? 'Pending Schedule'
+  }
+
+  return {
+    id: r.id,
+    clientName: r.clientName,
+    submittedBy: r.referredBy ?? '—',
+    referralDate: r.referralDate,
+    status,
+  }
+}
+
 export default function AgencyDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const [agency, setAgency] = useState<Agency | null>(null)
   const [loading, setLoading] = useState(true)
@@ -133,13 +151,12 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
   const [agencyId, setAgencyId] = useState<string>('')
   const [notesModal, setNotesModal] = useState(false)
   const [notesSaving, setNotesSaving] = useState(false)
-  const [fromPage, setFromPage] = useState('active') 
+  const [fromPage, setFromPage] = useState('active')
 
   useEffect(() => {
-  const p = new URLSearchParams(window.location.search)
-  setFromPage(p.get('from') ?? 'active')
-}, [])
-
+    const p = new URLSearchParams(window.location.search)
+    setFromPage(p.get('from') ?? 'active')
+  }, [])
 
   async function handleStatusChange(newStatus: string) {
     if (!agency) return
@@ -196,6 +213,7 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
 
   const colors = STATUS_COLORS[agency.status] ?? STATUS_COLORS.Inactive
   const initials = agency.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
+  const panelReferrals = agency.referrals.map(toAgencyReferral)
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
@@ -217,9 +235,9 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <a href={`/dawson/agencies/${fromPage}`} style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-  Agencies
-</a>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Agencies
+          </a>
           <span style={{ color: '#EDE9E1' }}>→</span>
           <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>{agency.name}</div>
           {agency.possibleDuplicate && (
@@ -335,58 +353,9 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
           </div>
 
           {/* Referrals */}
-<div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-  <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-    <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B' }}>Referrals</div>
-    <span style={{ fontSize: '12px', color: '#7A8899' }}>{agency.referralCount} total</span>
-  </div>
-  {agency.referrals.length === 0 ? (
-    <div style={{ padding: '24px', textAlign: 'center', color: '#7A8899', fontSize: '13px' }}>No referrals submitted yet</div>
-  ) : (
-    [...agency.referrals].sort((a, b) => {
-      const statusOrder: Record<string, number> = {
-        'Pending': 0,
-        'Pending Schedule': 1,
-        'Scheduled': 2,
-        'Completed': 3,
-        'Cancelled': 4,
-        'Rejected': 5,
-        'Withdrawn': 6,
-      }
-      const getOrder = (r: Referral) => {
-        if (r.referralReview === 'Pending') return 0
-        if (r.referralReview === 'Rejected') return 5
-        if (r.referralReview === 'Withdrawn') return 6
-        return statusOrder[r.appointmentStatus] ?? 9
-      }
-      return getOrder(a) - getOrder(b)
-    }).map(r => {
-      const isReview = r.referralReview === 'Pending'
-      const statusKey = isReview ? 'Pending' : r.appointmentStatus
-      const s = REFERRAL_STATUS[statusKey] ?? { bg: '#F0F0F0', color: '#7A8899' }
-      return (
-        <a key={r.id} href={`/dawson/referrals/${r.id}`} style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '11px 24px', borderBottom: '1px solid #F7F5F1', textDecoration: 'none' }}>
-          <div style={{ flex: 1 }}>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 600, fontSize: '13px', color: '#2A7F6F' }}>{r.clientName}</div>
-            <div style={{ fontSize: '11px', color: '#7A8899' }}>{r.referredBy} · {formatDate(r.referralDate)}</div>
-          </div>
-          <span style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', padding: '2px 9px', borderRadius: '20px', background: s.bg, color: s.color }}>
-            {isReview ? 'Pending Review' : r.appointmentStatus}
-          </span>
-        </a>
-      )
-    })
-  )}
-  {agency.referralCount > 5 && (
-    <div style={{ padding: '12px 24px', textAlign: 'center' }}>
-      <a href={`/dawson/referrals?agency=${agency.name}`} style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', textDecoration: 'none' }}>
-        View all {agency.referralCount} referrals →
-      </a>
-    </div>
-  )}
-</div>
+          <AgencyReferralsPanel referrals={panelReferrals} />
 
-</div>
+        </div>
 
         {/* RIGHT COLUMN */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -441,4 +410,3 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
     </div>
   )
 }
-

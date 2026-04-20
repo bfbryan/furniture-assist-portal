@@ -13,6 +13,7 @@ type Agency = {
   phone: string
   email: string
   website: string | null
+  officeName: string | null
   contactName: string
   status: string
   approvalDate: string | null
@@ -116,17 +117,22 @@ function ActiveCard({ agency, onStatusChange }: { agency: Agency; onStatusChange
         <div style={{ width: '4px', alignSelf: 'stretch', background: '#2A7F6F', flexShrink: 0 }} />
 
         <div style={{ width: '270px', flexShrink: 0, padding: '14px 20px', alignSelf: 'flex-start' }}>
-          <a href={`/dawson/agencies/${agency.id}?from=active`} style={{ textDecoration: 'none' }}>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#2A7F6F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {agency.name}
-            </div>
-          </a>
-          {agency.website && (
-            <a href={agency.website} target="_blank" rel="noreferrer" style={{ fontSize: '14px', color: '#1B2B4B', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', marginTop: '2px' }}>
-              {agency.website.replace(/^https?:\/\//, '')}
-            </a>
-          )}
-        </div>
+  <a href={`/dawson/agencies/${agency.id}?from=active`} style={{ textDecoration: 'none' }}>
+    <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#2A7F6F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      {agency.name}
+    </div>
+  </a>
+  {agency.officeName && (
+    <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+      {agency.officeName}
+    </div>
+  )}
+  {agency.website && (
+    <a href={agency.website} target="_blank" rel="noreferrer" style={{ fontSize: '14px', color: '#1B2B4B', textDecoration: 'none', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', display: 'block', marginTop: '2px' }}>
+      {agency.website.replace(/^https?:\/\//, '')}
+    </a>
+  )}
+</div>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, paddingTop: '14px' }}>
           <div style={{ width: '190px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
@@ -203,7 +209,8 @@ export default function ActiveAgenciesPage() {
     .filter(a =>
       a.name.toLowerCase().includes(search.toLowerCase()) ||
       a.city.toLowerCase().includes(search.toLowerCase()) ||
-      a.contactName.toLowerCase().includes(search.toLowerCase())
+     a.contactName.toLowerCase().includes(search.toLowerCase()) ||
+      (a.officeName ?? '').toLowerCase().includes(search.toLowerCase())
     )
     .sort((a, b) => {
       let val = 0

@@ -124,6 +124,7 @@ export async function getAllAgencies(status?: string) {
     registrationDate: record.fields['Registration Date'] as string,
     approvalDate: record.fields['Approval Date'] as string ?? null,
     website: record.fields['Website'] as string ?? null,
+    officeName: record.fields['Office Name'] as string ?? null,
   }))
 }
 
@@ -277,7 +278,7 @@ const [users, referrals] = await Promise.all([
       invitedDate: r.fields['Invited Date'] as string ?? r.fields['Registration Date'] as string ?? null,
     })),
     referralCount: referrals.records.length,
-    referrals: referrals.records.slice(0, 5).map((r: any) => ({
+    referrals: referrals.records.map((r: any) => ({
       id: r.id,
       clientName: `${r.fields['First Name']} ${r.fields['Last Name']}`,
       referralDate: r.fields['Referral Date'] as string,
