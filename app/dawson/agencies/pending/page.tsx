@@ -19,6 +19,8 @@ type Agency = {
   status: string
   registrationDate: string
   approvalDate: string | null
+  possibleDuplicate: boolean
+
 }
 
 function formatDate(dateStr: string | null) {
@@ -105,6 +107,11 @@ function PendingCard({ agency, onStatusChange }: { agency: Agency; onStatusChang
               {agency.name}
             </div>
           </a>
+          {agency.possibleDuplicate && (
+            <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B', display: 'inline-block', marginTop: '4px' }}>
+              ⚠ Possible Duplicate
+            </span>
+          )}
           {agency.officeName && (
             <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {agency.officeName}

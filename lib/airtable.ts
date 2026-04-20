@@ -125,6 +125,7 @@ export async function getAllAgencies(status?: string) {
     approvalDate: record.fields['Approval Date'] as string ?? null,
     website: record.fields['Website'] as string ?? null,
     officeName: record.fields['Office Name'] as string ?? null,
+    possibleDuplicate: record.fields['Possible Duplicate'] as boolean ?? false,
   }))
 }
 
