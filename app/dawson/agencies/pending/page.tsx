@@ -107,7 +107,11 @@ function PendingCard({ agency, onStatusChange }: { agency: Agency; onStatusChang
               {agency.name}
             </div>
           </a>
-          
+          {agency.possibleDuplicate && (
+            <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B', display: 'inline-block', marginTop: '4px' }}>
+              ⚠ Possible Duplicate
+            </span>
+          )}
           {agency.officeName && (
             <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {agency.officeName}
@@ -145,12 +149,13 @@ function PendingCard({ agency, onStatusChange }: { agency: Agency; onStatusChang
           </div>
         </div>
 
-        <div style={{ marginLeft: 'auto', paddingRight: '20px', display: 'flex', flexDirection: 'column', gap: '4px', flexShrink: 0, width: '120px' }}>
+        <div style={{ marginLeft: 'auto', paddingRight: '20px', display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
           {agency.possibleDuplicate && (
-            <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B', textAlign: 'center', marginBottom: '4px' }}>
-              ⚠ Duplicate
-            </span>
+            <div style={{ fontSize: '11px', fontWeight: 700, color: '#C0392B', textAlign: 'center', lineHeight: 1.4 }}>
+              ⚠ Possible<br />Duplicate
+            </div>
           )}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', width: '120px' }}>
           <button onClick={() => setModal({ action: 'Approved', label: 'Approve' })} disabled={loading}
             style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: 'rgba(42,127,111,0.1)', color: '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', width: '100%' }}>
             Approve
@@ -159,6 +164,7 @@ function PendingCard({ agency, onStatusChange }: { agency: Agency; onStatusChang
             style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', width: '100%' }}>
             Reject
           </button>
+        </div>
         </div>
       </div>
     </>
