@@ -151,7 +151,7 @@ function PendingCard({ agency, onStatusChange }: { agency: Agency; onStatusChang
 
         <div style={{ marginLeft: 'auto', paddingRight: '20px', display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
           {agency.possibleDuplicate && (
-            <div style={{ fontSize: '11px', fontWeight: 700, color: '#C0392B', textAlign: 'center', lineHeight: 1.4 }}>
+            <div style={{ fontSize: '14px', fontWeight: 700, color: '#C0392B', textAlign: 'center', lineHeight: 1.4, paddingRight: '16px', borderRight: '1px solid #EDE9E1' }}>
               ⚠ Possible<br />Duplicate
             </div>
           )}
