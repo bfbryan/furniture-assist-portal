@@ -4,7 +4,8 @@ import { redirect } from 'next/navigation'
 const ALLOWED_USER_IDS = [
   'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', //Ben
   'user_3BodwTW4I7Vamt4t7wD3qeA7boM', //Ray
-  'user_3BtKn01OMXSmi7eSsWvzvnEroCg'  //Dawson
+  'user_3BtKn01OMXSmi7eSsWvzvnEroCg',  //Dawson
+  'user_3DE1gUnIeNmWZpQyd7LjdZb9vnN', //Chase
 ]
 
 export default async function DawsonLayout({
