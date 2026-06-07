@@ -99,83 +99,81 @@ function SaturdayCard({ sat }: { sat: Saturday }) {
       <div style={{ background: accentColor, borderRadius: '12px 0 0 12px' }} />
       <div style={{ padding: '14px 20px' }}>
         <div style={{
-  display: 'grid',
-  gridTemplateColumns: '100px 90px 1fr 60px 60px 60px 40px',
-  alignItems: 'center', gap: '16px',
-}}>
+          display: 'grid',
+          gridTemplateColumns: '100px 90px 1fr 60px 60px 60px 40px',
+          alignItems: 'center', gap: '16px',
+        }}>
 
-  {/* Date */}
-  <div>
-    <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '15px', color: '#1B2B4B' }}>
-      {formatShortDate(sat.date)}
-    </div>
-    <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '1px' }}>Saturday</div>
-  </div>
-
-  {/* Status */}
-  <div style={{ width: '80px', flexShrink: 0 }}>
-    <span style={{
-      display: 'inline-block', padding: '3px 10px', borderRadius: '20px',
-      fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
-      background: statusStyle.bg, color: statusStyle.color, whiteSpace: 'nowrap',
-    }}>
-      {sat.status}
-    </span>
-  </div>
-
-  {/* Time slots */}
-  {!isBlackout ? (
-    <div style={{ display: 'flex', gap: '24px', justifyContent: 'center', padding: '0 20px' }}>
-      {slots.map(s => {
-        const pct = s.max > 0 ? s.filled / s.max : 0
-        const color = pct >= 1 ? '#C0392B' : pct >= 0.8 ? '#C9A84C' : '#2A7F6F'
-        return (
-          <div key={s.label} style={{ textAlign: 'center', minWidth: '40px' }}>
-            <div style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', marginBottom: '4px' }}>{s.label}</div>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color, lineHeight: 1 }}>{s.filled}</div>
-            
+          {/* Date */}
+          <div>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '15px', color: '#1B2B4B' }}>
+              {formatShortDate(sat.date)}
+            </div>
+            <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '1px' }}>Saturday</div>
           </div>
-        )
-      })}
-    </div>
-  ) : (
-    <div style={{ fontSize: '13px', color: '#7A8899' }}>Blackout — no appointments</div>
-  )}
-{/* Scheduled */}
-<div style={{ textAlign: 'center' }}>
-  <div style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', marginBottom: '2px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Total</div>
-  <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B' }}>{sat.totalFilled}</div>
-</div>
 
-{/* Remaining */}
-<div style={{ textAlign: 'center' }}>
-  <div style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', marginBottom: '2px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Open</div>
-  <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: sat.slotsRemaining === 0 ? '#C0392B' : '#2A7F6F' }}>{sat.slotsRemaining}</div>
-</div>
+          {/* Status */}
+          <div style={{ width: '80px', flexShrink: 0 }}>
+            <span style={{
+              display: 'inline-block', padding: '3px 10px', borderRadius: '20px',
+              fontSize: '11px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+              background: statusStyle.bg, color: statusStyle.color, whiteSpace: 'nowrap',
+            }}>
+              {sat.status}
+            </span>
+          </div>
 
-{/* Capacity */}
-<div style={{ textAlign: 'center' }}>
-  <div style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', marginBottom: '2px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Cap</div>
-  <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B' }}>{sat.totalCapacity}</div>
-</div>
+          {/* Time slots */}
+          {!isBlackout ? (
+            <div style={{ display: 'flex', gap: '24px', justifyContent: 'center', padding: '0 20px' }}>
+              {slots.map(s => {
+                const pct = s.max > 0 ? s.filled / s.max : 0
+                const color = pct >= 1 ? '#C0392B' : pct >= 0.8 ? '#C9A84C' : '#2A7F6F'
+                return (
+                  <div key={s.label} style={{ textAlign: 'center', minWidth: '40px' }}>
+                    <div style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', marginBottom: '4px' }}>{s.label}</div>
+                    <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color, lineHeight: 1 }}>{s.filled}</div>
+                  </div>
+                )
+              })}
+            </div>
+          ) : (
+            <div style={{ fontSize: '13px', color: '#7A8899' }}>Blackout — no appointments</div>
+          )}
 
-  {/* Print */}
-  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-    {!past && !isBlackout && (
-  <a href={`/print/schedule/${sat.date}`} title="Print Forms"
-    style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2A7F6F', textDecoration: 'none' }}>
-    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <polyline points="6 9 6 2 18 2 18 9"/>
-      <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-      <rect x="6" y="14" width="12" height="8"/>
-    </svg>
-  </a>
-)}
-  </div>
+          {/* Scheduled */}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', marginBottom: '2px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Total</div>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B' }}>{sat.totalFilled}</div>
+          </div>
 
-</div>
+          {/* Remaining */}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', marginBottom: '2px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Open</div>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: sat.slotsRemaining === 0 ? '#C0392B' : '#2A7F6F' }}>{sat.slotsRemaining}</div>
+          </div>
 
-        
+          {/* Capacity */}
+          <div style={{ textAlign: 'center' }}>
+            <div style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', marginBottom: '2px', letterSpacing: '0.06em', textTransform: 'uppercase' }}>Cap</div>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B' }}>{sat.totalCapacity}</div>
+          </div>
+
+          {/* Print */}
+          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+            {!past && !isBlackout && (
+              <a href={`/print/schedule/${sat.date}`} title="Print Forms"
+                style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2A7F6F', textDecoration: 'none' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polyline points="6 9 6 2 18 2 18 9"/>
+                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
+                  <rect x="6" y="14" width="12" height="8"/>
+                </svg>
+              </a>
+            )}
+          </div>
+
+        </div>
       </div>
     </div>
   )
@@ -218,11 +216,33 @@ export default function SchedulePage() {
   const [saturdays, setSaturdays] = useState<Saturday[]>([])
   const [loading, setLoading] = useState(true)
   const [showPast, setShowPast] = useState(false)
+  const [refreshing, setRefreshing] = useState(false)
+
+  async function fetchSchedule() {
+    setRefreshing(true)
+    try {
+      const res = await fetch('/api/dawson/schedule', { cache: 'no-store' })
+      const data = await res.json()
+      setSaturdays(data)
+      setLoading(false)
+    } finally {
+      setRefreshing(false)
+    }
+  }
 
   useEffect(() => {
-    fetch('/api/dawson/schedule')
-      .then(r => r.json())
-      .then(data => { setSaturdays(data); setLoading(false) })
+    fetchSchedule()
+
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') fetchSchedule()
+    }
+    document.addEventListener('visibilitychange', handleVisibility)
+    window.addEventListener('focus', fetchSchedule)
+
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility)
+      window.removeEventListener('focus', fetchSchedule)
+    }
   }, [])
 
   const now = new Date()
@@ -239,6 +259,11 @@ export default function SchedulePage() {
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
+      <style>{`
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinning { animation: spin 0.8s linear infinite; }
+      `}</style>
+
       <header style={{
         background: 'white', borderBottom: '1px solid #EDE9E1',
         padding: '0 32px', height: '60px',
@@ -248,10 +273,27 @@ export default function SchedulePage() {
         <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>
           Saturday Schedule
         </div>
-        <button onClick={() => setShowPast(!showPast)}
-          style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', fontSize: '13px', fontWeight: 600, color: '#7A8899', cursor: 'pointer' }}>
-          {showPast ? 'Hide Past Dates' : 'Show Past Dates'}
-        </button>
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+          {refreshing && (
+            <span style={{ fontSize: '12px', color: '#7A8899', marginRight: '4px' }}>
+              Refreshing…
+            </span>
+          )}
+          <button onClick={fetchSchedule}
+            disabled={refreshing}
+            title="Refresh"
+            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', fontSize: '13px', fontWeight: 600, color: '#2A7F6F', cursor: refreshing ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', opacity: refreshing ? 0.7 : 1 }}>
+            <svg className={refreshing ? 'spinning' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <polyline points="23 4 23 10 17 10"/>
+              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+            </svg>
+            Refresh
+          </button>
+          <button onClick={() => setShowPast(!showPast)}
+            style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', fontSize: '13px', fontWeight: 600, color: '#7A8899', cursor: 'pointer' }}>
+            {showPast ? 'Hide Past Dates' : 'Show Past Dates'}
+          </button>
+        </div>
       </header>
 
       <div style={{ padding: '28px 32px' }}>
@@ -276,4 +318,3 @@ export default function SchedulePage() {
     </div>
   )
 }
-

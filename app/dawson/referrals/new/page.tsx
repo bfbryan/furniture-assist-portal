@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 const ITEMS = [
@@ -11,6 +11,14 @@ const ITEMS = [
   'Baby Items',
   'Clothes',
 ]
+
+function formatPhone(raw: string): string {
+  const d = raw.replace(/\D/g, '').slice(0, 10)
+  if (d.length >= 7) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`
+  if (d.length >= 4) return `(${d.slice(0,3)}) ${d.slice(3)}`
+  if (d.length > 0) return `(${d}`
+  return ''
+}
 
 const LABEL: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
@@ -29,18 +37,33 @@ const SECTION: React.CSSProperties = {
   marginBottom: '16px', marginTop: '8px',
 }
 
+const SUBPANEL: React.CSSProperties = {
+  background: '#FAF8F4', border: '1px solid #EDE9E1', borderRadius: '8px',
+  padding: '16px', marginBottom: '24px',
+}
+
 type Agency = {
   id: string
   name: string
   email: string
   contactName: string
+  status: string
 }
 
 type StaffMember = {
   id: string
+  firstName: string
+  lastName: string
   name: string
   email: string
-  phone: string | null
+  phone: string
+  status: string
+  displayName: string
+}
+
+type AvailableDate = {
+  date: string
+  slotsRemaining: number
 }
 
 export default function DawsonAddReferralPage() {
@@ -57,6 +80,22 @@ export default function DawsonAddReferralPage() {
   const [agenciesLoading, setAgenciesLoading] = useState(true)
   const [staffLoading, setStaffLoading] = useState(false)
 
+  // Agency combobox state
+  const [agencyQuery, setAgencyQuery] = useState('')
+  const [agencyDropdownOpen, setAgencyDropdownOpen] = useState(false)
+  const agencyComboRef = useRef<HTMLDivElement>(null)
+
+  // New agency inline panel
+  const [newAgencyMode, setNewAgencyMode] = useState(false)
+  const [newAgency, setNewAgency] = useState({ name: '', email: '' })
+
+  // New staff inline panel (for existing agency)
+  const [newStaffMode, setNewStaffMode] = useState(false)
+  const [newStaff, setNewStaff] = useState({ firstName: '', lastName: '', email: '', phone: '' })
+
+  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
+  const [availabilityLoading, setAvailabilityLoading] = useState(true)
+
   const [form, setForm] = useState({
     firstName: '', lastName: '',
     address: '', address2: '', city: '', state: 'NJ', zip: '',
@@ -66,24 +105,57 @@ export default function DawsonAddReferralPage() {
     language: 'English',
     items: [] as string[],
     notes: '',
+    preferredDate: '',
+    flexible: false,
   })
 
-  // Load active agencies
+  // Load Approved + Unclaimed agencies
   useEffect(() => {
-    fetch('/api/dawson/agencies?status=Approved')
+    fetch('/api/dawson/agencies?status=Approved,Unclaimed')
       .then(r => r.json())
-      .then(data => { setAgencies(data); setAgenciesLoading(false) })
+      .then(data => { setAgencies(Array.isArray(data) ? data : []); setAgenciesLoading(false) })
+      .catch(() => setAgenciesLoading(false))
   }, [])
 
-  // Load staff when agency is selected
+  // Load staff when an existing agency is selected
   useEffect(() => {
     if (!selectedAgency) { setStaffMembers([]); setSelectedStaff(null); return }
     setStaffLoading(true)
     setSelectedStaff(null)
+    setNewStaffMode(false)
+    setNewStaff({ firstName: '', lastName: '', email: '', phone: '' })
     fetch(`/api/dawson/agencies/${selectedAgency.id}/staff`)
       .then(r => r.json())
-      .then(data => { setStaffMembers(data); setStaffLoading(false) })
+      .then(data => { setStaffMembers(Array.isArray(data) ? data : []); setStaffLoading(false) })
+      .catch(() => setStaffLoading(false))
   }, [selectedAgency])
+
+  // Load available Saturdays
+const loadAvailability = () => {
+  setAvailabilityLoading(true)
+  fetch('/api/dawson/schedule/available?weeks=8')
+    .then(r => r.json())
+    .then(data => {
+      setAvailableDates(Array.isArray(data) ? data : [])
+      setAvailabilityLoading(false)
+    })
+    .catch(() => setAvailabilityLoading(false))
+}
+
+useEffect(() => {
+  loadAvailability()
+}, [])
+
+  // Close agency dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (agencyComboRef.current && !agencyComboRef.current.contains(e.target as Node)) {
+        setAgencyDropdownOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
 
   const set = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }))
 
@@ -96,13 +168,75 @@ export default function DawsonAddReferralPage() {
     }))
   }
 
+  const filteredAgencies = agencyQuery.trim()
+    ? agencies.filter(a => a.name.toLowerCase().includes(agencyQuery.toLowerCase()))
+    : agencies
+
+  const exactMatch = agencies.some(a => a.name.toLowerCase() === agencyQuery.trim().toLowerCase())
+
+  const pickAgency = (agency: Agency) => {
+    setSelectedAgency(agency)
+    setAgencyQuery(agency.name)
+    setAgencyDropdownOpen(false)
+    setNewAgencyMode(false)
+    setNewAgency({ name: '', email: '' })
+  }
+
+  const startNewAgency = () => {
+    setSelectedAgency(null)
+    setStaffMembers([])
+    setSelectedStaff(null)
+    setNewStaffMode(false)
+    setNewAgencyMode(true)
+    setNewAgency({ name: agencyQuery.trim(), email: '' })
+    setAgencyDropdownOpen(false)
+  }
+
+  const clearAgency = () => {
+    setSelectedAgency(null)
+    setSelectedStaff(null)
+    setNewAgencyMode(false)
+    setNewStaffMode(false)
+    setAgencyQuery('')
+    setNewAgency({ name: '', email: '' })
+    setNewStaff({ firstName: '', lastName: '', email: '', phone: '' })
+  }
+
+  const pickStaff = (id: string) => {
+    if (id === '__new__') {
+      setSelectedStaff(null)
+      setNewStaffMode(true)
+      return
+    }
+    const staff = staffMembers.find(s => s.id === id) ?? null
+    setSelectedStaff(staff)
+    setNewStaffMode(false)
+  }
+
   const handleSubmit = async () => {
     setError(null)
 
-    if (!selectedAgency) { setError('Please select an agency.'); return }
-    if (!selectedStaff) { setError('Please select a staff member.'); return }
+    // Agency validation
+    if (newAgencyMode) {
+      if (!newAgency.name.trim()) { setError('Please enter the new agency name.'); return }
+      if (!newAgency.email.trim()) { setError('Please enter the new agency email.'); return }
+    } else if (!selectedAgency) {
+      setError('Please select an agency.'); return
+    }
 
-    const required = ['firstName', 'lastName', 'address', 'city', 'state', 'zip', 'phone', 'hhSize', 'children', 'dob']
+    // Staff validation
+    if (newAgencyMode || newStaffMode) {
+      if (!newStaff.firstName.trim() || !newStaff.lastName.trim()) {
+        setError('Please enter the staff first and last name.'); return
+      }
+      if (!newStaff.email.trim()) {
+        setError('Please enter the staff email.'); return
+      }
+    } else if (!selectedStaff) {
+      setError('Please select a staff member.'); return
+    }
+
+    const required = ['firstName', 'lastName', 'address', 'city', 'state', 'zip', 'hhSize', 'children', 'dob']
     for (const f of required) {
       if (!form[f as keyof typeof form]) {
         setError('Please fill in all required fields.')
@@ -113,24 +247,63 @@ export default function DawsonAddReferralPage() {
       setError('Please select at least one item.')
       return
     }
+    if (!form.flexible && !form.preferredDate) {
+      setError('Please select a preferred Saturday or check "Flexible".')
+      return
+    }
+
+    // Build payload — three cases
+    const payload: any = {
+      ...form,
+      preferredDate: form.flexible ? null : form.preferredDate,
+      flexible: form.flexible,
+    }
+
+    if (newAgencyMode) {
+      // Case 3: brand new agency + new staff
+      payload.newAgency = {
+        name: newAgency.name.trim(),
+        email: newAgency.email.trim(),
+      }
+      payload.newStaff = {
+        firstName: newStaff.firstName.trim(),
+        lastName: newStaff.lastName.trim(),
+        email: newStaff.email.trim(),
+        phone: newStaff.phone.trim(),
+      }
+    } else if (newStaffMode) {
+      // Case 2: existing agency + new staff
+      payload.agencyId = selectedAgency!.id
+      payload.agencyName = selectedAgency!.name
+      payload.agencyEmail = selectedAgency!.email
+      payload.newStaff = {
+        firstName: newStaff.firstName.trim(),
+        lastName: newStaff.lastName.trim(),
+        email: newStaff.email.trim(),
+        phone: newStaff.phone.trim(),
+      }
+    } else {
+      // Case 1: both exist
+      payload.agencyId = selectedAgency!.id
+      payload.agencyName = selectedAgency!.name
+      payload.agencyEmail = selectedStaff!.email || selectedAgency!.email
+      payload.staffId = selectedStaff!.id
+      payload.staffName = selectedStaff!.name
+      payload.staffPhone = selectedStaff!.phone
+    }
 
     setLoading(true)
     try {
       const res = await fetch('/api/dawson/referrals/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...form,
-          agencyName: selectedAgency.name,
-          agencyEmail: selectedAgency.email,
-          staffName: selectedStaff.name,
-          staffPhone: selectedStaff.phone,
-        }),
+        body: JSON.stringify(payload),
       })
-      const data = await res.json()
+            const data = await res.json()
       if (!res.ok) throw new Error(data.error || 'Submission failed')
       setIsDuplicate(data.duplicate)
       setSubmitted(true)
+      loadAvailability()  // refresh slot counts for next referral
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -160,11 +333,11 @@ export default function DawsonAddReferralPage() {
           </p>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
             <button onClick={() => {
-              setSubmitted(false)
-              setSelectedAgency(null)
-              setSelectedStaff(null)
-              setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '' })
-            }}
+  setSubmitted(false)
+  clearAgency()
+  setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '', preferredDate: '', flexible: false })
+  loadAvailability()
+}}
               style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
               Add Another
             </button>
@@ -191,32 +364,155 @@ export default function DawsonAddReferralPage() {
 
           {/* Agency + Staff Selection */}
           <div style={SECTION}>Agency & Staff</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '28px' }}>
-            <div>
-              <label style={LABEL}>Agency *</label>
-              <select style={INPUT} value={selectedAgency?.id ?? ''} onChange={e => {
-                const agency = agencies.find(a => a.id === e.target.value) ?? null
-                setSelectedAgency(agency)
-              }}>
-                <option value="">Select agency...</option>
-                {agencies.map(a => (
-                  <option key={a.id} value={a.id}>{a.name}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={LABEL}>Staff Member *</label>
-              <select style={INPUT} value={selectedStaff?.id ?? ''} onChange={e => {
-                const staff = staffMembers.find(s => s.id === e.target.value) ?? null
-                setSelectedStaff(staff)
-              }} disabled={!selectedAgency || staffLoading}>
-                <option value="">{staffLoading ? 'Loading...' : !selectedAgency ? 'Select agency first' : 'Select staff member...'}</option>
-                {staffMembers.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+
+          {/* Agency combobox */}
+          <div style={{ marginBottom: '16px' }}>
+            <label style={LABEL}>Agency *</label>
+            <div ref={agencyComboRef} style={{ position: 'relative' }}>
+              <input
+                style={INPUT}
+                value={agencyQuery}
+                onChange={e => {
+                  setAgencyQuery(e.target.value)
+                  setAgencyDropdownOpen(true)
+                  if (selectedAgency && e.target.value !== selectedAgency.name) {
+                    setSelectedAgency(null)
+                  }
+                  if (newAgencyMode) {
+                    setNewAgencyMode(false)
+                  }
+                }}
+                onFocus={() => setAgencyDropdownOpen(true)}
+                placeholder={agenciesLoading ? 'Loading agencies...' : 'Type to search or add new agency...'}
+                disabled={agenciesLoading}
+              />
+              {(selectedAgency || newAgencyMode || agencyQuery) && (
+                <button
+                  type="button"
+                  onClick={clearAgency}
+                  style={{ position: 'absolute', right: '8px', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: '#7A8899', fontSize: '18px', padding: '4px 8px' }}
+                >×</button>
+              )}
+              {agencyDropdownOpen && !agenciesLoading && (
+                <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #EDE9E1', borderRadius: '7px', marginTop: '4px', maxHeight: '280px', overflowY: 'auto', zIndex: 100, boxShadow: '0 4px 12px rgba(27,43,75,0.08)' }}>
+                  {filteredAgencies.length === 0 && !agencyQuery.trim() && (
+                    <div style={{ padding: '12px 14px', fontSize: '13px', color: '#7A8899' }}>No agencies</div>
+                  )}
+                  {filteredAgencies.map(a => (
+                    <div
+                      key={a.id}
+                      onClick={() => pickAgency(a)}
+                      style={{ padding: '10px 14px', fontSize: '13px', color: '#2C3A4A', cursor: 'pointer', borderBottom: '1px solid #F7F5F1' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#FAF8F4')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+                    >
+                      {a.name}
+                    </div>
+                  ))}
+                  {agencyQuery.trim() && !exactMatch && (
+                    <div
+                      onClick={startNewAgency}
+                      style={{ padding: '10px 14px', fontSize: '13px', color: '#2A7F6F', cursor: 'pointer', fontWeight: 600, background: '#EAF4F2', borderTop: filteredAgencies.length > 0 ? '1px solid #EDE9E1' : 'none' }}
+                    >
+                      + Add new agency: "{agencyQuery.trim()}"
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </div>
+
+          {/* New agency inline panel */}
+          {newAgencyMode && (
+            <div style={SUBPANEL}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                New Agency Details
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div>
+                  <label style={LABEL}>Agency Name *</label>
+                  <input style={INPUT} value={newAgency.name} onChange={e => setNewAgency({ ...newAgency, name: e.target.value })} placeholder="Agency name" />
+                </div>
+                <div>
+                  <label style={LABEL}>Agency Email *</label>
+                  <input style={INPUT} type="email" value={newAgency.email} onChange={e => setNewAgency({ ...newAgency, email: e.target.value })} placeholder="agency@example.com" />
+                </div>
+              </div>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                Referring Staff Member
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div>
+                  <label style={LABEL}>First Name *</label>
+                  <input style={INPUT} value={newStaff.firstName} onChange={e => setNewStaff({ ...newStaff, firstName: e.target.value })} />
+                </div>
+                <div>
+                  <label style={LABEL}>Last Name *</label>
+                  <input style={INPUT} value={newStaff.lastName} onChange={e => setNewStaff({ ...newStaff, lastName: e.target.value })} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={LABEL}>Staff Email *</label>
+                  <input style={INPUT} type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="staff@example.com" />
+                </div>
+                <div>
+                  <label style={LABEL}>Staff Phone</label>
+                  <input style={INPUT} value={newStaff.phone} onChange={e => setNewStaff({ ...newStaff, phone: formatPhone(e.target.value) })} placeholder="(000) 000-0000" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Staff selection (only if existing agency is picked) */}
+          {selectedAgency && !newAgencyMode && (
+            <div style={{ marginBottom: '16px' }}>
+              <label style={LABEL}>Staff Member *</label>
+              <select
+                style={INPUT}
+                value={newStaffMode ? '__new__' : (selectedStaff?.id ?? '')}
+                onChange={e => pickStaff(e.target.value)}
+                disabled={staffLoading}
+              >
+                <option value="">{staffLoading ? 'Loading...' : 'Select staff member...'}</option>
+                {staffMembers.map(s => (
+  <option key={s.id} value={s.id}>{s.displayName}</option>
+))}
+                <option value="__new__">+ Add new staff member</option>
+              </select>
+            </div>
+          )}
+
+          {/* New staff inline panel (for existing agency) */}
+          {selectedAgency && newStaffMode && (
+            <div style={SUBPANEL}>
+              <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                New Staff Member
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+                <div>
+                  <label style={LABEL}>First Name *</label>
+                  <input style={INPUT} value={newStaff.firstName} onChange={e => setNewStaff({ ...newStaff, firstName: e.target.value })} />
+                </div>
+                <div>
+                  <label style={LABEL}>Last Name *</label>
+                  <input style={INPUT} value={newStaff.lastName} onChange={e => setNewStaff({ ...newStaff, lastName: e.target.value })} />
+                </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label style={LABEL}>Staff Email *</label>
+                  <input style={INPUT} type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="staff@example.com" />
+                </div>
+                <div>
+                  <label style={LABEL}>Staff Phone</label>
+                  <input style={INPUT} value={newStaff.phone} onChange={e => setNewStaff({ ...newStaff, phone: formatPhone(e.target.value) })} placeholder="(000) 000-0000" />
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ marginBottom: '12px' }} />
 
           {/* Client Info */}
           <div style={SECTION}>Client Information</div>
@@ -236,14 +532,8 @@ export default function DawsonAddReferralPage() {
               <input style={INPUT} type="date" value={form.dob} onChange={e => set('dob', e.target.value)} />
             </div>
             <div>
-              <label style={LABEL}>Cell Phone *</label>
-              <input style={INPUT} value={form.phone} onChange={e => {
-                let d = e.target.value.replace(/\D/g, '').slice(0, 10)
-                if (d.length >= 7) e.target.value = `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`
-                else if (d.length >= 4) e.target.value = `(${d.slice(0,3)}) ${d.slice(3)}`
-                else if (d.length > 0) e.target.value = `(${d}`
-                set('phone', e.target.value)
-              }} placeholder="(000) 000-0000" />
+                            <label style={LABEL}>Cell Phone</label>
+              <input style={INPUT} value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} placeholder="(000) 000-0000 (optional)" />
             </div>
             <div>
               <label style={LABEL}>Preferred Language</label>
@@ -309,6 +599,54 @@ export default function DawsonAddReferralPage() {
                 <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: form.items.includes(item) ? 600 : 400 }}>{item}</span>
               </label>
             ))}
+          </div>
+
+          {/* Preferred Appointment */}
+          <div style={{ ...SECTION, marginTop: '8px' }}>Preferred Appointment</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
+            <div>
+              <label style={LABEL}>Preferred Saturday *</label>
+              <select
+                style={{ ...INPUT, opacity: form.flexible ? 0.5 : 1, cursor: form.flexible ? 'not-allowed' : 'pointer' }}
+                value={form.preferredDate}
+                onChange={e => set('preferredDate', e.target.value)}
+                disabled={form.flexible || availabilityLoading}
+              >
+                <option value="">
+                  {availabilityLoading ? 'Loading dates...' : 'Select a Saturday...'}
+                </option>
+                {availableDates.map(d => {
+                  const dateObj = new Date(d.date + 'T00:00:00')
+                  const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                  return (
+                    <option key={d.date} value={d.date}>
+                      {label} — {d.slotsRemaining} slot{d.slotsRemaining === 1 ? '' : 's'}
+                    </option>
+                  )
+                })}
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '9px 14px', borderRadius: '7px', border: `1px solid ${form.flexible ? '#2A7F6F' : '#EDE9E1'}`, background: form.flexible ? '#EAF4F2' : 'white', width: '100%', boxSizing: 'border-box' }}>
+                <input
+                  type="checkbox"
+                  checked={form.flexible}
+                  onChange={e => {
+                    set('flexible', e.target.checked)
+                    if (e.target.checked) set('preferredDate', '')
+                  }}
+                  style={{ display: 'none' }}
+                />
+                <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: `2px solid ${form.flexible ? '#2A7F6F' : '#EDE9E1'}`, background: form.flexible ? '#2A7F6F' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                  {form.flexible && (
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                  )}
+                </div>
+                <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: form.flexible ? 600 : 400 }}>Flexible — next available</span>
+              </label>
+            </div>
           </div>
 
           {/* Notes */}

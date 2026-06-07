@@ -100,9 +100,18 @@ export async function getReferralsByStaffName(agencyName: string, staffName: str
 // ─── DAWSON PORTAL FUNCTIONS ───────────────────────────────────────────────
 
 export async function getAllAgencies(status?: string) {
-  const formula = status
-    ? encodeURIComponent(`{Status} = "${status}"`)
-    : ''
+  // Accept either single status ("Approved") or comma-separated ("Approved,Unclaimed")
+  let formula = ''
+  if (status) {
+    const statuses = status.split(',').map(s => s.trim()).filter(Boolean)
+    if (statuses.length === 1) {
+      formula = encodeURIComponent(`{Status} = "${statuses[0]}"`)
+    } else if (statuses.length > 1) {
+      const orClauses = statuses.map(s => `{Status} = "${s}"`).join(', ')
+      formula = encodeURIComponent(`OR(${orClauses})`)
+    }
+  }
+
   const params = formula
     ? `?filterByFormula=${formula}&sort[0][field]=Agency%20Name&sort[0][direction]=asc`
     : `?sort[0][field]=Agency%20Name&sort[0][direction]=asc`
@@ -162,34 +171,44 @@ export async function getAllReferrals(filters?: {
 
   const data = await airtableFetch('Client Referrals', params)
 
-  const records = data.records.map((record: any) => ({
+  const records = data.records.map((record: any) => {
+  const firstName = (record.fields['First Name'] as string) ?? ''
+  const lastName = (record.fields['Last Name'] as string) ?? ''
+  return {
     id: record.id,
-    clientName: `${record.fields['First Name']} ${record.fields['Last Name']}`,
+    firstName,
+    lastName,
+    clientName: `${firstName} ${lastName}`.trim(),
     referralDate: record.fields['Referral Date'] as string,
     appointmentDate: (record.fields['Appointment Date'] as string[])?.[0] ?? null,
-    appointmentTime: record.fields['Appointment Time'] as string ?? null,
+    saturdayDate: (record.fields['Appointment Date'] as string[])?.[0] ?? null,
+    appointmentTime: (record.fields['Appointment Time'] as string) ?? null,
     referralReview: record.fields['Referral Review'] as string,
     appointmentStatus: record.fields['Appointment Status'] as string,
-    appointmentSlipUrl: record.fields['Appt Slip'] as string ?? null,
-    referredBy: record.fields['Referring Staff'] as string ?? null,
-    referringAgency: record.fields['Referring Agency'] as string ?? null,
-    dataPageUrl: record.fields['Data Page URL'] as string ?? null,
-    address: record.fields['Address'] as string ?? null,
-    city: record.fields['City'] as string ?? null,
-    state: record.fields['State'] as string ?? null,
-    zip: record.fields['Zip'] as string ?? null,
-    phone: record.fields['Phone'] as string ?? null,
-  }))
+    appointmentSlipUrl: (record.fields['Appt Slip'] as string) ?? null,
+    referredBy: (record.fields['Referring Staff'] as string) ?? null,
+    staffName: (record.fields['Referring Staff'] as string) ?? null,
+    staffPhone: (record.fields['Staff Phone'] as string) ?? null,
+    referringAgency: (record.fields['Referring Agency'] as string) ?? null,
+    agencyName: (record.fields['Referring Agency'] as string) ?? null,
+    dataPageUrl: (record.fields['Data Page URL'] as string) ?? null,
+    address: (record.fields['Address'] as string) ?? null,
+    city: (record.fields['City'] as string) ?? null,
+    state: (record.fields['State'] as string) ?? null,
+    zip: (record.fields['Zip'] as string) ?? null,
+    phone: (record.fields['Phone'] as string) ?? null,
+  }
+})
 
   // Client-side search filter
   if (filters?.search) {
-    const q = filters.search.toLowerCase()
-    return records.filter((r: any) =>
-      r.clientName.toLowerCase().includes(q) ||
-      (r.referringAgency ?? '').toLowerCase().includes(q) ||
-      (r.referredBy ?? '').toLowerCase().includes(q)
-    )
-  }
+  const q = filters.search.toLowerCase()
+  return records.filter((r: any) =>
+    r.clientName.toLowerCase().includes(q) ||
+    (r.referringAgency ?? '').toLowerCase().includes(q) ||
+    (r.referredBy ?? '').toLowerCase().includes(q)
+  )
+}
 
   return records
 }
@@ -305,39 +324,95 @@ export async function updateReferralReview(referralId: string, review: string) {
 }
 export async function getReferralById(referralId: string) {
   const data = await airtableFetch('Client Referrals', `/${referralId}`)
+  const f = data.fields
+
+  const item = (label: string, fieldName: string) => {
+    const raw = f[fieldName]
+    if (raw === undefined || raw === null || raw === '' || raw === 0 || raw === '0') return null
+    return { name: label, qty: raw }
+  }
+  const compact = <T,>(arr: (T | null)[]) => arr.filter((x): x is T => x !== null)
+
+  const itemsDisbursed = {
+    livingRoom: compact([
+      item('Bookcase / Storage',    'LR Bookcase/Storage'),
+      item('Chair',                  'LR Chair'),
+      item('Coffee Table',           'LR Coffee Table'),
+      item('Couch / Loveseat / Futon', 'LR Couch/Loveseat/Futon'),
+      item('End Table / TV Stand',   'LR End Table/TV Stand'),
+      item('Lamp',                   'LR Lamp'),
+      item('Picture / Decor',        'LR Picture/Other Decor'),
+      item('Rug',                    'LR Rug'),
+      item('Student Desk',           'LR Student Desk'),
+      item('TV / Electronics',       'LR TV/Electronics'),
+    ]),
+    bedroom: compact([
+      item('Bedframe',               'BR Bedframe'),
+      item('Dresser',                'BR Dresser'),
+      item('Mattress / Boxspring',   'BR Mattress/Boxspring'),
+      item('Nightstand',             'BR Nightstand'),
+    ]),
+    diningRoom: compact([
+      item('Dining Table',           'DR Dining Table'),
+      item('Chair',                  'DR Chair'),
+    ]),
+    kitchen: compact([
+      item('Dishes',                 'KH Dishes'),
+      item('Pots / Pans / Utensils', 'KH Pots/Pans/Utensils'),
+      item('Small Appliance',        'KH Small Appliance'),
+      item('Linen',                  'KH Linen'),
+      item('Bathroom',               'KH Bathroom'),
+      item('General Household',      'KH General Household'),
+      item('Home Office',            'KH Home Office'),
+      item('Cookbook',               'KH Cookbook'),
+    ]),
+    linens: compact([
+      item('Clothes',                'CL Clothes'),
+      item('Shoes',                  'CL Shoes'),
+    ]),
+    misc: compact([
+      item('Crib / Bassinet',        'BK Crib/Bassinet'),
+      item('Baby Clothes',           'BK Baby Clothes'),
+      item('General Baby',           'BK General Baby'),
+      item('Toys / Books / School',  'BK Toys/Books/School'),
+    ]),
+    volunteerInitials: (f['Volunteer Initials'] as string) ?? null,
+    checkoutTime: (f['Check-out Time'] as string) ?? null,
+    distributionNotes: (f['Distribution Notes'] as string) ?? null,
+  }
+
   return {
     id: data.id,
-    clientName: `${data.fields['First Name']} ${data.fields['Last Name']}`,
-    firstName: data.fields['First Name'] as string,
-    lastName: data.fields['Last Name'] as string,
-    dob: data.fields['DOB'] as string ?? null,
-    phone: data.fields['Phone'] as string ?? null,
-    language: data.fields['Preferred Language'] as string ?? null,
-    address: data.fields['Address'] as string ?? null,
-    address2: data.fields['Address 2'] as string ?? null,
-    city: data.fields['City'] as string ?? null,
-    state: data.fields['State'] as string ?? null,
-    zip: data.fields['Zip'] as string ?? null,
-    county: data.fields['County'] as string ?? null,
-    hhSize: data.fields['# in HH'] as string ?? null,
-    children: data.fields['# Children'] as string ?? null,
-    items: data.fields['Items Requested'] as string ?? null,
-    externalNotes: data.fields['External Notes'] as string ?? null,
-    internalNotes: data.fields['Internal Notes'] as string ?? null,
-    referralDate: data.fields['Referral Date'] as string,
-    referredByPhone: data.fields['Staff Phone'] as string ?? null,
-    referralReview: data.fields['Referral Review'] as string,
-    appointmentStatus: data.fields['Appointment Status'] as string,
-    appointmentDate: (data.fields['Appointment Date'] as string[])?.[0] ?? null,
-    appointmentTime: data.fields['Appointment Time'] as string ?? null,
-    appointmentSlipUrl: (data.fields['Appt Slip'] as any[])?.[0]?.url ?? null,
-    dataPageUrl: data.fields['Data Page URL'] as string ?? null,
-    referredBy: data.fields['Referring Staff'] as string ?? null,
-    referringAgency: data.fields['Referring Agency'] as string ?? null,
-    agencyEmail: data.fields['Agency Email'] as string ?? null,
-    possibleDuplicate: data.fields['Possible Duplicate'] as boolean ?? false,
-   
-    
+    clientName: `${f['First Name']} ${f['Last Name']}`,
+    firstName: f['First Name'] as string,
+    lastName: f['Last Name'] as string,
+    dob: f['DOB'] as string ?? null,
+    phone: f['Phone'] as string ?? null,
+    language: f['Preferred Language'] as string ?? null,
+    address: f['Address'] as string ?? null,
+    address2: f['Address 2'] as string ?? null,
+    city: f['City'] as string ?? null,
+    state: f['State'] as string ?? null,
+    zip: f['Zip'] as string ?? null,
+    county: f['County'] as string ?? null,
+    hhSize: f['# in HH'] as string ?? null,
+    children: f['# Children'] as string ?? null,
+    items: f['Items Requested'] as string ?? null,
+    externalNotes: f['External Notes'] as string ?? null,
+    internalNotes: f['Internal Notes'] as string ?? null,
+    referralDate: f['Referral Date'] as string,
+    referredByPhone: f['Staff Phone'] as string ?? null,
+    referralReview: f['Referral Review'] as string,
+    appointmentStatus: f['Appointment Status'] as string,
+    appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
+    appointmentTime: f['Appointment Time'] as string ?? null,
+    appointmentSlipUrl: (f['Appt Slip'] as any[])?.[0]?.url ?? null,
+    dataPageUrl: f['Data Page URL'] as string ?? null,
+    referredBy: f['Referring Staff'] as string ?? null,
+    referringAgency: f['Referring Agency'] as string ?? null,
+    agencyEmail: f['Agency Email'] as string ?? null,
+    possibleDuplicate: f['Possible Duplicate'] as boolean ?? false,
+    itemsDisbursed,
   }
 }
 export async function getSaturdaySchedule() {

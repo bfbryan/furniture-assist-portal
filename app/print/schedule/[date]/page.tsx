@@ -92,6 +92,17 @@ const RIGHT_CATEGORIES = [
   },
 ]
 
+function formatDateNoWeekday(dateStr: string | null) {
+  if (!dateStr) return '—'
+  const parts = dateStr.split('/')
+  if (parts.length === 3) {
+    const d = new Date(`${parts[2]}-${parts[0].padStart(2,'0')}-${parts[1].padStart(2,'0')}T12:00:00`)
+    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+  }
+  const d = new Date(dateStr + 'T12:00:00')
+  return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
+}
+
 function formatDate(dateStr: string | null) {
   if (!dateStr) return '—'
   const parts = dateStr.split('/')
@@ -164,132 +175,219 @@ function CategoryBlock({ cat }: { cat: { name: string; items: string[] } }) {
   )
 }
 
-function ClientSheet({ client, index, total }: { client: Client; index: number; total: number }) {
-  const requestedItems = client.items
-    ? (Array.isArray(client.items) ? client.items : client.items.split(',')).map((i: string) => i.trim().toLowerCase())
-    : []
+/* ============================================================
+   ROSTER PAGE — alphabetical roster, prints as page 1
+   ============================================================ */
+function RosterPage({ clients, date }: { clients: Client[]; date: string }) {
+  const half = Math.ceil(clients.length / 2)
+  const col1 = clients.slice(0, half)
+  const col2 = clients.slice(half)
 
   return (
     <div style={{
-      pageBreakAfter: index < total - 1 ? 'always' : 'auto',
+      pageBreakAfter: 'always',
       pageBreakInside: 'avoid',
-      padding: '14px 18px',
+      padding: '24px 28px',
+      fontFamily: 'Arial, Helvetica, sans-serif',
+      color: '#1a1a1a',
+      maxWidth: '780px',
+      margin: '0 auto',
+      boxSizing: 'border-box',
+    }}>
+      {/* Header */}
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: '14px',
+        paddingBottom: '10px', borderBottom: '3px solid #1B2B4B', marginBottom: '16px',
+      }}>
+        <img
+          src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg"
+          alt="Furniture Assist"
+          style={{ width: '64px', height: '64px', objectFit: 'contain' }}
+        />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: '26px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1 }}>
+            Saturday Appointment Roster
+          </div>
+          <div style={{ fontSize: '15px', fontWeight: 700, color: '#2A7F6F', marginTop: '4px' }}>
+            {formatSaturdayDate(date)}
+          </div>
+        </div>
+        <div style={{
+          fontSize: '13px', color: '#7A8899', fontWeight: 700,
+          textTransform: 'uppercase', letterSpacing: '0.08em',
+        }}>
+          {clients.length} appointment{clients.length !== 1 ? 's' : ''}
+        </div>
+      </div>
+
+      {/* Two-column roster */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+        <RosterColumn clients={col1} />
+        <RosterColumn clients={col2} />
+      </div>
+    </div>
+  )
+}
+
+function RosterColumn({ clients }: { clients: Client[] }) {
+  return (
+    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12.5px' }}>
+      <thead>
+        <tr style={{ borderBottom: '2px solid #1B2B4B' }}>
+          <th style={{
+            textAlign: 'left', padding: '6px 4px',
+            color: '#1B2B4B', fontSize: '10px', fontWeight: 800,
+            textTransform: 'uppercase', letterSpacing: '0.06em',
+          }}>Client</th>
+          <th style={{
+            textAlign: 'right', padding: '6px 4px', width: '70px',
+            color: '#1B2B4B', fontSize: '10px', fontWeight: 800,
+            textTransform: 'uppercase', letterSpacing: '0.06em',
+          }}>Time</th>
+        </tr>
+      </thead>
+      <tbody>
+        {clients.map((c) => (
+          <tr key={c.id} style={{ borderBottom: '1px solid #e8e8e8' }}>
+            <td style={{ padding: '5px 4px', color: '#1a1a1a' }}>
+              {c.lastName}, {c.firstName}
+            </td>
+            <td style={{
+              padding: '5px 4px', textAlign: 'right',
+              fontVariantNumeric: 'tabular-nums', color: '#1B2B4B', fontWeight: 700,
+            }}>
+              {c.appointmentTime ?? '—'}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  )
+}
+
+function ClientSheet({ client, index, total }: { client: Client; index: number; total: number }) {
+  const requestedItems = client.items
+  ? (Array.isArray(client.items) ? client.items : client.items.split(','))
+      .map((i: string) => i.trim().toLowerCase().replace(/\s*\(.*?\)\s*/g, '').trim())
+      .filter(Boolean)
+  : []
+
+  return (
+    <div style={{
+      pageBreakAfter: index < total - 1 ? 'always' : 'avoid',
+      pageBreakInside: 'avoid',
+      padding: '14px 18px 28px',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '11px',
       color: '#1a1a1a',
       maxWidth: '780px',
       margin: '0 auto',
+      position: 'relative',
+      boxSizing: 'border-box',
     }}>
 
-      {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '8px', paddingBottom: '8px', borderBottom: '3px solid #1B2B4B' }}>
+      {/* TOP BANNER: Logo | No Show | Client # */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 130px 130px', gap: '10px', marginBottom: '10px', paddingBottom: '8px', borderBottom: '3px solid #1B2B4B' }}>
+
         {/* Logo + title */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <img src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg" alt="Furniture Assist" style={{ width: '52px', height: '52px', objectFit: 'contain' }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <img src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg" alt="Furniture Assist" style={{ width: '78px', height: '78px', objectFit: 'contain' }} />
           <div>
-            <div style={{ fontSize: '17px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1 }}>Furniture Assist</div>
-            <div style={{ fontSize: '10px', color: '#7A8899', letterSpacing: '0.08em', textTransform: 'uppercase', marginTop: '3px' }}>Client Pickup Sheet</div>
+            <div style={{ fontSize: '24px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1 }}>Furniture Assist</div>
+            <div style={{ fontSize: '11px', color: '#7A8899', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: '5px', fontWeight: 700 }}>Client Pickup Sheet</div>
           </div>
         </div>
 
-        {/* Center — Time + Date pill */}
+        {/* No Show box */}
         <div style={{
-          textAlign: 'center',
-          background: '#1B2B4B', color: 'white',
-          padding: '8px 22px', borderRadius: '8px',
+          border: '3px solid #C0392B', borderRadius: '8px', padding: '8px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px',
           WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
         } as React.CSSProperties}>
-          <div style={{ fontSize: '28px', fontWeight: 900, color: '#3AA08D', lineHeight: 1, WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact' } as React.CSSProperties}>
-            {client.appointmentTime ?? '—'}
+          <div style={{ fontSize: '10px', fontWeight: 900, color: '#C0392B', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            No Show
           </div>
-          <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.9)', marginTop: '3px', whiteSpace: 'nowrap' }}>
-            {formatDate(client.appointmentDate)}
-          </div>
+          <div style={{
+            width: '38px', height: '38px', border: '2.5px solid #C0392B', borderRadius: '4px',
+            WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
+          } as React.CSSProperties} />
         </div>
 
-        {/* Right side — Client # box + QR code */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {/* Client # box */}
-          <div style={{ textAlign: 'center', border: '3px solid #1B2B4B', borderRadius: '8px', padding: '6px 14px', minWidth: '75px' }}>
-            <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Client #</div>
-            <div style={{ fontSize: '26px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, minWidth: '55px', minHeight: '30px' }}>&nbsp;</div>
+        {/* Client # box */}
+        <div style={{
+          border: '3px solid #1B2B4B', borderRadius: '8px', padding: '8px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '4px',
+        }}>
+          <div style={{ fontSize: '10px', fontWeight: 900, color: '#1B2B4B', textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+            Client #
           </div>
-          {/* QR Code */}
-          <div style={{ textAlign: 'center' }}>
-            <QRCodeImage value={client.id} size={64} />
-            <div style={{ fontSize: '7px', color: '#aaa', marginTop: '2px', fontFamily: 'monospace' }}>
-              {client.id.slice(-6)}
-            </div>
-          </div>
+          <div style={{ fontSize: '32px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, minHeight: '38px', minWidth: '70px' }}>&nbsp;</div>
         </div>
       </div>
 
-      {/* Client Name + Address */}
-      <div style={{ marginBottom: '7px' }}>
-        <div style={{ fontSize: '21px', fontWeight: 900, color: '#1B2B4B', letterSpacing: '-0.01em', lineHeight: 1 }}>
-          {client.lastName}, {client.firstName}
-        </div>
-        <div style={{ fontSize: '12px', color: '#444', marginTop: '3px' }}>
-          {client.address}{client.address2 ? `, ${client.address2}` : ''}{client.city ? `, ${client.city}` : ''}{client.state ? `, ${client.state}` : ''} {client.zip ?? ''}
-          {' · '}{client.phone ?? '—'}
-          {client.language && client.language !== 'English' ? ` · ${client.language}` : ''}
-        </div>
-      </div>
+      {/* CLIENT INFO CARD — full width */}
+      <div style={{ border: '1px solid #dcdcdc', borderRadius: '6px', padding: '12px 16px', background: '#F5F5F5', marginBottom: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px' }}>
 
-      {/* Agency box + HH/Items box */}
-      <div style={{ display: 'grid', gridTemplateColumns: '180px 1fr', gap: '10px', marginBottom: '15px' }}>
-
-        {/* Agency box */}
-        <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '6px 9px', background: '#fafafa' }}>
-          <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '3px' }}>Agency / Staff</div>
-          <div style={{ fontSize: '11px', color: '#1a1a1a', fontWeight: 700 }}>{client.referringAgency ?? '—'}</div>
-          <div style={{ fontSize: '10px', color: '#555', marginTop: '1px' }}>{client.referredBy ?? '—'}</div>
-          {client.externalNotes && (
-            <div style={{ marginTop: '4px', fontSize: '9.5px', color: '#8a6800', borderLeft: '2px solid #C9A84C', paddingLeft: '5px', lineHeight: 1.4 }}>
-              {client.externalNotes}
+          {/* LEFT: Name / Time · Date / Address / Phone / Language */}
+          <div>
+            <div style={{ fontSize: '24px', fontWeight: 900, color: '#1B2B4B', letterSpacing: '-0.01em', lineHeight: 1.1 }}>
+              {client.lastName}, {client.firstName}
             </div>
-          )}
-        </div>
-
-        {/* HH + Items box */}
-        <div style={{ border: '1px solid #ddd', borderRadius: '4px', padding: '6px 9px', background: '#fafafa' }}>
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Items Requested</div>
-              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '3px' }}>
-                {requestedItems.length > 0 ? requestedItems.map((item, i) => (
-                  <span key={i} style={{
-                    background: '#EAF4F2', color: '#2A7F6F',
-                    padding: '2px 7px', borderRadius: '3px', fontSize: '9.5px', fontWeight: 700,
-                    WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
-                  } as React.CSSProperties}>
-                    {item}
-                  </span>
-                )) : (
-                  <span style={{ color: '#999', fontSize: '10px' }}>None specified</span>
-                )}
+            <div style={{ fontSize: '20px', fontWeight: 900, color: '#2A7F6F', lineHeight: 1.1, marginTop: '4px' }}>
+              {client.appointmentTime ?? '—'} · {formatDateNoWeekday(client.appointmentDate)}
+            </div>
+            <div style={{ fontSize: '11.5px', color: '#1B2B4B', lineHeight: 1.55, marginTop: '10px' }}>
+              <div>
+                {client.address}{client.address2 ? `, ${client.address2}` : ''}{client.city ? `, ${client.city}` : ''}{client.state ? `, ${client.state}` : ''} {client.zip ?? ''}
               </div>
-            </div>
-            <div style={{ textAlign: 'right', flexShrink: 0, borderLeft: '1px solid #eee', paddingLeft: '10px' }}>
-              <div style={{ fontSize: '8px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Household</div>
-              <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '8px', color: '#888' }}>HH Size</div>
-                  <div style={{ fontSize: '16px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1 }}>{client.hhSize ?? '—'}</div>
-                </div>
-                <div style={{ textAlign: 'center' }}>
-                  <div style={{ fontSize: '8px', color: '#888' }}>Children</div>
-                  <div style={{ fontSize: '16px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1 }}>{client.children ?? '—'}</div>
-                </div>
-              </div>
+              <div>{client.phone ?? '—'}</div>
+              <div>{client.language ?? '—'}</div>
             </div>
           </div>
+
+          {/* RIGHT: ID / Agency / Household + Items */}
+          <div style={{ fontSize: '11.5px', lineHeight: 1.55, textAlign: 'right' }}>
+            <div>
+              <span style={{ color: '#7A8899', fontWeight: 700 }}>ID: </span>
+              <span style={{
+                fontFamily: 'var(--font-roboto-mono), "Courier New", monospace',
+                fontSize: '13px',
+                fontWeight: 600,
+                color: '#000',
+                letterSpacing: '0.15em',
+              }}>
+                {client.id}
+              </span>
+            </div>
+            <div>&nbsp;</div>
+            <div>
+              <span style={{ color: '#7A8899', fontWeight: 700 }}>Agency: </span>
+              <span style={{ color: '#1B2B4B' }}>{client.referringAgency ?? '—'}{client.referredBy ? ` / ${client.referredBy}` : ''}</span>
+            </div>
+            <div>&nbsp;</div>
+            <div>
+              <span style={{ color: '#7A8899', fontWeight: 700 }}>Household: </span>
+              <span style={{ color: '#1B2B4B' }}>{client.hhSize ?? '—'}{client.children ? ` (${client.children} children)` : ''}</span>
+            </div>
+            <div>
+              <span style={{ color: '#7A8899', fontWeight: 700 }}>Items: </span>
+              <span style={{ color: '#1B2B4B' }}>{requestedItems.length > 0 ? requestedItems.join(' · ') : 'None specified'}</span>
+            </div>
+          </div>
+
         </div>
 
+        {/* External notes warning, if any */}
+        {client.externalNotes && (
+          <div style={{ marginTop: '8px', fontSize: '10.5px', color: '#8a6800', borderLeft: '3px solid #C9A84C', paddingLeft: '8px', lineHeight: 1.4 }}>
+            {client.externalNotes}
+          </div>
+        )}
       </div>
 
-      {/* Tracking Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '8px' }}>
+      {/* ITEMS TABLE — maximum space */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '16px' }}>
         <div>
           {LEFT_CATEGORIES.map(cat => (
             <CategoryBlock key={cat.name} cat={cat} />
@@ -302,34 +400,24 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
         </div>
       </div>
 
-      {/* Footer */}
-<div style={{ display: 'flex', gap: '12px', borderTop: '2px solid #ccc', paddingTop: '8px' }}>
-  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '130px', flexShrink: 0 }}>
-    <div>
-      <div style={{ fontSize: '9px', color: '#888', marginBottom: '14px' }}>Volunteer Initials</div>
-      <div style={{ borderBottom: '1px solid #999', width: '70px' }} />
-    </div>
-    <div>
-      <div style={{ fontSize: '9px', color: '#888', marginBottom: '14px' }}>Check-out Time</div>
-      <div style={{ borderBottom: '1px solid #999', width: '70px' }} />
-    </div>
-    {/* No Show checkbox */}
-    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
-      <div style={{
-        width: '20px', height: '20px', border: '2px solid #C0392B',
-        borderRadius: '3px', flexShrink: 0,
-        WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
-      } as React.CSSProperties} />
-      <div style={{ fontSize: '11px', fontWeight: 700, color: '#C0392B', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        No Show
+      {/* BOTTOM STRIP: Initials | Time | Notes */}
+      <div style={{ display: 'grid', gridTemplateColumns: '120px 130px 1fr', gap: '10px' }}>
+
+        <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '6px 9px', background: 'white', height: '78px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Initials</div>
+          <div style={{ flex: 1 }} />
+        </div>
+
+        <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '6px 9px', background: 'white', height: '78px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Check-out Time</div>
+          <div style={{ flex: 1 }} />
+        </div>
+
+        <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '6px 9px', background: 'white', height: '78px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#888', letterSpacing: '0.06em', marginBottom: '4px' }}>Additional Notes</div>
+          <div style={{ flex: 1 }} />
+        </div>
       </div>
-    </div>
-  </div>
-  <div style={{ flex: 1 }}>
-    <div style={{ fontSize: '9px', color: '#888', marginBottom: '5px' }}>Additional Notes</div>
-    <div style={{ border: '1px solid #ccc', borderRadius: '4px', height: '52px', background: 'white' }} />
-  </div>
-</div>
 
     </div>
   )
@@ -348,7 +436,12 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
         .then(r => r.json())
         .then(data => {
           if (Array.isArray(data)) {
-            setClients(data)
+            const sorted = [...data].sort((a, b) => {
+              const lastCmp = (a.lastName ?? '').localeCompare(b.lastName ?? '')
+              if (lastCmp !== 0) return lastCmp
+              return (a.firstName ?? '').localeCompare(b.firstName ?? '')
+            })
+            setClients(sorted)
           } else {
             setError(data.error ?? 'Failed to load clients')
           }
@@ -393,7 +486,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
           </a>
           <button onClick={handlePrint}
             style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: '#2A7F6F', color: 'white', fontSize: '13px', fontWeight: 700, cursor: 'pointer', fontFamily: 'var(--font-montserrat)' }}>
-            🖨 Print All ({clients.length} sheets)
+            🖨 Print Roster + {clients.length} sheets
           </button>
         </div>
       </div>
@@ -405,15 +498,24 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
           No scheduled clients found for this date.
         </div>
       ) : (
-        clients.map((client, i) => (
-          <ClientSheet key={client.id} client={client} index={i} total={clients.length} />
-        ))
+        <div className="print-sheet-wrapper">
+          <RosterPage clients={clients} date={date} />
+          {clients.map((client, i) => (
+            <ClientSheet key={client.id} client={client} index={i} total={clients.length} />
+          ))}
+        </div>
       )}
 
       <style>{`
         @media print {
           .no-print { display: none !important; }
-          body { margin: 0; padding: 0; }
+          html, body { margin: 0 !important; padding: 0 !important; height: auto !important; }
+          body > *:not(.print-sheet-wrapper) { display: none !important; }
+          .print-sheet-wrapper { margin: 0 !important; padding: 0 !important; }
+          .print-sheet-wrapper > div:last-child { 
+            page-break-after: avoid !important; 
+            margin-bottom: 0 !important; 
+          }
           @page { margin: 0.4in; size: letter portrait; }
           * { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
         }
@@ -421,4 +523,3 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
     </>
   )
 }
-

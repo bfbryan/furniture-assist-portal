@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { Lato, Montserrat } from "next/font/google";
+import { Lato, Montserrat, Roboto_Mono } from "next/font/google";
 import { ClerkProvider } from "@clerk/nextjs";
 import "./globals.css";
+
 
 const lato = Lato({
   variable: "--font-lato",
@@ -9,16 +10,26 @@ const lato = Lato({
   weight: ["400", "700"],
 });
 
+
 const montserrat = Montserrat({
   variable: "--font-montserrat",
   subsets: ["latin"],
   weight: ["400", "600", "700"],
 });
 
+
+const robotoMono = Roboto_Mono({
+  variable: "--font-roboto-mono",
+  subsets: ["latin"],
+  weight: ["400", "700"],
+});
+
+
 export const metadata: Metadata = {
   title: "Furniture Assist | Agency Portal",
   description: "Agency Partner Portal",
 };
+
 
 export default function RootLayout({
   children,
@@ -28,7 +39,7 @@ export default function RootLayout({
   return (
     <ClerkProvider>
       <html lang="en">
-        <body className={`${lato.variable} ${montserrat.variable} bg-white min-h-screen`}
+        <body className={`${lato.variable} ${montserrat.variable} ${robotoMono.variable} bg-white min-h-screen`}
           style={{ fontFamily: "var(--font-lato), sans-serif" }}>
           {children}
         </body>

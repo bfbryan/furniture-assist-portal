@@ -2,6 +2,18 @@
 
 import { useState, useEffect } from 'react'
 
+type ItemsDisbursed = {
+  livingRoom: { name: string; qty: string | number }[]
+  bedroom: { name: string; qty: string | number }[]
+  diningRoom: { name: string; qty: string | number }[]
+  kitchen: { name: string; qty: string | number }[]
+  linens: { name: string; qty: string | number }[]
+  misc: { name: string; qty: string | number }[]
+  volunteerInitials: string | null
+  checkoutTime: string | null
+  distributionNotes: string | null
+}
+
 type Referral = {
   id: string
   clientName: string
@@ -33,6 +45,7 @@ type Referral = {
   referredByPhone: string | null
   agencyEmail: string | null
   possibleDuplicate: boolean
+  itemsDisbursed: ItemsDisbursed | null
 }
 
 function formatDate(dateStr: string | null) {
@@ -74,32 +87,105 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
+function ItemGroup({ title, items }: { title: string; items: { name: string; qty: string | number }[] }) {
+  if (!items || items.length === 0) return null
+  return (
+    <div style={{ marginBottom: '18px' }}>
+      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2A7F6F', marginBottom: '8px' }}>
+        {title}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 18px' }}>
+        {items.map((it, i) => (
+          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#2C3A4A', borderBottom: '1px dotted #EDE9E1', padding: '4px 0' }}>
+            <span>{it.name}</span>
+            <span style={{ fontWeight: 700, color: '#1B2B4B' }}>{it.qty}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
+  const groups = [
+    { title: 'Living Room', items: d.livingRoom },
+    { title: 'Bedroom', items: d.bedroom },
+    { title: 'Dining Room', items: d.diningRoom },
+    { title: 'Kitchen / Household', items: d.kitchen },
+    { title: 'Clothes & Shoes', items: d.linens },
+    { title: 'Baby / Kids', items: d.misc },
+  ].filter(g => g.items.length > 0)
+
+  const totalCount = groups.reduce((sum, g) => sum + g.items.length, 0)
+
+  if (totalCount === 0 && !d.distributionNotes && !d.volunteerInitials) {
+    return (
+      <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
+        <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1' }}>
+          <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Items Disbursed</h2>
+        </div>
+        <div style={{ padding: '20px 24px', fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>
+          No items recorded yet.
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
+      <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Items Disbursed</h2>
+        <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#7A8899' }}>
+          {d.volunteerInitials && <span><strong style={{ color: '#1B2B4B' }}>{d.volunteerInitials}</strong> · vol</span>}
+          {d.checkoutTime && <span>{d.checkoutTime}</span>}
+        </div>
+      </div>
+
+      <div style={{ padding: '18px 24px' }}>
+        <div style={{ columnCount: 3, columnGap: '28px' }}>
+          {groups.map((g, gi) => (
+            <div key={gi} style={{ breakInside: 'avoid', marginBottom: '14px' }}>
+              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2A7F6F', marginBottom: '6px' }}>
+                {g.title}
+              </div>
+              {g.items.map((it, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12.5px', color: '#2C3A4A', padding: '3px 0', borderBottom: '1px dotted #EDE9E1', gap: '8px' }}>
+                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</span>
+                  <span style={{ fontWeight: 700, color: '#1B2B4B', flexShrink: 0 }}>{it.qty}</span>
+                </div>
+              ))}
+            </div>
+          ))}
+        </div>
+
+        {d.distributionNotes && (
+          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #EDE9E1' }}>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#7A8899', marginBottom: '6px' }}>
+              Distribution Notes
+            </div>
+            <div style={{ fontSize: '13px', color: '#2C3A4A', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+              {d.distributionNotes}
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
 function InternalNotesModal({ currentNotes, onSave, onCancel, saving }: {
   currentNotes: string; onSave: (notes: string) => void; onCancel: () => void; saving: boolean
 }) {
   const [value, setValue] = useState(currentNotes)
-
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(27,43,75,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
       <div style={{ background: 'white', borderRadius: '14px', padding: '32px', width: '500px', boxShadow: '0 8px 40px rgba(27,43,75,0.18)' }}>
-        <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B', marginBottom: '8px' }}>
-          Internal Notes
-        </div>
-        <div style={{ fontSize: '13px', color: '#7A8899', marginBottom: '16px' }}>
-          These notes are only visible to Furniture Assist staff.
-        </div>
-        <textarea
-          value={value}
-          onChange={e => setValue(e.target.value)}
-          rows={6}
-          placeholder="Add internal notes about this referral..."
-          style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#1B2B4B', fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box', background: 'white' }}
-        />
+        <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B', marginBottom: '8px' }}>Internal Notes</div>
+        <div style={{ fontSize: '13px', color: '#7A8899', marginBottom: '16px' }}>These notes are only visible to Furniture Assist staff.</div>
+        <textarea value={value} onChange={e => setValue(e.target.value)} rows={6} placeholder="Add internal notes about this referral..."
+          style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#1B2B4B', fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box', background: 'white' }} />
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
           <button onClick={onCancel} disabled={saving}
-            style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
-            Cancel
-          </button>
+            style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Cancel</button>
           <button onClick={() => onSave(value)} disabled={saving}
             style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
             {saving ? 'Saving...' : 'Save Notes'}
@@ -122,7 +208,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     params.then(({ id }) => {
       setReferralId(id)
-      fetch(`/api/dawson/referrals/${id}`)
+      fetch(`/api/dawson/referrals/${id}`, { cache: 'no-store' })
         .then(r => r.json())
         .then(data => { setReferral(data); setLoading(false) })
     })
@@ -133,14 +219,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     setActionLoading(true)
     try {
       const res = await fetch(`/api/dawson/referrals/${referralId}/review`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ review }),
       })
-      if (res.ok && referral) {
-        setReferral({ ...referral, referralReview: review })
-        setConfirm(null)
-      }
+      if (res.ok && referral) { setReferral({ ...referral, referralReview: review }); setConfirm(null) }
     } finally { setActionLoading(false) }
   }
 
@@ -148,42 +230,29 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     setNotesSaving(true)
     try {
       const res = await fetch(`/api/dawson/referrals/${referralId}/notes`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ internalNotes }),
       })
-      if (res.ok && referral) {
-        setReferral({ ...referral, internalNotes })
-        setNotesModal(false)
-      }
+      if (res.ok && referral) { setReferral({ ...referral, internalNotes }); setNotesModal(false) }
     } finally { setNotesSaving(false) }
   }
 
   if (loading) return (
-    <div style={{ background: '#F7F5F1', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A8899' }}>
-      Loading referral...
-    </div>
+    <div style={{ background: '#F7F5F1', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A8899' }}>Loading referral...</div>
   )
-
   if (!referral) return (
-    <div style={{ background: '#F7F5F1', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#C0392B' }}>
-      Referral not found.
-    </div>
+    <div style={{ background: '#F7F5F1', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#C0392B' }}>Referral not found.</div>
   )
 
   const status = getPortalStatus(referral.referralReview, referral.appointmentStatus)
   const colors = STATUS_COLORS[status] ?? { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' }
 
+  const showItemsDisbursed = status === 'Completed' || status === 'Cancelled'
+
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-
       {notesModal && (
-        <InternalNotesModal
-          currentNotes={referral.internalNotes ?? ''}
-          onSave={handleSaveNotes}
-          onCancel={() => setNotesModal(false)}
-          saving={notesSaving}
-        />
+        <InternalNotesModal currentNotes={referral.internalNotes ?? ''} onSave={handleSaveNotes} onCancel={() => setNotesModal(false)} saving={notesSaving} />
       )}
 
       {/* Top bar */}
@@ -196,16 +265,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           <span style={{ color: '#EDE9E1' }}>→</span>
           <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>{referral.clientName}</div>
           {referral.possibleDuplicate && (
-            <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B' }}>
-              ⚠ Possible Duplicate
-            </span>
+            <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B' }}>⚠ Possible Duplicate</span>
           )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
-            {status}
-          </span>
+          <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>{status}</span>
 
           {status === 'Submitted' && (
             <>
@@ -223,9 +288,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           {referral.appointmentSlipUrl && (
             <a href={referral.appointmentSlipUrl} target="_blank" rel="noreferrer"
               style={{ padding: '8px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-              </svg>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
               Appt Slip
             </a>
           )}
@@ -239,9 +302,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
           {confirm && (
             <button onClick={() => setConfirm(null)}
-              style={{ padding: '8px 14px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
-              Cancel
-            </button>
+              style={{ padding: '8px 14px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>Cancel</button>
           )}
         </div>
       </header>
@@ -291,19 +352,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             </div>
           </div>
 
-          {/* External Notes */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Agency Notes</h2>
-            </div>
-            <div style={{ padding: '16px 24px' }}>
-              {referral.externalNotes ? (
-                <div style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{referral.externalNotes}</div>
-              ) : (
-                <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>No notes submitted by agency.</div>
-              )}
-            </div>
-          </div>
+          {/* Items Disbursed — only for Completed/Cancelled */}
+          {showItemsDisbursed && referral.itemsDisbursed && (
+            <ItemsDisbursedCard d={referral.itemsDisbursed} />
+          )}
+
+          
 
         </div>
 
@@ -328,7 +382,19 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               } />
             </div>
           </div>
-
+{/* External Notes */}
+          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
+            <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1' }}>
+              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Agency Notes</h2>
+            </div>
+            <div style={{ padding: '16px 24px' }}>
+              {referral.externalNotes ? (
+                <div style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{referral.externalNotes}</div>
+              ) : (
+                <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>No notes submitted by agency.</div>
+              )}
+            </div>
+          </div>
           {/* Appointment */}
           <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
             <div style={{ padding: '16px 20px', borderBottom: '1px solid #EDE9E1' }}>
@@ -342,9 +408,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
                 <div style={{ paddingTop: '12px' }}>
                   <a href={referral.appointmentSlipUrl} target="_blank" rel="noreferrer"
                     style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#2A7F6F', textDecoration: 'none' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                    </svg>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                     View Appointment Slip
                   </a>
                 </div>
