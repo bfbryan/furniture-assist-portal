@@ -1,10 +1,8 @@
 // app/api/dawson/agencies/[id]/status/route.ts
 
-import { auth } from '@clerk/nextjs/server'
 import { clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-
-const ALLOWED_USER_IDS = ['user_3BmTnGTVcPCuCJTpP8uKrQm4KXj']
+import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -13,20 +11,25 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const denied = await requireDawsonAccess()
+  if (denied) return denied
 
   const { id } = await params
   const { status, previousStatus } = await req.json()
 
+  // Per user: leave validStatuses as-is. Unclaimed/Invited transitions
+  // are handled by other endpoints (import, invite). This route covers
+  // Pending → Approved/Rejected and Approved ↔ Inactive transitions only.
   const validStatuses = ['Pending', 'Approved', 'Rejected', 'Inactive']
   if (!validStatuses.includes(status)) {
     return NextResponse.json({ error: 'Invalid status' }, { status: 400 })
   }
 
-  // Fetch current agency record to get Clerk Org ID and contact info
+  // Fetch current agency record to get Clerk Org ID and contact info.
+  // SCHEMA MIGRATION (June 2026): the Agencies table no longer holds
+  // First Name / Email directly. They are now lookup fields via the
+  // Primary Admin link: "Admin First Name" and "Admin Email".
+  // Both return arrays from Airtable (lookup format) — take [0].
   const agencyRes = await fetch(
     `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Agencies')}/${id}`,
     { headers: { Authorization: `Bearer ${API_KEY}` } }
@@ -35,10 +38,17 @@ export async function PATCH(
     return NextResponse.json({ error: 'Agency not found' }, { status: 404 })
   }
   const agencyData = await agencyRes.json()
-  const clerkOrgId = agencyData.fields['Clerk Org ID'] as string ?? null
+  const clerkOrgId = (agencyData.fields['Clerk Org ID'] as string) ?? null
   const agencyName = agencyData.fields['Agency Name'] as string
-  const contactEmail = agencyData.fields['Email'] as string
-  const contactFirstName = agencyData.fields['First Name'] as string
+
+  // Lookup fields come back as arrays; unwrap to first value (or '').
+  const unwrapLookup = (v: unknown): string => {
+    if (Array.isArray(v)) return (v[0] as string) ?? ''
+    if (typeof v === 'string') return v
+    return ''
+  }
+  const contactEmail = unwrapLookup(agencyData.fields['Admin Email'])
+  const contactFirstName = unwrapLookup(agencyData.fields['Admin First Name'])
 
   // Update AT status
   const fields: Record<string, unknown> = { Status: status }
@@ -78,10 +88,15 @@ export async function PATCH(
     }
   }
 
-  // Send Zapier webhooks for email notifications
+  // Send Zapier webhooks for email notifications.
+  // Only fire when we have a contactEmail — agencies without a Primary Admin
+  // wouldn't have anywhere to send the email.
   try {
-    // Inactive — always send deactivation email
-    if (status === 'Inactive' && process.env.ZAPIER_AGENCY_INACTIVE_WEBHOOK) {
+    if (
+      status === 'Inactive' &&
+      contactEmail &&
+      process.env.ZAPIER_AGENCY_INACTIVE_WEBHOOK
+    ) {
       await fetch(process.env.ZAPIER_AGENCY_INACTIVE_WEBHOOK, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -89,8 +104,12 @@ export async function PATCH(
       })
     }
 
-    // Approved from Inactive only — reinstatement email
-    if (status === 'Approved' && previousStatus === 'Inactive' && process.env.ZAPIER_AGENCY_REINSTATE_WEBHOOK) {
+    if (
+      status === 'Approved' &&
+      previousStatus === 'Inactive' &&
+      contactEmail &&
+      process.env.ZAPIER_AGENCY_REINSTATE_WEBHOOK
+    ) {
       await fetch(process.env.ZAPIER_AGENCY_REINSTATE_WEBHOOK, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -103,4 +122,3 @@ export async function PATCH(
 
   return NextResponse.json({ success: true })
 }
-

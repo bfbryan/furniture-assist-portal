@@ -1,16 +1,23 @@
 'use client'
 
+
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
+
+// LOCKED to the post–June 2026 schema. Client Referrals.Items Requested
+// is a multi-select with EXACTLY these six options (verified in Airtable
+// 06/30/26). Any other string will be rejected by Airtable as an invalid
+// option. Display order chosen for the form UI; storage order is unordered.
 const ITEMS = [
   'Bedroom Furniture',
-  'Living Room Furniture',
   'Dining Room Furniture',
+  'Living Room Furniture',
   'Household Items (including kitchen & linens)',
-  'Baby Items',
   'Clothes',
+  'Baby Items',
 ]
+
 
 function formatPhone(raw: string): string {
   const d = raw.replace(/\D/g, '').slice(0, 10)
@@ -20,10 +27,12 @@ function formatPhone(raw: string): string {
   return ''
 }
 
+
 const LABEL: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
   letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block',
 }
+
 
 const INPUT: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: '7px',
@@ -31,24 +40,32 @@ const INPUT: React.CSSProperties = {
   background: 'white', outline: 'none',
 }
 
+
 const SECTION: React.CSSProperties = {
   fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px',
   color: '#2A7F6F', textTransform: 'uppercase', letterSpacing: '0.08em',
   marginBottom: '16px', marginTop: '8px',
 }
 
+
 const SUBPANEL: React.CSSProperties = {
   background: '#FAF8F4', border: '1px solid #EDE9E1', borderRadius: '8px',
   padding: '16px', marginBottom: '24px',
 }
 
+
+// Agency type — post-migration `email` comes from the Primary Admin lookup
+// chain and is null for Unclaimed agencies. We keep it for display only;
+// the API route does NOT use it to write to the referral (those columns
+// are computed lookups now — see lib/createReferralWithAgency.ts).
 type Agency = {
   id: string
   name: string
-  email: string
+  email: string | null
   contactName: string
   status: string
 }
+
 
 type StaffMember = {
   id: string
@@ -61,10 +78,12 @@ type StaffMember = {
   displayName: string
 }
 
+
 type AvailableDate = {
   date: string
   slotsRemaining: number
 }
+
 
 export default function DawsonAddReferralPage() {
   const router = useRouter()
@@ -73,6 +92,7 @@ export default function DawsonAddReferralPage() {
   const [isDuplicate, setIsDuplicate] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+
   const [agencies, setAgencies] = useState<Agency[]>([])
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([])
   const [selectedAgency, setSelectedAgency] = useState<Agency | null>(null)
@@ -80,21 +100,26 @@ export default function DawsonAddReferralPage() {
   const [agenciesLoading, setAgenciesLoading] = useState(true)
   const [staffLoading, setStaffLoading] = useState(false)
 
+
   // Agency combobox state
   const [agencyQuery, setAgencyQuery] = useState('')
   const [agencyDropdownOpen, setAgencyDropdownOpen] = useState(false)
   const agencyComboRef = useRef<HTMLDivElement>(null)
 
+
   // New agency inline panel
   const [newAgencyMode, setNewAgencyMode] = useState(false)
   const [newAgency, setNewAgency] = useState({ name: '', email: '' })
+
 
   // New staff inline panel (for existing agency)
   const [newStaffMode, setNewStaffMode] = useState(false)
   const [newStaff, setNewStaff] = useState({ firstName: '', lastName: '', email: '', phone: '' })
 
+
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
+
 
   const [form, setForm] = useState({
     firstName: '', lastName: '',
@@ -109,6 +134,7 @@ export default function DawsonAddReferralPage() {
     flexible: false,
   })
 
+
   // Load Approved + Unclaimed agencies
   useEffect(() => {
     fetch('/api/dawson/agencies?status=Approved,Unclaimed')
@@ -116,6 +142,7 @@ export default function DawsonAddReferralPage() {
       .then(data => { setAgencies(Array.isArray(data) ? data : []); setAgenciesLoading(false) })
       .catch(() => setAgenciesLoading(false))
   }, [])
+
 
   // Load staff when an existing agency is selected
   useEffect(() => {
@@ -130,6 +157,7 @@ export default function DawsonAddReferralPage() {
       .catch(() => setStaffLoading(false))
   }, [selectedAgency])
 
+
   // Load available Saturdays
 const loadAvailability = () => {
   setAvailabilityLoading(true)
@@ -142,9 +170,11 @@ const loadAvailability = () => {
     .catch(() => setAvailabilityLoading(false))
 }
 
+
 useEffect(() => {
   loadAvailability()
 }, [])
+
 
   // Close agency dropdown on outside click
   useEffect(() => {
@@ -157,7 +187,9 @@ useEffect(() => {
     return () => document.removeEventListener('mousedown', handler)
   }, [])
 
+
   const set = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }))
+
 
   const toggleItem = (item: string) => {
     setForm(prev => ({
@@ -168,11 +200,14 @@ useEffect(() => {
     }))
   }
 
+
   const filteredAgencies = agencyQuery.trim()
     ? agencies.filter(a => a.name.toLowerCase().includes(agencyQuery.toLowerCase()))
     : agencies
 
+
   const exactMatch = agencies.some(a => a.name.toLowerCase() === agencyQuery.trim().toLowerCase())
+
 
   const pickAgency = (agency: Agency) => {
     setSelectedAgency(agency)
@@ -181,6 +216,7 @@ useEffect(() => {
     setNewAgencyMode(false)
     setNewAgency({ name: '', email: '' })
   }
+
 
   const startNewAgency = () => {
     setSelectedAgency(null)
@@ -192,6 +228,7 @@ useEffect(() => {
     setAgencyDropdownOpen(false)
   }
 
+
   const clearAgency = () => {
     setSelectedAgency(null)
     setSelectedStaff(null)
@@ -201,6 +238,7 @@ useEffect(() => {
     setNewAgency({ name: '', email: '' })
     setNewStaff({ firstName: '', lastName: '', email: '', phone: '' })
   }
+
 
   const pickStaff = (id: string) => {
     if (id === '__new__') {
@@ -213,8 +251,10 @@ useEffect(() => {
     setNewStaffMode(false)
   }
 
+
   const handleSubmit = async () => {
     setError(null)
+
 
     // Agency validation
     if (newAgencyMode) {
@@ -223,6 +263,7 @@ useEffect(() => {
     } else if (!selectedAgency) {
       setError('Please select an agency.'); return
     }
+
 
     // Staff validation
     if (newAgencyMode || newStaffMode) {
@@ -235,6 +276,7 @@ useEffect(() => {
     } else if (!selectedStaff) {
       setError('Please select a staff member.'); return
     }
+
 
     const required = ['firstName', 'lastName', 'address', 'city', 'state', 'zip', 'hhSize', 'children', 'dob']
     for (const f of required) {
@@ -252,12 +294,23 @@ useEffect(() => {
       return
     }
 
-    // Build payload — three cases
+
+    // Build payload — three cases.
+    //
+    // Post-migration (June 2026): the API route must NOT write to
+    //   Referring Agency / Referring Staff / Agency Email / Staff Phone
+    // on the Client Referrals record (those are Lookups via Referring
+    // Staff Link). Instead it writes Referring Staff Link = [userId].
+    //
+    // We only send the IDs and (for new-staff cases) the data needed to
+    // create the Agency User. The API route is responsible for the
+    // find-or-create logic and for setting Referring Staff Link.
     const payload: any = {
       ...form,
       preferredDate: form.flexible ? null : form.preferredDate,
       flexible: form.flexible,
     }
+
 
     if (newAgencyMode) {
       // Case 3: brand new agency + new staff
@@ -274,8 +327,6 @@ useEffect(() => {
     } else if (newStaffMode) {
       // Case 2: existing agency + new staff
       payload.agencyId = selectedAgency!.id
-      payload.agencyName = selectedAgency!.name
-      payload.agencyEmail = selectedAgency!.email
       payload.newStaff = {
         firstName: newStaff.firstName.trim(),
         lastName: newStaff.lastName.trim(),
@@ -283,14 +334,12 @@ useEffect(() => {
         phone: newStaff.phone.trim(),
       }
     } else {
-      // Case 1: both exist
+      // Case 1: both exist — just send the IDs; the API route resolves
+      // everything else from Airtable via the Referring Staff Link lookup.
       payload.agencyId = selectedAgency!.id
-      payload.agencyName = selectedAgency!.name
-      payload.agencyEmail = selectedStaff!.email || selectedAgency!.email
       payload.staffId = selectedStaff!.id
-      payload.staffName = selectedStaff!.name
-      payload.staffPhone = selectedStaff!.phone
     }
+
 
     setLoading(true)
     try {
@@ -310,6 +359,7 @@ useEffect(() => {
       setLoading(false)
     }
   }
+
 
   if (submitted) {
     return (
@@ -351,6 +401,7 @@ useEffect(() => {
     )
   }
 
+
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
       <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 50 }}>
@@ -359,11 +410,14 @@ useEffect(() => {
         </div>
       </header>
 
+
       <div style={{ maxWidth: '780px', margin: '0 auto', padding: '32px' }}>
         <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
 
+
           {/* Agency + Staff Selection */}
           <div style={SECTION}>Agency & Staff</div>
+
 
           {/* Agency combobox */}
           <div style={{ marginBottom: '16px' }}>
@@ -407,6 +461,11 @@ useEffect(() => {
                       onMouseLeave={e => (e.currentTarget.style.background = 'white')}
                     >
                       {a.name}
+                      {a.status === 'Unclaimed' && (
+                        <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', background: 'rgba(122,136,153,0.15)', color: '#7A8899', letterSpacing: '0.04em' }}>
+                          UNCLAIMED
+                        </span>
+                      )}
                     </div>
                   ))}
                   {agencyQuery.trim() && !exactMatch && (
@@ -421,6 +480,7 @@ useEffect(() => {
               )}
             </div>
           </div>
+
 
           {/* New agency inline panel */}
           {newAgencyMode && (
@@ -464,6 +524,7 @@ useEffect(() => {
             </div>
           )}
 
+
           {/* Staff selection (only if existing agency is picked) */}
           {selectedAgency && !newAgencyMode && (
             <div style={{ marginBottom: '16px' }}>
@@ -482,6 +543,7 @@ useEffect(() => {
               </select>
             </div>
           )}
+
 
           {/* New staff inline panel (for existing agency) */}
           {selectedAgency && newStaffMode && (
@@ -512,7 +574,9 @@ useEffect(() => {
             </div>
           )}
 
+
           <div style={{ marginBottom: '12px' }} />
+
 
           {/* Client Info */}
           <div style={SECTION}>Client Information</div>
@@ -545,6 +609,7 @@ useEffect(() => {
             </div>
           </div>
 
+
           {/* Address */}
           <div style={{ ...SECTION, marginTop: '24px' }}>Address</div>
           <div style={{ marginBottom: '16px' }}>
@@ -570,6 +635,7 @@ useEffect(() => {
             </div>
           </div>
 
+
           {/* Household */}
           <div style={{ ...SECTION, marginTop: '24px' }}>Household</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -582,6 +648,7 @@ useEffect(() => {
               <input style={INPUT} type="number" min="0" value={form.children} onChange={e => set('children', e.target.value)} placeholder="Children under 18" />
             </div>
           </div>
+
 
           {/* Items */}
           <div style={{ ...SECTION, marginTop: '24px' }}>Items Requested *</div>
@@ -600,6 +667,7 @@ useEffect(() => {
               </label>
             ))}
           </div>
+
 
           {/* Preferred Appointment */}
           <div style={{ ...SECTION, marginTop: '8px' }}>Preferred Appointment</div>
@@ -649,6 +717,7 @@ useEffect(() => {
             </div>
           </div>
 
+
           {/* Notes */}
           <div style={{ ...SECTION, marginTop: '8px' }}>Additional Notes</div>
           <textarea
@@ -658,16 +727,19 @@ useEffect(() => {
             placeholder="Any special circumstances or additional information..."
           />
 
+
           {error && (
             <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: '#C0392B' }}>
               {error}
             </div>
           )}
 
+
           <button onClick={handleSubmit} disabled={loading}
             style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: loading ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', cursor: loading ? 'not-allowed' : 'pointer', letterSpacing: '0.02em' }}>
             {loading ? 'Submitting...' : 'Submit Referral'}
           </button>
+
 
         </div>
       </div>

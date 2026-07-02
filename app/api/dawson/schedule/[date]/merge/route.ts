@@ -1,9 +1,17 @@
 // app/api/dawson/schedule/[date]/merge/route.ts
+//
+// Flips the "Mail Merge Complete" flag on the Saturday Schedule record for
+// the given date. Called by the print sheets page right before window.print().
+//
+// TODO (parked cleanup item):
+//   This flag currently flips on user action (opening the print dialog),
+//   not on downstream Zap confirmation that emails were sent. Move the
+//   flag write to the Zap's final step (post-send) so the flag actually
+//   means "emails went out" rather than "someone hit Print".
 
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 
-const ALLOWED_USER_IDS = ['user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', 'user_3BodwTW4I7Vamt4t7wD3qeA7boM']
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
 
@@ -11,10 +19,8 @@ export async function PATCH(
   req: NextRequest,
   { params }: { params: Promise<{ date: string }> }
 ) {
-  const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const denied = await requireDawsonAccess()
+  if (denied) return denied
 
   const { date } = await params
 
@@ -47,7 +53,7 @@ export async function PATCH(
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        fields: { 'Mail Merge Complete': true }
+        fields: { 'Mail Merge Complete': true },
       }),
     }
   )

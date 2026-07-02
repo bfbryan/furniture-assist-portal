@@ -40,10 +40,14 @@ type Referral = {
   appointmentTime: string | null
   appointmentSlipUrl: string | null
   dataPageUrl: string | null
+  // June 2026: these four are LOOKUPS through Referring Staff Link.
+  // All four will be null when the referral was imported without a usable
+  // staff identity (Excel Branch c — no email, no name).
   referredBy: string | null
   referringAgency: string | null
   referredByPhone: string | null
   agencyEmail: string | null
+  referringStaffLinkId: string | null   // link to Agency User — for future Staff ID deep-link
   possibleDuplicate: boolean
   itemsDisbursed: ItemsDisbursed | null
 }
@@ -372,7 +376,13 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             <div style={{ padding: '12px 20px' }}>
               <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
               <InfoRow label="Agency" value={referral.referringAgency} />
-              <InfoRow label="Staff" value={referral.referredBy} />
+              <InfoRow label="Staff" value={
+                referral.referredBy
+                  ? referral.referredBy
+                  : !referral.referringStaffLinkId
+                    ? <span style={{ color: '#C9A84C', fontStyle: 'italic' }}>No staff linked — fix at agency claim</span>
+                    : null
+              } />
               <InfoRow label="Staff Phone" value={referral.referredByPhone} />
               <InfoRow label="Agency Email" value={referral.agencyEmail ? <a href={`mailto:${referral.agencyEmail}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{referral.agencyEmail}</a> : null} />
               <InfoRow label="Review Status" value={
@@ -402,8 +412,8 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             </div>
             <div style={{ padding: '12px 20px' }}>
               <InfoRow label="Status" value={<span style={{ fontWeight: 700, color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>} />
-              <InfoRow label="Date" value={status === 'Scheduled' || status === 'Completed' ? formatDate(referral.appointmentDate) : '—'} />
-              <InfoRow label="Time" value={status === 'Scheduled' || status === 'Completed' ? referral.appointmentTime : '—'} />
+              <InfoRow label="Date" value={referral.appointmentDate ? formatDate(referral.appointmentDate) : '—'} />
+              <InfoRow label="Time" value={referral.appointmentTime || '—'} />
               {referral.appointmentSlipUrl && (
                 <div style={{ paddingTop: '12px' }}>
                   <a href={referral.appointmentSlipUrl} target="_blank" rel="noreferrer"

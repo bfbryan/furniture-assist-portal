@@ -1,9 +1,7 @@
 // app/api/dawson/agencies/[id]/staff/route.ts
 
-import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-
-const ALLOWED_USER_IDS = ['user_3BmTnGTVcPCuCJTpP8uKrQm4KXj']
+import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -16,10 +14,8 @@ export async function GET(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const denied = await requireDawsonAccess()
+  if (denied) return denied
 
   const { id } = await params
 

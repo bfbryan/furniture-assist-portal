@@ -1,9 +1,63 @@
 // app/api/dawson/referrals/submit/route.ts
+//
+// POST /api/dawson/referrals/submit
+//
+// Used by:
+//   - app/dawson/referrals/new/page.tsx (Dawson's internal "Add Referral" form)
+//
+// Scheduling behavior (June 30, 2026):
+//
+//   This route creates the referral with Appointment Status = 'Unscheduled'.
+//   The Airtable auto-schedule automation handles BOTH branches:
+//
+//     - Specific Date: script looks up the Saturday Schedule record for
+//       the Preferred Date written here, picks the first open time slot,
+//       flips status to Scheduled. Minimum lead time: 7 days.
+//     - Flexible: script finds the next Saturday >= 21 days out with
+//       Open status, Ready to Schedule = 1, and an open slot, picks it.
+//
+//   The form's available-dates endpoint already enforces the 7-day floor
+//   on the date picker, so the specific-date path won't get a sub-7-day
+//   date in normal use.
+//
+// June 2026 schema migration — what this route had to change:
+//
+//   STOPPED writing these (they're now Lookups via Referring Staff Link,
+//   and Airtable rejects writes with INVALID_VALUE_FOR_COLUMN):
+//     - Client Referrals: Referring Agency, Referring Staff,
+//       Agency Email, Staff Phone
+//     - Agencies: Email (deleted), Admin Confirmed (deleted)
+//
+//   STARTED writing:
+//     - Client Referrals: Referring Staff Link = [agencyUserId]
+//       Everything else (agency name, staff name, agency email,
+//       staff phone) is derived automatically by Airtable through
+//       the link's lookup chain.
+//     - Agencies: Source = 'Created via Referral' (already present),
+//       Status = 'Unclaimed' (already present)
+//
+//   Item names cleaned in the form to the 6 valid select options
+//   (verified in Airtable 06/30/26):
+//     Bedroom Furniture, Dining Room Furniture, Living Room Furniture,
+//     Household Items (including kitchen & linens), Clothes, Baby Items
+
+
 
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 
-const ALLOWED_USER_IDS = ['user_3BmTnGTVcPCuCJTpP8uKrQm4KXj']
+
+
+// Match the Dawson area allowlist so Ben/Ray/Chase can also submit referrals.
+// (Previously this was Dawson-only — likely an oversight.)
+const ALLOWED_USER_IDS = [
+  'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben
+  'user_3BodwTW4I7Vamt4t7wD3qeA7boM', // Ray
+  'user_3BtKn01OMXSmi7eSsWvzvnEroCg', // Dawson
+  'user_3DE1gUnIeNmWZpQyd7LjdZb9vnN', // Chase
+]
+
+
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -12,16 +66,22 @@ const HEADERS = {
   'Content-Type': 'application/json',
 }
 
+
+
 function formatDOB(dob: string) {
   const [y, m, d] = dob.split('-')
   return `${m}/${d}/${y}`
 }
+
+
 
 function isSaturday(isoDate: string): boolean {
   const [y, m, d] = isoDate.split('-').map(Number)
   const dt = new Date(y, m - 1, d, 12, 0, 0)
   return !isNaN(dt.getTime()) && dt.getDay() === 6
 }
+
+
 
 async function checkDuplicate(lastName: string, dobFormatted: string): Promise<boolean> {
   const safeLast = lastName.replace(/"/g, '\\"')
@@ -34,7 +94,16 @@ async function checkDuplicate(lastName: string, dobFormatted: string): Promise<b
   return data.records && data.records.length > 0
 }
 
-async function createUnclaimedAgency(name: string, email: string): Promise<{ id: string; name: string }> {
+
+
+// Create an Agency in 'Unclaimed' status (Source = Created via Referral).
+//
+// June 2026 schema: contact fields (First/Last Name, Email, Phone Number)
+// were REMOVED from Agencies. Admin email now lives on the linked Primary
+// Admin in Agency Users. We do NOT set Primary Admin here — the Agency
+// User created next will be unclaimed, and Dawson promotes one via the
+// invite flow later.
+async function createUnclaimedAgency(name: string): Promise<{ id: string; name: string }> {
   const url = `https://api.airtable.com/v0/${BASE_ID}/Agencies`
   const res = await fetch(url, {
     method: 'POST',
@@ -42,10 +111,8 @@ async function createUnclaimedAgency(name: string, email: string): Promise<{ id:
     body: JSON.stringify({
       fields: {
         'Agency Name': name,
-        'Email': email,
         'Status': 'Unclaimed',
         'Source': 'Created via Referral',
-        'Admin Confirmed': false,
       },
       typecast: true,
     }),
@@ -55,22 +122,29 @@ async function createUnclaimedAgency(name: string, email: string): Promise<{ id:
   return { id: data.id, name: data.fields['Agency Name'] }
 }
 
+
+
+// Create an Agency User in 'Unclaimed' status, linked to the given Agency.
+// Returns the record ID so we can set Referring Staff Link on the referral.
 async function createUnclaimedAgencyUser(params: {
   agencyId: string
   firstName: string
   lastName: string
   email: string
   phone: string
-}): Promise<{ id: string; name: string; email: string; phone: string }> {
+}): Promise<string> {
   const url = `https://api.airtable.com/v0/${BASE_ID}/Agency%20Users`
   const fields: Record<string, any> = {
     'First Name': params.firstName,
     'Last Name': params.lastName,
     'Email': params.email,
     'Status': 'Unclaimed',
+    'Role': 'Staff',
     'Agency': [params.agencyId],
   }
   if (params.phone) fields['Phone Number'] = params.phone
+
+
 
   const res = await fetch(url, {
     method: 'POST',
@@ -79,13 +153,10 @@ async function createUnclaimedAgencyUser(params: {
   })
   if (!res.ok) throw new Error(`Failed to create agency user: ${await res.text()}`)
   const data = await res.json()
-  return {
-    id: data.id,
-    name: `${params.firstName} ${params.lastName}`,
-    email: params.email,
-    phone: params.phone,
-  }
+  return data.id
 }
+
+
 
 export async function POST(req: Request) {
   const { userId } = await auth()
@@ -93,7 +164,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
   }
 
+
+
   const body = await req.json()
+
+
 
   const {
     // client info
@@ -101,13 +176,16 @@ export async function POST(req: Request) {
     phone, county, hhSize, children, dob, language, items, notes,
     // scheduling
     preferredDate, flexible,
-    // case 1 (both exist)
-    agencyId, agencyName, agencyEmail, staffId, staffName, staffPhone,
+    // case 1 (both exist) — we now ONLY need the IDs; lookups derive
+    // the rest from Referring Staff Link.
+    agencyId, staffId,
     // case 2 + 3 (new staff)
     newStaff,
     // case 3 only (new agency)
     newAgency,
   } = body
+
+
 
   // ---- Scheduling validation ----
   const isFlexible = flexible === true
@@ -120,39 +198,46 @@ export async function POST(req: Request) {
     }
   }
 
+
+
   // ---- Resolve agency (existing or new) ----
   let resolvedAgencyId: string
-  let resolvedAgencyName: string
-  let resolvedAgencyEmail: string
   let wasNewAgency = false
+
+
 
   try {
     if (newAgency) {
       // Case 3: create unclaimed agency
-      if (!newAgency.name || !newAgency.email) {
-        return NextResponse.json({ error: 'New agency requires name and email.' }, { status: 400 })
+      if (!newAgency.name) {
+        return NextResponse.json({ error: 'New agency requires a name.' }, { status: 400 })
       }
-      const created = await createUnclaimedAgency(newAgency.name, newAgency.email)
+      const created = await createUnclaimedAgency(newAgency.name)
       resolvedAgencyId = created.id
-      resolvedAgencyName = created.name
-      resolvedAgencyEmail = newAgency.email
       wasNewAgency = true
+      // Note: newAgency.email collected by the form is intentionally NOT
+      // written to the Agency. The form treats it as the primary admin's
+      // email — it will land on the Agency User created below (when
+      // newStaff is supplied alongside, which the form enforces).
     } else {
       // Case 1 or 2: existing agency
-      if (!agencyId || !agencyName) {
+      if (!agencyId) {
         return NextResponse.json({ error: 'Agency is required.' }, { status: 400 })
       }
       resolvedAgencyId = agencyId
-      resolvedAgencyName = agencyName
-      resolvedAgencyEmail = agencyEmail || ''
     }
   } catch (e: any) {
     return NextResponse.json({ error: `Agency creation failed: ${e.message}` }, { status: 500 })
   }
 
+
+
   // ---- Resolve staff (existing or new) ----
-  let resolvedStaffName: string
-  let resolvedStaffPhone: string
+  // We need a record ID for Referring Staff Link. Lookups (Referring Agency,
+  // Referring Staff, Agency Email, Staff Phone) populate automatically.
+  let resolvedStaffId: string
+
+
 
   try {
     if (newStaff) {
@@ -160,34 +245,36 @@ export async function POST(req: Request) {
       if (!newStaff.firstName || !newStaff.lastName || !newStaff.email) {
         return NextResponse.json({ error: 'New staff requires first name, last name, and email.' }, { status: 400 })
       }
-      const created = await createUnclaimedAgencyUser({
+      resolvedStaffId = await createUnclaimedAgencyUser({
         agencyId: resolvedAgencyId,
         firstName: newStaff.firstName,
         lastName: newStaff.lastName,
         email: newStaff.email,
         phone: newStaff.phone || '',
       })
-      resolvedStaffName = created.name
-      resolvedStaffPhone = created.phone
-      // If the agency record itself has no email yet, fall back to staff email for confirmation
-      if (!resolvedAgencyEmail) resolvedAgencyEmail = newStaff.email
     } else {
       // Case 1: existing staff
-      if (!staffName) {
+      if (!staffId) {
         return NextResponse.json({ error: 'Staff member is required.' }, { status: 400 })
       }
-      resolvedStaffName = staffName
-      resolvedStaffPhone = staffPhone || ''
+      resolvedStaffId = staffId
     }
   } catch (e: any) {
     return NextResponse.json({ error: `Staff creation failed: ${e.message}` }, { status: 500 })
   }
+
+
 
   // ---- Build referral fields ----
   const dobFormatted = formatDOB(dob)
   const isDuplicate = await checkDuplicate(lastName, dobFormatted)
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
+
+
+  // June 2026: Referring Staff Link is the SINGLE source of truth for who
+  // referred this client. Agency, agency email, staff name, and staff
+  // phone are all Lookups derived from that link — do NOT write them.
   const fields: Record<string, any> = {
     'First Name': firstName,
     'Last Name': lastName,
@@ -202,9 +289,7 @@ export async function POST(req: Request) {
     'Preferred Language': language,
     'Items Requested': items,
     'Referral Date': today,
-    'Referring Agency': resolvedAgencyName,
-    'Referring Staff': resolvedStaffName,
-    'Agency Email': resolvedAgencyEmail,
+    'Referring Staff Link': [resolvedStaffId],
     'Referral Review': 'Approved',
     'Appointment Status': 'Unscheduled',
     'Possible Duplicate': isDuplicate,
@@ -212,11 +297,14 @@ export async function POST(req: Request) {
     'Was New Agency': wasNewAgency,
   }
 
+
+
   if (address2) fields['Address 2'] = address2
-  if (notes) fields['External Notes'] = notes
-  if (resolvedStaffPhone) fields['Staff Phone'] = resolvedStaffPhone
+  if (notes) fields['Internal Notes'] = notes
   if (county) fields['County'] = county
   if (!isFlexible && preferredDate) fields['Preferred Date'] = preferredDate
+
+
 
   const url = `https://api.airtable.com/v0/${BASE_ID}/Client%20Referrals`
   const res = await fetch(url, {
@@ -225,10 +313,14 @@ export async function POST(req: Request) {
     body: JSON.stringify({ fields, typecast: true }),
   })
 
+
+
   if (!res.ok) {
     const err = await res.text()
     return NextResponse.json({ error: err }, { status: 500 })
   }
+
+
 
   return NextResponse.json({ success: true, duplicate: isDuplicate, wasNewAgency })
 }

@@ -13,6 +13,8 @@ type Referral = {
   appointmentStatus: string
   referredBy: string | null
   referringAgency: string | null
+  referringAgencyId: string | null     // ← NEW
+  referringStaffId?: string | null     // ← NEW (placeholder, wire later)
   phone: string | null
   address: string | null
   city: string | null
@@ -205,8 +207,28 @@ function ReferralRow({ r, onCancel, onReschedule }: {
         )}
       </a>
 
-      {/* Agency — centered */}
-      <div style={{ fontSize: '14px', color: '#1B2B4B', lineHeight: 1.3, textAlign: 'center' }}>{r.referringAgency ?? '—'}</div>
+      {/* Agency — teal bold link to agency profile (matches client ID-link style) */}
+<div style={{ fontSize: '14px', lineHeight: 1.3, textAlign: 'center' }}>
+  {r.referringAgency ? (
+    r.referringAgencyId ? (
+      <a
+        href={`/dawson/agencies/${r.referringAgencyId}?from=scheduled`}
+        style={{
+          fontFamily: 'var(--font-montserrat)',
+          fontWeight: 700,
+          color: '#2A7F6F',
+          textDecoration: 'none',
+        }}
+      >
+        {r.referringAgency}
+      </a>
+    ) : (
+      <span style={{ color: '#1B2B4B' }}>{r.referringAgency}</span>
+    )
+  ) : (
+    <span style={{ color: '#1B2B4B' }}>—</span>
+  )}
+</div>
 
       {/* Staff — centered */}
       <div style={{ fontSize: '14px', color: '#1B2B4B', lineHeight: 1.3, textAlign: 'center' }}>{r.referredBy ?? '—'}</div>

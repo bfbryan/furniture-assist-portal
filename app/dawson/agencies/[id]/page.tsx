@@ -6,11 +6,15 @@ import AgencyReferralsPanel, { AgencyReferral, ReferralStatus } from "@/componen
 type AgencyUser = {
   id: string
   name: string
+  firstName: string
+  lastName: string
   email: string
   phone: string | null
   role: string
   status: string
   invitedDate: string | null
+  needsReview: boolean         // June 2026: placeholder users from Excel import
+  isPrimaryAdmin: boolean      // June 2026: derived from Agency.Primary Admin link
 }
 
 type Referral = {
@@ -35,13 +39,19 @@ type Agency = {
   officeName: string | null
   phone: string
   website: string | null
-  email: string
-  contactFirstName: string
-  contactLastName: string
+  // Admin-derived fields are LOOKUPS via Primary Admin link (June 2026).
+  // All four will be null for Unclaimed agencies with no Primary Admin set.
+  email: string | null
+  contactFirstName: string | null
+  contactLastName: string | null
   contactPhone: string | null
+  primaryAdminId: string | null
   status: string
-  registrationDate: string
+  registrationDate: string | null
   approvalDate: string | null
+  invitedDate: string | null
+  rejectedDate: string | null
+  source: string | null
   agencyNumber: string | null
   possibleDuplicate: boolean
   notes: string | null
@@ -57,10 +67,13 @@ function formatDate(dateStr: string | null) {
 }
 
 const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText: string }> = {
-  Pending:  { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)',   badgeText: '#C9A84C' },
-  Approved: { accent: '#2A7F6F', badgeBg: 'rgba(42,127,111,0.12)',   badgeText: '#2A7F6F' },
-  Rejected: { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',     badgeText: '#C0392B' },
-  Inactive: { accent: '#7A8899', badgeBg: '#F0F0F0',                 badgeText: '#7A8899' },
+  // June 2026 migration added Unclaimed + Invited.
+  Unclaimed: { accent: '#7A8899', badgeBg: '#F0F0F0',                 badgeText: '#7A8899' },
+  Invited:   { accent: '#5B8DB8', badgeBg: 'rgba(91,141,184,0.12)',   badgeText: '#5B8DB8' },
+  Pending:   { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)',   badgeText: '#C9A84C' },
+  Approved:  { accent: '#2A7F6F', badgeBg: 'rgba(42,127,111,0.12)',   badgeText: '#2A7F6F' },
+  Rejected:  { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',     badgeText: '#C0392B' },
+  Inactive:  { accent: '#7A8899', badgeBg: '#F0F0F0',                 badgeText: '#7A8899' },
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -152,12 +165,29 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
   const [agencyId, setAgencyId] = useState<string>('')
   const [notesModal, setNotesModal] = useState(false)
   const [notesSaving, setNotesSaving] = useState(false)
-  const [fromPage, setFromPage] = useState('active')
+ const [back, setBack] = useState<{ href: string; label: string }>({
+  href: '/dawson/agencies/active',
+  label: 'Agencies',
+})
 
-  useEffect(() => {
-    const p = new URLSearchParams(window.location.search)
-    setFromPage(p.get('from') ?? 'active')
-  }, [])
+useEffect(() => {
+  const p = new URLSearchParams(window.location.search)
+  const from = p.get('from')
+  switch (from) {
+    case 'scheduled':
+      setBack({ href: '/dawson/admin/scheduled', label: 'Scheduled' })
+      break
+    case 'pending':
+      setBack({ href: '/dawson/agencies/pending', label: 'Pending Agencies' })
+      break
+    case 'inactive':
+      setBack({ href: '/dawson/agencies/inactive', label: 'Inactive Agencies' })
+      break
+    case 'active':
+    default:
+      setBack({ href: '/dawson/agencies/active', label: 'Agencies' })
+  }
+}, [])
 
   async function handleStatusChange(newStatus: string) {
     if (!agency) return
@@ -235,10 +265,10 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
         position: 'sticky', top: 0, zIndex: 50,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <a href={`/dawson/agencies/${fromPage}`} style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            Agencies
-          </a>
+          <a href={back.href} style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+  {back.label}
+</a>
           <span style={{ color: '#EDE9E1' }}>→</span>
           <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>{agency.name}</div>
           {agency.possibleDuplicate && (
@@ -313,10 +343,12 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
                 {agency.officeName && <InfoRow label="Office" value={agency.officeName} />}
                 <InfoRow label="Address" value={<>{agency.address}{agency.address2 ? `, ${agency.address2}` : ''}<br />{agency.city}, {agency.state} {agency.zip}</>} />
                 {agency.county && <InfoRow label="County" value={`${agency.county} County`} />}<InfoRow label="Main Phone" value={agency.phone} />
-                <InfoRow label="Email" value={<a href={`mailto:${agency.email}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{agency.email}</a>} />
                 <InfoRow label="Website" value={agency.website ? <a href={agency.website} target="_blank" rel="noreferrer" style={{ color: '#2A7F6F', textDecoration: 'none' }}>{agency.website}</a> : null} />
-                <InfoRow label="Registration Date" value={formatDate(agency.registrationDate)} />
+                <InfoRow label="Record Created" value={formatDate(agency.registrationDate)} />
+                {agency.invitedDate && <InfoRow label="Invited" value={formatDate(agency.invitedDate)} />}
                 <InfoRow label="Approval Date" value={formatDate(agency.approvalDate)} />
+                {agency.rejectedDate && <InfoRow label="Rejected" value={formatDate(agency.rejectedDate)} />}
+                {agency.source && <InfoRow label="Source" value={agency.source} />}
                 {agency.possibleDuplicate && (
                   <InfoRow label="Duplicate Flag" value={<span style={{ color: '#C0392B', fontWeight: 700 }}>⚠ Flagged as possible duplicate</span>} />
                 )}
@@ -324,15 +356,24 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
             </div>
           </div>
 
-          {/* Primary Contact */}
+          {/* Primary Admin — comes from Primary Admin lookup chain (June 2026).
+             For Unclaimed agencies this card is empty until an admin is assigned. */}
           <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
             <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1' }}>
-              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B' }}>Primary Contact</div>
+              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B' }}>Primary Admin</div>
             </div>
             <div style={{ padding: '16px 24px' }}>
-              <InfoRow label="Name" value={`${agency.contactFirstName} ${agency.contactLastName}`} />
-              <InfoRow label="Email" value={<a href={`mailto:${agency.email}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{agency.email}</a>} />
-              <InfoRow label="Phone" value={agency.contactPhone} />
+              {agency.primaryAdminId ? (
+                <>
+                  <InfoRow label="Name" value={`${agency.contactFirstName ?? ''} ${agency.contactLastName ?? ''}`.trim() || null} />
+                  <InfoRow label="Email" value={agency.email ? <a href={`mailto:${agency.email}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{agency.email}</a> : null} />
+                  <InfoRow label="Phone" value={agency.contactPhone} />
+                </>
+              ) : (
+                <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>
+                  No primary admin assigned yet. Set one from the Portal Staff list when the agency claims.
+                </div>
+              )}
             </div>
           </div>
 
@@ -383,18 +424,37 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
               <div style={{ padding: '20px', textAlign: 'center', color: '#7A8899', fontSize: '13px' }}>No portal users yet</div>
             ) : (
               agency.users.map(u => {
-                const userColors = u.status === 'Active' ? { bg: 'rgba(42,127,111,0.12)', color: '#2A7F6F' } :
-                                   u.status === 'Pending' ? { bg: 'rgba(201,168,76,0.15)', color: '#C9A84C' } :
-                                   { bg: '#F0F0F0', color: '#7A8899' }
-                const uInitials = u.name.split(' ').map((w: string) => w[0]).join('').slice(0, 2).toUpperCase()
+                // Status colors expanded for the new Unclaimed/Invited statuses
+                // introduced in the June 2026 migration.
+                const userColors =
+                  u.status === 'Active'   ? { bg: 'rgba(42,127,111,0.12)', color: '#2A7F6F' } :
+                  u.status === 'Invited'  ? { bg: 'rgba(91,141,184,0.12)', color: '#5B8DB8' } :
+                  u.status === 'Pending'  ? { bg: 'rgba(201,168,76,0.15)', color: '#C9A84C' } :
+                                            { bg: '#F0F0F0',               color: '#7A8899' }
+                const displayName = u.name || `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || '—'
+                const uInitials = displayName.split(' ').map((w: string) => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase() || '?'
                 return (
                   <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 20px', borderBottom: '1px solid #F7F5F1' }}>
                     <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#1B2B4B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '11px', color: '#3AA08D', flexShrink: 0 }}>
                       {uInitials}
                     </div>
                     <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1B2B4B' }}>{u.name}</div>
-                      <div style={{ fontSize: '11px', color: '#7A8899' }}>{u.email}</div>
+                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1B2B4B', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                        <span>{displayName}</span>
+                        {u.isPrimaryAdmin && (
+                          <span title="Primary Admin" style={{ fontSize: '9px', fontWeight: 800, padding: '1px 6px', borderRadius: '4px', background: 'rgba(42,127,111,0.15)', color: '#2A7F6F', letterSpacing: '0.06em' }}>
+                            ADMIN
+                          </span>
+                        )}
+                        {u.needsReview && (
+                          <span title="Created from Excel import without an email — needs admin review" style={{ fontSize: '9px', fontWeight: 800, padding: '1px 6px', borderRadius: '4px', background: 'rgba(201,168,76,0.18)', color: '#C9A84C', letterSpacing: '0.06em' }}>
+                            REVIEW
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '11px', color: '#7A8899' }}>
+                        {u.email || <em style={{ color: '#C9A84C' }}>no email on file</em>}
+                      </div>
                     </div>
                     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
                       <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: userColors.bg, color: userColors.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>

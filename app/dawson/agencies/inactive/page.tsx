@@ -11,13 +11,15 @@ type Agency = {
   state: string
   zip: string
   phone: string
-  email: string
+  // email + contactName come from the Primary Admin lookup chain (June 2026).
+  email: string | null
   website: string | null
   officeName: string | null
   contactName: string
   status: string
-  registrationDate: string
+  registrationDate: string | null
   approvalDate: string | null
+  rejectedDate: string | null
 }
 
 function formatDate(dateStr: string | null) {
@@ -212,7 +214,7 @@ export default function InactiveAgenciesPage() {
   const filtered = agencies.filter(a =>
     a.name.toLowerCase().includes(search.toLowerCase()) ||
     a.city.toLowerCase().includes(search.toLowerCase()) ||
-    a.contactName.toLowerCase().includes(search.toLowerCase()) ||
+    (a.contactName ?? '').toLowerCase().includes(search.toLowerCase()) ||
     (a.officeName ?? '').toLowerCase().includes(search.toLowerCase())
   )
 
