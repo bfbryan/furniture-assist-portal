@@ -46,10 +46,8 @@ export async function POST(req: Request) {
   // ---- Auth ----
   // Use the canonical Dawson-access helper (same as every other Dawson admin
   // route). Handles Ben + Dawson + Ray + Chase and centralizes the allowlist.
-  const authResult = await requireDawsonAccess()
-  if (!authResult.ok) {
-    return NextResponse.json({ error: authResult.error }, { status: authResult.status })
-  }
+  const denied = await requireDawsonAccess({ status: 401 })
+  if (denied) return denied
 
   // ---- Parse body ----
   let body: { rows: AgencyImportRow[] }
