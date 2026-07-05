@@ -15,6 +15,11 @@ import { NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { upsertAgencyAndUser } from '@/lib/upsertAgencyAndUser'
 
+// Bump serverless function timeout to 60s. 33 rows × ~500ms each = ~16s,
+// but we want headroom for slow Airtable responses. Default (10s on Hobby /
+// 15s on Pro) will kill the request mid-loop and return nothing to the UI.
+export const maxDuration = 60
+
 export interface AgencyImportRow {
   agencyName: string
   firstName: string
@@ -39,8 +44,12 @@ export interface AgencyImportRowResult {
 
 export async function POST(req: Request) {
   // ---- Auth ----
-  const denied = await requireDawsonAccess()
-  if (denied) return denied
+  // Use the canonical Dawson-access helper (same as every other Dawson admin
+  // route). Handles Ben + Dawson + Ray + Chase and centralizes the allowlist.
+  const authResult = await requireDawsonAccess()
+  if (!authResult.ok) {
+    return NextResponse.json({ error: authResult.error }, { status: authResult.status })
+  }
 
   // ---- Parse body ----
   let body: { rows: AgencyImportRow[] }
@@ -58,7 +67,9 @@ export async function POST(req: Request) {
     )
   }
 
-  // ---- Process sequentially with throttle ----
+  // ---- Process sequentially ----
+  // Sequential await already caps us at Airtable's ~5 req/sec limit given
+  // each row's 2-4 network round-trips. No extra throttle needed.
   const results: AgencyImportRowResult[] = []
 
   for (let i = 0; i < rows.length; i++) {
@@ -68,6 +79,10 @@ export async function POST(req: Request) {
     const firstName = (row.firstName || '').trim()
     const lastName = (row.lastName || '').trim()
 
+    // Validation policy (per user): no required fields here — the UI passes
+    // everything through. The one hard-stop is a completely blank row
+    // (no agency name AND no email AND no last name) since the upsert helper
+    // would have nothing to dedupe on.
     if (!agencyName && !email && !lastName && !firstName) {
       results.push({
         rowIndex: i,
@@ -80,6 +95,8 @@ export async function POST(req: Request) {
     }
 
     try {
+      // If Agency Name is missing, fall back to a placeholder so the helper
+      // has a non-empty dedup key. The user can fix in Airtable after import.
       const safeAgencyName = agencyName || `Unknown Agency (Row ${i + 2})`
 
       const result = await upsertAgencyAndUser({
@@ -88,7 +105,15 @@ export async function POST(req: Request) {
           officeName: row.officeName || null,
           status: 'Unclaimed',
           source: 'Created via Import',
+          // NOTE: do not pass email, contactFirstName/LastName, contactPhone,
+          // or mainPhone here. Those Agency-row fields are reserved for the
+          // Agency Admin, who is identified when an Agency User claims the
+          // record. The staff person's contact info lives on the Agency User
+          // row below, not on the Agency itself.
         },
+        // Only attempt to create a user record when we have SOMETHING to
+        // identify them by — a name or an email. Pure-blank user rows just
+        // create the agency.
         user: (email || firstName || lastName)
           ? {
               firstName: firstName || '',
@@ -98,10 +123,12 @@ export async function POST(req: Request) {
               role: 'Staff',
               status: 'Unclaimed',
               clerkUserId: null,
+              // invitedByName intentionally omitted — leave blank for CSV imports
             }
           : undefined,
       })
 
+      // Categorize for cleaner UI reporting
       let status: AgencyImportRowResult['status']
       if (result.agencyCreated && result.userCreated) status = 'created'
       else if (!result.agencyCreated && result.userCreated) status = 'agency_existed_user_created'
@@ -120,6 +147,7 @@ export async function POST(req: Request) {
       })
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err)
+      console.error(`[import-agencies] Row ${i} failed:`, msg)
       results.push({
         rowIndex: i,
         agencyName,
@@ -128,10 +156,9 @@ export async function POST(req: Request) {
         reason: msg,
       })
     }
-
-    if (i < rows.length - 1) await new Promise(r => setTimeout(r, 250))
   }
 
+  // ---- Summary counts ----
   const summary = {
     total: results.length,
     bothCreated: results.filter(r => r.status === 'created').length,
