@@ -6,40 +6,27 @@
 //   - app/dawson/referrals/new/page.tsx (Dawson's internal "Add Referral" form)
 //
 // Scheduling behavior (June 30, 2026):
+//   Creates the referral with Appointment Status = 'Unscheduled'. The
+//   Airtable auto-schedule automation handles both Specific Date and
+//   Flexible branches; see prior notes.
 //
-//   This route creates the referral with Appointment Status = 'Unscheduled'.
-//   The Airtable auto-schedule automation handles BOTH branches:
+// July 2026 schema migration — CLIENTS TABLE FORK:
+//   Client identity (name, DOB, phone, address) now also lives on a
+//   Clients table. Every referral submitted here now:
+//     1. Finds or creates a Client by Unique ID (Last-First-DOB)
+//     2. Populates the Client link on the referral
+//   Client identity fields continue to be DUAL-WRITTEN to Client Referrals
+//   during the transition so the existing Unique ID formula and read
+//   paths keep working. Post-Saturday cleanup step converts those to
+//   lookups and this route stops writing them.
 //
-//     - Specific Date: script looks up the Saturday Schedule record for
-//       the Preferred Date written here, picks the first open time slot,
-//       flips status to Scheduled. Minimum lead time: 7 days.
-//     - Flexible: script finds the next Saturday >= 21 days out with
-//       Open status, Ready to Schedule = 1, and an open slot, picks it.
-//
-//   The form's available-dates endpoint already enforces the 7-day floor
-//   on the date picker, so the specific-date path won't get a sub-7-day
-//   date in normal use.
-//
-// June 2026 schema migration — what this route had to change:
-//
-//   STOPPED writing these (they're now Lookups via Referring Staff Link,
-//   and Airtable rejects writes with INVALID_VALUE_FOR_COLUMN):
-//     - Client Referrals: Referring Agency, Referring Staff,
-//       Agency Email, Staff Phone
-//     - Agencies: Email (deleted), Admin Confirmed (deleted)
-//
-//   STARTED writing:
-//     - Client Referrals: Referring Staff Link = [agencyUserId]
-//       Everything else (agency name, staff name, agency email,
-//       staff phone) is derived automatically by Airtable through
-//       the link's lookup chain.
-//     - Agencies: Source = 'Created via Referral' (already present),
-//       Status = 'Unclaimed' (already present)
-//
-//   Item names cleaned in the form to the 6 valid select options
-//   (verified in Airtable 06/30/26):
-//     Bedroom Furniture, Dining Room Furniture, Living Room Furniture,
-//     Household Items (including kitchen & linens), Clothes, Baby Items
+// Duplicate detection:
+//   - Old logic: {Last Name} + IS_SAME({DOB}) on Client Referrals → always
+//     true for repeat clients (bad post-fork).
+//   - New logic: {Last Name} + IS_SAME({DOB}) + IS_SAME({Preferred Date})
+//     — flags only when the same person is being scheduled for the same
+//     target Saturday. Flexible submissions skip the check (no target date).
+
 
 
 
@@ -48,14 +35,14 @@ import { NextResponse } from 'next/server'
 
 
 
-// Match the Dawson area allowlist so Ben/Ray/Chase can also submit referrals.
-// (Previously this was Dawson-only — likely an oversight.)
+
 const ALLOWED_USER_IDS = [
   'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben
   'user_3BodwTW4I7Vamt4t7wD3qeA7boM', // Ray
   'user_3BtKn01OMXSmi7eSsWvzvnEroCg', // Dawson
   'user_3DE1gUnIeNmWZpQyd7LjdZb9vnN', // Chase
 ]
+
 
 
 
@@ -68,10 +55,12 @@ const HEADERS = {
 
 
 
+
 function formatDOB(dob: string) {
   const [y, m, d] = dob.split('-')
   return `${m}/${d}/${y}`
 }
+
 
 
 
@@ -83,10 +72,31 @@ function isSaturday(isoDate: string): boolean {
 
 
 
-async function checkDuplicate(lastName: string, dobFormatted: string): Promise<boolean> {
+
+/**
+ * Client dedupe key — matches the Clients table primary formula:
+ *   {Last Name} & "-" & {First Name} & "-" & DATETIME_FORMAT({DOB}, 'MM/DD/YYYY')
+ */
+function buildClientUniqueId(firstName: string, lastName: string, dobFormatted: string): string {
+  return `${lastName.trim()}-${firstName.trim()}-${dobFormatted}`
+}
+
+
+
+
+// Duplicate detection (updated for Clients fork):
+//   Flags only when the same person is being scheduled for the same
+//   Preferred Date. Repeat clients on different Saturdays are NOT flagged.
+//   Flexible submissions have no target date → skip the check.
+async function checkDuplicate(
+  lastName: string,
+  dobFormatted: string,
+  preferredDate: string | null | undefined,
+): Promise<boolean> {
+  if (!preferredDate) return false
   const safeLast = lastName.replace(/"/g, '\\"')
   const formula = encodeURIComponent(
-    `AND({Last Name} = "${safeLast}", IS_SAME({DOB}, "${dobFormatted}", 'day'))`
+    `AND({Last Name} = "${safeLast}", IS_SAME({DOB}, "${dobFormatted}", 'day'), IS_SAME({Preferred Date}, "${preferredDate}", 'day'))`
   )
   const url = `https://api.airtable.com/v0/${BASE_ID}/Client%20Referrals?filterByFormula=${formula}&maxRecords=1`
   const res = await fetch(url, { headers: HEADERS })
@@ -96,13 +106,70 @@ async function checkDuplicate(lastName: string, dobFormatted: string): Promise<b
 
 
 
-// Create an Agency in 'Unclaimed' status (Source = Created via Referral).
-//
-// June 2026 schema: contact fields (First/Last Name, Email, Phone Number)
-// were REMOVED from Agencies. Admin email now lives on the linked Primary
-// Admin in Agency Users. We do NOT set Primary Admin here — the Agency
-// User created next will be unclaimed, and Dawson promotes one via the
-// invite flow later.
+
+// Look up Client by Unique ID (Last-First-DOB). Returns record ID or null.
+async function findClientByUniqueId(clientUniqueId: string): Promise<string | null> {
+  const safe = clientUniqueId.replace(/"/g, '\\"')
+  const formula = encodeURIComponent(`{Unique ID} = "${safe}"`)
+  const url = `https://api.airtable.com/v0/${BASE_ID}/Clients?filterByFormula=${formula}&maxRecords=1`
+  const res = await fetch(url, { headers: HEADERS })
+  if (!res.ok) throw new Error(`Client lookup failed: ${await res.text()}`)
+  const data = await res.json()
+  if (!data.records || data.records.length === 0) return null
+  return data.records[0].id as string
+}
+
+
+
+
+// Create a Client record. Called only when findClientByUniqueId returned null.
+// Note: on returning-client visits we do NOT update Client contact/address —
+// that lives on the profile-claim flow. This prevents accidental overwrites.
+async function createClient(params: {
+  firstName: string
+  lastName: string
+  dobFormatted: string
+  phone?: string
+  address?: string
+  address2?: string
+  city?: string
+  state?: string
+  zip?: string
+  county?: string
+  preferredLanguage?: string
+}): Promise<string> {
+  const fields: Record<string, any> = {
+    'First Name': params.firstName,
+    'Last Name': params.lastName,
+    'DOB': params.dobFormatted,
+    'Status': 'Active',
+  }
+  if (params.phone) fields['Phone'] = params.phone
+  if (params.address) fields['Address'] = params.address
+  if (params.address2) fields['Address 2'] = params.address2
+  if (params.city) fields['City'] = params.city
+  if (params.state) fields['State'] = params.state
+  if (params.zip) fields['Zip'] = params.zip
+  if (params.county) fields['County'] = params.county
+  if (params.preferredLanguage) fields['Preferred Language'] = params.preferredLanguage
+
+
+
+
+  const url = `https://api.airtable.com/v0/${BASE_ID}/Clients`
+  const res = await fetch(url, {
+    method: 'POST',
+    headers: HEADERS,
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+  if (!res.ok) throw new Error(`Failed to create client: ${await res.text()}`)
+  const data = await res.json()
+  return data.id
+}
+
+
+
+
 async function createUnclaimedAgency(name: string): Promise<{ id: string; name: string }> {
   const url = `https://api.airtable.com/v0/${BASE_ID}/Agencies`
   const res = await fetch(url, {
@@ -124,8 +191,7 @@ async function createUnclaimedAgency(name: string): Promise<{ id: string; name: 
 
 
 
-// Create an Agency User in 'Unclaimed' status, linked to the given Agency.
-// Returns the record ID so we can set Referring Staff Link on the referral.
+
 async function createUnclaimedAgencyUser(params: {
   agencyId: string
   firstName: string
@@ -146,6 +212,7 @@ async function createUnclaimedAgencyUser(params: {
 
 
 
+
   const res = await fetch(url, {
     method: 'POST',
     headers: HEADERS,
@@ -158,6 +225,7 @@ async function createUnclaimedAgencyUser(params: {
 
 
 
+
 export async function POST(req: Request) {
   const { userId } = await auth()
   if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
@@ -166,7 +234,9 @@ export async function POST(req: Request) {
 
 
 
+
   const body = await req.json()
+
 
 
 
@@ -176,14 +246,14 @@ export async function POST(req: Request) {
     phone, county, hhSize, children, dob, language, items, notes,
     // scheduling
     preferredDate, flexible,
-    // case 1 (both exist) — we now ONLY need the IDs; lookups derive
-    // the rest from Referring Staff Link.
+    // case 1 (both exist)
     agencyId, staffId,
-    // case 2 + 3 (new staff)
+    // case 2 + 3
     newStaff,
-    // case 3 only (new agency)
+    // case 3 only
     newAgency,
   } = body
+
 
 
 
@@ -200,27 +270,23 @@ export async function POST(req: Request) {
 
 
 
+
   // ---- Resolve agency (existing or new) ----
   let resolvedAgencyId: string
   let wasNewAgency = false
 
 
 
+
   try {
     if (newAgency) {
-      // Case 3: create unclaimed agency
       if (!newAgency.name) {
         return NextResponse.json({ error: 'New agency requires a name.' }, { status: 400 })
       }
       const created = await createUnclaimedAgency(newAgency.name)
       resolvedAgencyId = created.id
       wasNewAgency = true
-      // Note: newAgency.email collected by the form is intentionally NOT
-      // written to the Agency. The form treats it as the primary admin's
-      // email — it will land on the Agency User created below (when
-      // newStaff is supplied alongside, which the form enforces).
     } else {
-      // Case 1 or 2: existing agency
       if (!agencyId) {
         return NextResponse.json({ error: 'Agency is required.' }, { status: 400 })
       }
@@ -232,16 +298,15 @@ export async function POST(req: Request) {
 
 
 
+
   // ---- Resolve staff (existing or new) ----
-  // We need a record ID for Referring Staff Link. Lookups (Referring Agency,
-  // Referring Staff, Agency Email, Staff Phone) populate automatically.
   let resolvedStaffId: string
+
 
 
 
   try {
     if (newStaff) {
-      // Case 2 or 3: create unclaimed agency user
       if (!newStaff.firstName || !newStaff.lastName || !newStaff.email) {
         return NextResponse.json({ error: 'New staff requires first name, last name, and email.' }, { status: 400 })
       }
@@ -253,7 +318,6 @@ export async function POST(req: Request) {
         phone: newStaff.phone || '',
       })
     } else {
-      // Case 1: existing staff
       if (!staffId) {
         return NextResponse.json({ error: 'Staff member is required.' }, { status: 400 })
       }
@@ -265,16 +329,60 @@ export async function POST(req: Request) {
 
 
 
-  // ---- Build referral fields ----
+
+  // ---- Resolve client (existing or new) ----
+  // NEW step (July 2026 fork). Client identity is looked up by Unique ID
+  // (Last-First-DOB). If a returning client already exists, we link to
+  // that record and do NOT overwrite their contact/address info.
   const dobFormatted = formatDOB(dob)
-  const isDuplicate = await checkDuplicate(lastName, dobFormatted)
+  const clientUniqueId = buildClientUniqueId(firstName, lastName, dobFormatted)
+  let resolvedClientId: string
+  let clientCreated = false
+
+
+
+
+  try {
+    const existingClientId = await findClientByUniqueId(clientUniqueId)
+    if (existingClientId) {
+      resolvedClientId = existingClientId
+    } else {
+      resolvedClientId = await createClient({
+        firstName,
+        lastName,
+        dobFormatted,
+        phone,
+        address,
+        address2,
+        city,
+        state,
+        zip,
+        county,
+        preferredLanguage: language,
+      })
+      clientCreated = true
+    }
+  } catch (e: any) {
+    return NextResponse.json({ error: `Client resolution failed: ${e.message}` }, { status: 500 })
+  }
+
+
+
+
+  // ---- Duplicate flag ----
+  const isDuplicate = await checkDuplicate(lastName, dobFormatted, isFlexible ? null : preferredDate)
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
 
 
-  // June 2026: Referring Staff Link is the SINGLE source of truth for who
-  // referred this client. Agency, agency email, staff name, and staff
-  // phone are all Lookups derived from that link — do NOT write them.
+
+  // ---- Build referral fields ----
+  // TRANSITION-WINDOW NOTE: Client identity fields (First Name, Last Name,
+  // DOB, Phone, Address, City, State, Zip, County, Preferred Language)
+  // are dual-written to Client Referrals during the July 2026 migration
+  // so the existing Unique ID formula and read paths keep working. After
+  // the schema trim step, those fields become lookups from {Client} and
+  // this block collapses to just per-visit + link fields.
   const fields: Record<string, any> = {
     'First Name': firstName,
     'Last Name': lastName,
@@ -290,6 +398,7 @@ export async function POST(req: Request) {
     'Items Requested': items,
     'Referral Date': today,
     'Referring Staff Link': [resolvedStaffId],
+    'Client': [resolvedClientId],                // NEW link
     'Referral Review': 'Approved',
     'Appointment Status': 'Unscheduled',
     'Possible Duplicate': isDuplicate,
@@ -299,10 +408,12 @@ export async function POST(req: Request) {
 
 
 
+
   if (address2) fields['Address 2'] = address2
   if (notes) fields['Internal Notes'] = notes
   if (county) fields['County'] = county
   if (!isFlexible && preferredDate) fields['Preferred Date'] = preferredDate
+
 
 
 
@@ -315,6 +426,7 @@ export async function POST(req: Request) {
 
 
 
+
   if (!res.ok) {
     const err = await res.text()
     return NextResponse.json({ error: err }, { status: 500 })
@@ -322,5 +434,11 @@ export async function POST(req: Request) {
 
 
 
-  return NextResponse.json({ success: true, duplicate: isDuplicate, wasNewAgency })
+
+  return NextResponse.json({
+    success: true,
+    duplicate: isDuplicate,
+    wasNewAgency,
+    clientCreated,
+  })
 }
