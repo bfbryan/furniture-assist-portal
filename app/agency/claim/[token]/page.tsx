@@ -311,20 +311,21 @@ export default function AgencyClaimPage({
     return (
       <PageShell>
         <BrandHeader />
-        <div className="rounded-lg border border-[#3AA08D]/40 bg-[#EAF5F2] p-6">
-          <h2 className="text-xl font-bold text-[#1B2B4B]" style={{ fontFamily: HEADING_FONT }}>
+        <div className="rounded-xl border-l-4 border-[#2A7F6F] bg-white p-8 shadow-[0_4px_16px_rgba(27,43,75,0.06)]">
+          <h2 className="text-2xl font-bold text-[#1B2B4B]" style={{ fontFamily: HEADING_FONT }}>
             Thanks — we got it.
           </h2>
-          <p className="mt-2 text-sm text-[#2C3A4A]">
+          <p className="mt-3 text-sm leading-relaxed text-[#2C3A4A]">
             Your submission has been recorded for <strong>{data.agency.name}</strong>. Our team will
             review it and follow up if we need anything.
           </p>
-          <p className="mt-4 text-sm text-[#2C3A4A]">
+          <p className="mt-4 text-sm leading-relaxed text-[#2C3A4A]">
             Need to update your answers? This link stays active — just reopen it and edit. The most
             recent submission is the one we’ll use.
           </p>
           <button
-            className="mt-6 rounded-md border border-[#2A7F6F] bg-white px-4 py-2 text-sm font-semibold text-[#2A7F6F] hover:bg-[#EAF5F2]"
+            className="mt-6 rounded-md border border-[#2A7F6F] bg-white px-5 py-2.5 text-sm font-semibold uppercase tracking-wide text-[#2A7F6F] transition-colors hover:bg-[#EAF5F2]"
+            style={{ fontFamily: HEADING_FONT }}
             onClick={() => setSubmitted(false)}
           >
             Edit my submission
@@ -337,15 +338,15 @@ export default function AgencyClaimPage({
   return (
     <PageShell>
       <BrandHeader />
-      <header className="mb-8 text-center">
+      <header className="mb-10 text-center">
         <h1
           className="text-3xl font-bold text-[#1B2B4B] sm:text-4xl"
           style={{ fontFamily: HEADING_FONT }}
         >
           Confirm Your Agency Profile
         </h1>
-        <div className="mx-auto mt-4 h-[3px] w-24 bg-[#2A7F6F]" />
-        <p className="mx-auto mt-5 max-w-xl text-[#7A8899]">
+        <div className="mx-auto mt-5 h-[3px] w-full max-w-md bg-[#2A7F6F]" />
+        <p className="mx-auto mt-6 max-w-xl text-[#7A8899]">
           We’re cleaning up agency records ahead of our Agency Portal rollout. A few minutes now
           saves confusion later.
         </p>
@@ -632,13 +633,16 @@ const BODY_FONT = 'Lato, sans-serif'
 
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-white" style={{ fontFamily: BODY_FONT, color: TEXT }}>
+    <div
+      className="min-h-screen bg-[#F7F8FA]"
+      style={{ fontFamily: BODY_FONT, color: TEXT }}
+    >
       {/* Google Fonts — Montserrat for headings, Lato for body */}
       <link
         rel="stylesheet"
         href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Montserrat:wght@600;700&display=swap"
       />
-      <main className="mx-auto max-w-2xl px-4 py-10 sm:px-6 sm:py-14">{children}</main>
+      <main className="mx-auto max-w-3xl px-4 py-10 sm:px-6 sm:py-14">{children}</main>
     </div>
   )
 }
@@ -665,15 +669,18 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-[#E5E9EF] bg-white p-6 shadow-sm">
-      <div className="mb-5 border-b border-[#EEF1F5] pb-4">
+    <section className="rounded-xl border border-[#E5E9EF] bg-white p-6 shadow-[0_4px_16px_rgba(27,43,75,0.06)] sm:p-8">
+      <div className="mb-6">
         <h2
           className="text-xl font-bold text-[#1B2B4B]"
           style={{ fontFamily: HEADING_FONT }}
         >
           {title}
         </h2>
-        {description && <p className="mt-2 text-sm text-[#7A8899]">{description}</p>}
+        <div className="mt-3 h-[2px] w-full bg-gradient-to-r from-[#2A7F6F] via-[#2A7F6F] to-[#2A7F6F]/10" />
+        {description && (
+          <p className="mt-4 text-sm leading-relaxed text-[#2C3A4A]">{description}</p>
+        )}
       </div>
       <div className="space-y-4">{children}</div>
     </section>
