@@ -179,7 +179,7 @@ export default function AgencyClaimPage({
           proposedZip: body.existingSubmission?.proposedZip ?? body.agency.zip ?? '',
           proposedMainPhone: body.existingSubmission?.proposedMainPhone ?? body.agency.mainPhone ?? '',
           proposedWebsite: body.existingSubmission?.proposedWebsite ?? body.agency.website ?? '',
-          proposedEIN: body.existingSubmission?.proposedEIN ?? body.agency.ein ?? '',
+          proposedEIN: formatEIN(body.existingSubmission?.proposedEIN ?? body.agency.ein ?? ''),
           adminChoice: body.existingSubmission?.adminChoice ?? '',
           nominatedAdminName: body.existingSubmission?.nominatedAdminName ?? '',
           nominatedAdminEmail: body.existingSubmission?.nominatedAdminEmail ?? '',
@@ -314,14 +314,17 @@ export default function AgencyClaimPage({
   return (
     <PageShell>
       <header className="mb-8">
-        <p className="text-sm uppercase tracking-wide text-neutral-500">Furniture Assist</p>
+        <img
+          src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg"
+          alt="Furniture Assist"
+          className="mb-6 h-16 w-auto"
+        />
         <h1 className="mt-1 text-3xl font-semibold text-neutral-900">
           Confirm your agency profile
         </h1>
         <p className="mt-3 max-w-2xl text-neutral-700">
-          We’re cleaning up our partner directory before the fall referral season. Please review
-          the information below and correct anything that’s wrong. It should take about 3
-          minutes.
+          We’re cleaning up agency records ahead of our Agency Portal rollout. A few minutes now
+          saves confusion later.
         </p>
       </header>
 
@@ -379,40 +382,41 @@ export default function AgencyClaimPage({
             onChange={(v) => set('agencyNameChoice', v as AgencyNameChoice)}
             options={[
               { value: 'Correct as-is', label: 'Yes, that’s correct.' },
-              { value: 'Propose new name', label: 'The name is wrong — here’s the correct one.' },
+              {
+                value: 'Propose new name',
+                label: 'The name is wrong — here’s the correct one.',
+                reveal: (
+                  <Field label="Correct agency name" required>
+                    <input
+                      type="text"
+                      value={form.proposedAgencyName}
+                      onChange={(e) => set('proposedAgencyName', e.target.value)}
+                      className={inputCls}
+                    />
+                  </Field>
+                ),
+              },
               {
                 value: 'Duplicate of another agency',
                 label: 'This is a duplicate of another record you have for us.',
+                reveal: (
+                  <Field
+                    label="Which other record?"
+                    hint="Type the name of the other agency record as you know it — we’ll look it up on review."
+                    required
+                  >
+                    <input
+                      type="text"
+                      value={form.proposedDuplicateOf}
+                      onChange={(e) => set('proposedDuplicateOf', e.target.value)}
+                      className={inputCls}
+                      placeholder="e.g. Ironbound Community Corp"
+                    />
+                  </Field>
+                ),
               },
             ]}
           />
-
-          {form.agencyNameChoice === 'Propose new name' && (
-            <Field label="Correct agency name" required>
-              <input
-                type="text"
-                value={form.proposedAgencyName}
-                onChange={(e) => set('proposedAgencyName', e.target.value)}
-                className={inputCls}
-              />
-            </Field>
-          )}
-
-          {form.agencyNameChoice === 'Duplicate of another agency' && (
-            <Field
-              label="Which other record?"
-              hint="Type the name of the other agency record as you know it — we’ll look it up on review."
-              required
-            >
-              <input
-                type="text"
-                value={form.proposedDuplicateOf}
-                onChange={(e) => set('proposedDuplicateOf', e.target.value)}
-                className={inputCls}
-                placeholder="e.g. Ironbound Community Corp"
-              />
-            </Field>
-          )}
         </Section>
 
         {/* --------------- AGENCY DETAILS --------------- */}
@@ -493,12 +497,15 @@ export default function AgencyClaimPage({
               placeholder="https://"
             />
           </Field>
-          <Field label="EIN" hint="Optional — helps us verify duplicates.">
+          <Field label="EIN" hint="Format: XX-XXXXXXX. Optional — helps us verify duplicates.">
             <input
               type="text"
               value={form.proposedEIN}
-              onChange={(e) => set('proposedEIN', e.target.value)}
+              onChange={(e) => set('proposedEIN', formatEIN(e.target.value))}
               className={inputCls}
+              placeholder="XX-XXXXXXX"
+              inputMode="numeric"
+              maxLength={10}
             />
           </Field>
         </Section>
@@ -514,39 +521,41 @@ export default function AgencyClaimPage({
             onChange={(v) => set('adminChoice', v as AdminChoice)}
             options={[
               { value: 'I am the admin', label: 'I’m the right person.' },
-              { value: 'Someone else at my agency', label: 'Someone else \u2014 I’ll tell you who.' },
+              {
+                value: 'Someone else at my agency',
+                label: 'Someone else \u2014 I’ll tell you who.',
+                reveal: (
+                  <div className="space-y-4">
+                    <Field label="Their name" required>
+                      <input
+                        type="text"
+                        value={form.nominatedAdminName}
+                        onChange={(e) => set('nominatedAdminName', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Their email" required>
+                      <input
+                        type="email"
+                        value={form.nominatedAdminEmail}
+                        onChange={(e) => set('nominatedAdminEmail', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                    <Field label="Their role / title">
+                      <input
+                        type="text"
+                        value={form.nominatedAdminRole}
+                        onChange={(e) => set('nominatedAdminRole', e.target.value)}
+                        className={inputCls}
+                      />
+                    </Field>
+                  </div>
+                ),
+              },
               { value: 'Not sure yet', label: 'Not sure yet.' },
             ]}
           />
-
-          {form.adminChoice === 'Someone else at my agency' && (
-            <div className="space-y-4">
-              <Field label="Their name" required>
-                <input
-                  type="text"
-                  value={form.nominatedAdminName}
-                  onChange={(e) => set('nominatedAdminName', e.target.value)}
-                  className={inputCls}
-                />
-              </Field>
-              <Field label="Their email" required>
-                <input
-                  type="email"
-                  value={form.nominatedAdminEmail}
-                  onChange={(e) => set('nominatedAdminEmail', e.target.value)}
-                  className={inputCls}
-                />
-              </Field>
-              <Field label="Their role / title">
-                <input
-                  type="text"
-                  value={form.nominatedAdminRole}
-                  onChange={(e) => set('nominatedAdminRole', e.target.value)}
-                  className={inputCls}
-                />
-              </Field>
-            </div>
-          )}
         </Section>
 
         {/* --------------- NOTES --------------- */}
@@ -648,32 +657,46 @@ function RadioGroup({
   name: string
   value: string
   onChange: (v: string) => void
-  options: { value: string; label: string }[]
+  options: { value: string; label: string; reveal?: React.ReactNode }[]
 }) {
   return (
     <div className="space-y-2">
-      {options.map((opt) => (
-        <label
-          key={opt.value}
-          className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-colors ${
-            value === opt.value
-              ? 'border-teal-600 bg-teal-50'
-              : 'border-neutral-200 bg-white hover:border-neutral-300'
-          }`}
-        >
-          <input
-            type="radio"
-            name={name}
-            value={opt.value}
-            checked={value === opt.value}
-            onChange={() => onChange(opt.value)}
-            className="mt-0.5 h-4 w-4 text-teal-700 focus:ring-teal-600"
-          />
-          <span className="text-neutral-800">{opt.label}</span>
-        </label>
-      ))}
+      {options.map((opt) => {
+        const selected = value === opt.value
+        return (
+          <div key={opt.value}>
+            <label
+              className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-colors ${
+                selected
+                  ? 'border-teal-600 bg-teal-50'
+                  : 'border-neutral-200 bg-white hover:border-neutral-300'
+              }`}
+            >
+              <input
+                type="radio"
+                name={name}
+                value={opt.value}
+                checked={selected}
+                onChange={() => onChange(opt.value)}
+                className="mt-0.5 h-4 w-4 text-teal-700 focus:ring-teal-600"
+              />
+              <span className="text-neutral-800">{opt.label}</span>
+            </label>
+            {selected && opt.reveal && (
+              <div className="ml-7 mt-3 space-y-4">{opt.reveal}</div>
+            )}
+          </div>
+        )
+      })}
     </div>
   )
+}
+
+// EIN formatter: strips non-digits, inserts dash after 2 digits, caps at 9 digits total.
+function formatEIN(raw: string): string {
+  const digits = raw.replace(/\D/g, '').slice(0, 9)
+  if (digits.length <= 2) return digits
+  return `${digits.slice(0, 2)}-${digits.slice(2)}`
 }
 
 const inputCls =
