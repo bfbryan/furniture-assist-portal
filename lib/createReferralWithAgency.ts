@@ -158,10 +158,19 @@ function toMDY(input: string): string {
     const [, y, m, d] = iso
     return `${m.padStart(2, '0')}/${d.padStart(2, '0')}/${y}`
   }
-  const mdy = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
-  if (mdy) {
-    const [, m, d, y] = mdy
+  const mdy4 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (mdy4) {
+    const [, m, d, y] = mdy4
     return `${m.padStart(2, '0')}/${d.padStart(2, '0')}/${y}`
+  }
+  // 2-digit year (M/D/YY or MM/DD/YY). Pivot: 00-30 = 2000s, 31-99 = 1900s.
+  // Client DOBs are historical, so >30 years ago rolls to 19xx.
+  const mdy2 = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2})$/)
+  if (mdy2) {
+    const [, m, d, yy] = mdy2
+    const yNum = parseInt(yy, 10)
+    const fullYear = yNum <= 30 ? 2000 + yNum : 1900 + yNum
+    return `${m.padStart(2, '0')}/${d.padStart(2, '0')}/${fullYear}`
   }
   return s
 }

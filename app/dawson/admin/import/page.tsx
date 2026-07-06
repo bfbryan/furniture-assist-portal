@@ -564,8 +564,8 @@ function parseRow(row: RawRow, rowIndex: number): ParsedRow {
     appointmentDate: apptParsed.us || '',
     appointmentTime: apptTime,
     itemsRequested: wantsResult.categories.join(', '),
-    externalNotes: '',
-    internalNotes: s(row['Notes']),
+    externalNotes: s(row['Notes']),
+    internalNotes: '',
     preferredDate: '',
     schedulingFlexibility: '',
   }
