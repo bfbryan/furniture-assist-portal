@@ -6,7 +6,7 @@
  *
  * GET  → look up Agency User by Claim Token → return user + agency + existing submission (if any)
  * POST → upsert Agency Profile Submissions row for this user (one row per user)
- *        + patch First Name / Last Name / Phone on the Agency User
+ *        + patch First Name / Last Name / Phone Number on the Agency User
  *        + set Claim Token Used At (once)
  *
  * Token stays valid after submit (per Ben's design choice). Latest submission wins.
@@ -18,7 +18,7 @@
  * REQUIRED AIRTABLE FIELDS (exact names):
  *   Agency Users:
  *     Claim Token, Claim Token Sent At, Claim Token Used At,
- *     First Name, Last Name, Phone, Email, Agency (link)
+ *     First Name, Last Name, Phone Number, Email, Agency (link)
  *   Agencies:
  *     Agency Name, Office Name, Address, Address 2, City, State, Zip,
  *     Main Phone Number, Website, EIN#
@@ -154,7 +154,7 @@ export async function GET(_req: Request, { params }: Params) {
         firstName: userRec.fields['First Name'] || '',
         lastName: userRec.fields['Last Name'] || '',
         email: userRec.fields['Email'] || '',
-        phone: userRec.fields['Phone'] || '',
+        phone: userRec.fields['Phone Number'] || '',
       },
       agency: {
         id: agencyId,
@@ -340,7 +340,7 @@ export async function POST(req: Request, { params }: Params) {
     const userPatch: Record<string, unknown> = {
       'First Name': body.userFirstName.trim(),
       'Last Name': body.userLastName.trim(),
-      'Phone': body.userPhone?.trim() || '',
+      'Phone Number': body.userPhone?.trim() || '',
     }
     if (!userRec.fields['Claim Token Used At']) {
       userPatch['Claim Token Used At'] = new Date().toISOString()
