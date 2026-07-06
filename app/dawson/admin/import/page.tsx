@@ -375,7 +375,8 @@ function parseFlexibleDate(
   const m1 = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
   if (m1) {
     let yr = parseInt(m1[3], 10)
-    if (yr < 100) yr += 2000
+    // 2-digit year pivot: 00-30 -> 2000s, 31-99 -> 1900s (client DOBs are historical)
+    if (yr < 100) yr += (yr <= 30 ? 2000 : 1900)
     const d = new Date(yr, parseInt(m1[1], 10) - 1, parseInt(m1[2], 10))
     if (!isNaN(d.getTime())) return formatDate(d)
   }
