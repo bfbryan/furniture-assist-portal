@@ -233,7 +233,7 @@ export default function AgencyClaimPage({
     }
     if (form.adminChoice === 'Someone else at my agency') {
       if (!form.nominatedAdminName.trim() || !form.nominatedAdminEmail.trim()) {
-        setSubmitError('Please provide the name and email of the person you\u2019re nominating.')
+        setSubmitError('Please provide the name and email of the person you’re nominating.')
         return
       }
     }
@@ -265,7 +265,7 @@ export default function AgencyClaimPage({
   if (loading) {
     return (
       <PageShell>
-        <p className="text-neutral-500">Loading\u2026</p>
+        <p className="text-neutral-500">Loading…</p>
       </PageShell>
     )
   }
@@ -274,12 +274,12 @@ export default function AgencyClaimPage({
     return (
       <PageShell>
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-900">
-          <h2 className="text-lg font-semibold">This link can\u2019t be opened</h2>
+          <h2 className="text-lg font-semibold">This link can’t be opened</h2>
           <p className="mt-2 text-sm">
             {loadError || 'The link may be invalid, expired, or already used.'}
           </p>
           <p className="mt-2 text-sm">
-            If you think this is a mistake, reply to the email that sent you this link and we\u2019ll
+            If you think this is a mistake, reply to the email that sent you this link and we’ll
             send a fresh one.
           </p>
         </div>
@@ -298,7 +298,7 @@ export default function AgencyClaimPage({
           </p>
           <p className="mt-4 text-sm text-teal-900">
             Need to update your answers? This link stays active — just reopen it and edit. The most
-            recent submission is the one we\u2019ll use.
+            recent submission is the one we’ll use.
           </p>
           <button
             className="mt-6 rounded-md border border-teal-600 bg-white px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100"
@@ -319,8 +319,8 @@ export default function AgencyClaimPage({
           Confirm your agency profile
         </h1>
         <p className="mt-3 max-w-2xl text-neutral-700">
-          We\u2019re cleaning up our partner directory before the fall referral season. Please review
-          the information below and correct anything that\u2019s wrong. It should take about 3
+          We’re cleaning up our partner directory before the fall referral season. Please review
+          the information below and correct anything that’s wrong. It should take about 3
           minutes.
         </p>
       </header>
@@ -329,7 +329,7 @@ export default function AgencyClaimPage({
         {/* --------------- YOUR INFO --------------- */}
         <Section
           title="Your information"
-          description="Confirm your name and phone. We\u2019ll use these when we contact you about referrals."
+          description="Confirm your name and phone. We’ll use these when we contact you about referrals."
         >
           <Field label="First name" required>
             <input
@@ -378,8 +378,8 @@ export default function AgencyClaimPage({
             value={form.agencyNameChoice}
             onChange={(v) => set('agencyNameChoice', v as AgencyNameChoice)}
             options={[
-              { value: 'Correct as-is', label: 'Yes, that\u2019s correct.' },
-              { value: 'Propose new name', label: 'The name is wrong — here\u2019s the correct one.' },
+              { value: 'Correct as-is', label: 'Yes, that’s correct.' },
+              { value: 'Propose new name', label: 'The name is wrong — here’s the correct one.' },
               {
                 value: 'Duplicate of another agency',
                 label: 'This is a duplicate of another record you have for us.',
@@ -401,7 +401,7 @@ export default function AgencyClaimPage({
           {form.agencyNameChoice === 'Duplicate of another agency' && (
             <Field
               label="Which other record?"
-              hint="Type the name of the other agency record as you know it — we\u2019ll look it up on review."
+              hint="Type the name of the other agency record as you know it — we’ll look it up on review."
               required
             >
               <input
@@ -418,7 +418,7 @@ export default function AgencyClaimPage({
         {/* --------------- AGENCY DETAILS --------------- */}
         <Section
           title="Agency details"
-          description="Confirm or update. Leave anything blank you\u2019re unsure about."
+          description="Confirm or update. Leave anything blank you’re unsure about."
         >
           <Field label="Office name" hint="e.g. Newark Field Office, if the agency has multiple locations.">
             <input
@@ -513,8 +513,8 @@ export default function AgencyClaimPage({
             value={form.adminChoice}
             onChange={(v) => set('adminChoice', v as AdminChoice)}
             options={[
-              { value: 'I am the admin', label: 'I\u2019m the right person.' },
-              { value: 'Someone else at my agency', label: 'Someone else \u2014 I\u2019ll tell you who.' },
+              { value: 'I am the admin', label: 'I’m the right person.' },
+              { value: 'Someone else at my agency', label: 'Someone else \u2014 I’ll tell you who.' },
               { value: 'Not sure yet', label: 'Not sure yet.' },
             ]}
           />
@@ -576,7 +576,7 @@ export default function AgencyClaimPage({
             disabled={submitting}
             className="rounded-md bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {submitting ? 'Submitting\u2026' : 'Submit'}
+            {submitting ? 'Submitting…' : 'Submit'}
           </button>
         </div>
       </form>

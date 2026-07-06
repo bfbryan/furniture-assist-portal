@@ -119,7 +119,7 @@ export async function GET(_req: Request, { params }: Params) {
       const expires = new Date(sent.getTime() + TOKEN_EXPIRY_DAYS * 24 * 60 * 60 * 1000)
       if (Date.now() > expires.getTime()) {
         return NextResponse.json(
-          { error: 'This link has expired. Please reply to the email that sent it and we\u2019ll issue a new one.' },
+          { error: 'This link has expired. Please reply to the email that sent it and we’ll issue a new one.' },
           { status: 410 }
         )
       }
@@ -130,7 +130,7 @@ export async function GET(_req: Request, { params }: Params) {
     const agencyId = Array.isArray(agencyLink) ? agencyLink[0] : null
     if (!agencyId) {
       return NextResponse.json(
-        { error: 'Your record isn\u2019t linked to an agency yet. Please contact Furniture Assist.' },
+        { error: 'Your record isn’t linked to an agency yet. Please contact Furniture Assist.' },
         { status: 409 }
       )
     }
@@ -284,7 +284,7 @@ export async function POST(req: Request, { params }: Params) {
     const agencyId = Array.isArray(agencyLink) ? agencyLink[0] : null
     if (!agencyId) {
       return NextResponse.json(
-        { error: 'Your record isn\u2019t linked to an agency.' },
+        { error: 'Your record isn’t linked to an agency.' },
         { status: 409 }
       )
     }
