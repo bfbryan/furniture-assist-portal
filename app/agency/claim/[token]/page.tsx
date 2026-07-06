@@ -215,6 +215,10 @@ export default function AgencyClaimPage({
       setSubmitError('Please enter your first and last name.')
       return
     }
+    if (!form.userPhone.trim()) {
+      setSubmitError('Please enter your phone number — we’ll use it to contact you about referrals.')
+      return
+    }
     if (!form.agencyNameChoice) {
       setSubmitError('Please choose an option under "Agency name".')
       return
@@ -225,6 +229,19 @@ export default function AgencyClaimPage({
     }
     if (form.agencyNameChoice === 'Duplicate of another agency' && !form.proposedDuplicateOf.trim()) {
       setSubmitError('Please tell us the name of the other agency record.')
+      return
+    }
+    if (
+      !form.proposedStreet.trim() ||
+      !form.proposedCity.trim() ||
+      !form.proposedState.trim() ||
+      !form.proposedZip.trim()
+    ) {
+      setSubmitError('Please confirm the agency’s street address, city, state, and ZIP.')
+      return
+    }
+    if (!form.proposedMainPhone.trim()) {
+      setSubmitError('Please confirm the agency’s main phone number.')
       return
     }
     if (!form.adminChoice) {
@@ -265,7 +282,7 @@ export default function AgencyClaimPage({
   if (loading) {
     return (
       <PageShell>
-        <p className="text-neutral-500">Loading…</p>
+        <p className="text-[#7A8899]">Loading…</p>
       </PageShell>
     )
   }
@@ -273,8 +290,11 @@ export default function AgencyClaimPage({
   if (loadError || !data) {
     return (
       <PageShell>
+        <BrandHeader />
         <div className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-900">
-          <h2 className="text-lg font-semibold">This link can’t be opened</h2>
+          <h2 className="text-lg font-bold" style={{ fontFamily: HEADING_FONT }}>
+            This link can’t be opened
+          </h2>
           <p className="mt-2 text-sm">
             {loadError || 'The link may be invalid, expired, or already used.'}
           </p>
@@ -290,18 +310,21 @@ export default function AgencyClaimPage({
   if (submitted) {
     return (
       <PageShell>
-        <div className="rounded-lg border border-teal-200 bg-teal-50 p-6">
-          <h2 className="text-xl font-semibold text-teal-900">Thanks — we got it.</h2>
-          <p className="mt-2 text-sm text-teal-900">
+        <BrandHeader />
+        <div className="rounded-lg border border-[#3AA08D]/40 bg-[#EAF5F2] p-6">
+          <h2 className="text-xl font-bold text-[#1B2B4B]" style={{ fontFamily: HEADING_FONT }}>
+            Thanks — we got it.
+          </h2>
+          <p className="mt-2 text-sm text-[#2C3A4A]">
             Your submission has been recorded for <strong>{data.agency.name}</strong>. Our team will
             review it and follow up if we need anything.
           </p>
-          <p className="mt-4 text-sm text-teal-900">
+          <p className="mt-4 text-sm text-[#2C3A4A]">
             Need to update your answers? This link stays active — just reopen it and edit. The most
             recent submission is the one we’ll use.
           </p>
           <button
-            className="mt-6 rounded-md border border-teal-600 bg-white px-4 py-2 text-sm font-medium text-teal-700 hover:bg-teal-100"
+            className="mt-6 rounded-md border border-[#2A7F6F] bg-white px-4 py-2 text-sm font-semibold text-[#2A7F6F] hover:bg-[#EAF5F2]"
             onClick={() => setSubmitted(false)}
           >
             Edit my submission
@@ -313,16 +336,16 @@ export default function AgencyClaimPage({
 
   return (
     <PageShell>
-      <header className="mb-8">
-        <img
-          src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg"
-          alt="Furniture Assist"
-          className="mb-6 h-16 w-auto"
-        />
-        <h1 className="mt-1 text-3xl font-semibold text-neutral-900">
-          Confirm your agency profile
+      <BrandHeader />
+      <header className="mb-8 text-center">
+        <h1
+          className="text-3xl font-bold text-[#1B2B4B] sm:text-4xl"
+          style={{ fontFamily: HEADING_FONT }}
+        >
+          Confirm Your Agency Profile
         </h1>
-        <p className="mt-3 max-w-2xl text-neutral-700">
+        <div className="mx-auto mt-4 h-[3px] w-24 bg-[#2A7F6F]" />
+        <p className="mx-auto mt-5 max-w-xl text-[#7A8899]">
           We’re cleaning up agency records ahead of our Agency Portal rollout. A few minutes now
           saves confusion later.
         </p>
@@ -360,7 +383,7 @@ export default function AgencyClaimPage({
               className={`${inputCls} bg-neutral-100 text-neutral-500`}
             />
           </Field>
-          <Field label="Phone">
+          <Field label="Phone" required>
             <input
               type="tel"
               value={form.userPhone}
@@ -432,7 +455,7 @@ export default function AgencyClaimPage({
               className={inputCls}
             />
           </Field>
-          <Field label="Street address">
+          <Field label="Street address" required>
             <input
               type="text"
               value={form.proposedStreet}
@@ -451,7 +474,7 @@ export default function AgencyClaimPage({
             />
           </Field>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <Field label="City">
+            <Field label="City" required>
               <input
                 type="text"
                 value={form.proposedCity}
@@ -460,7 +483,7 @@ export default function AgencyClaimPage({
                 autoComplete="address-level2"
               />
             </Field>
-            <Field label="State">
+            <Field label="State" required>
               <input
                 type="text"
                 value={form.proposedState}
@@ -470,7 +493,7 @@ export default function AgencyClaimPage({
                 maxLength={2}
               />
             </Field>
-            <Field label="ZIP">
+            <Field label="ZIP" required>
               <input
                 type="text"
                 value={form.proposedZip}
@@ -480,7 +503,7 @@ export default function AgencyClaimPage({
               />
             </Field>
           </div>
-          <Field label="Main phone">
+          <Field label="Main phone" required>
             <input
               type="tel"
               value={form.proposedMainPhone}
@@ -513,7 +536,7 @@ export default function AgencyClaimPage({
         {/* --------------- ADMIN NOMINATION --------------- */}
         <Section
           title="Agency administrator"
-          description="Who at your agency should manage the Furniture Assist relationship going forward?"
+          description="The agency administrator will manage your agency’s presence on the Furniture Assist Portal — including adding or removing staff members who can submit referrals on your behalf. Please choose the right person for this role."
         >
           <RadioGroup
             name="adminChoice"
@@ -583,7 +606,8 @@ export default function AgencyClaimPage({
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-md bg-teal-700 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
+            className="rounded-md bg-[#2A7F6F] px-6 py-3 text-sm font-bold uppercase tracking-wide text-white shadow-sm transition-colors hover:bg-[#1F6B5C] disabled:cursor-not-allowed disabled:opacity-60"
+            style={{ fontFamily: HEADING_FONT }}
           >
             {submitting ? 'Submitting…' : 'Submit'}
           </button>
@@ -597,10 +621,36 @@ export default function AgencyClaimPage({
 // Presentational bits
 // -------------------------------------------------------------------------
 
+// Furniture Assist brand tokens (sampled from furnitureassist.com)
+const NAVY = '#1B2B4B'
+const TEAL = '#2A7F6F'
+const TEAL_LIGHT = '#3AA08D'
+const TEXT = '#2C3A4A'
+const MUTED = '#7A8899'
+const HEADING_FONT = 'Montserrat, sans-serif'
+const BODY_FONT = 'Lato, sans-serif'
+
 function PageShell({ children }: { children: React.ReactNode }) {
   return (
-    <div className="min-h-screen bg-neutral-50">
+    <div className="min-h-screen bg-white" style={{ fontFamily: BODY_FONT, color: TEXT }}>
+      {/* Google Fonts — Montserrat for headings, Lato for body */}
+      <link
+        rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Lato:wght@400;700&family=Montserrat:wght@600;700&display=swap"
+      />
       <main className="mx-auto max-w-2xl px-4 py-10 sm:px-6 sm:py-14">{children}</main>
+    </div>
+  )
+}
+
+function BrandHeader() {
+  return (
+    <div className="mb-10 flex justify-center">
+      <img
+        src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg"
+        alt="Furniture Assist"
+        className="h-20 w-auto"
+      />
     </div>
   )
 }
@@ -615,10 +665,15 @@ function Section({
   children: React.ReactNode
 }) {
   return (
-    <section className="rounded-lg border border-neutral-200 bg-white p-6 shadow-sm">
-      <div className="mb-5">
-        <h2 className="text-lg font-semibold text-neutral-900">{title}</h2>
-        {description && <p className="mt-1 text-sm text-neutral-600">{description}</p>}
+    <section className="rounded-lg border border-[#E5E9EF] bg-white p-6 shadow-sm">
+      <div className="mb-5 border-b border-[#EEF1F5] pb-4">
+        <h2
+          className="text-xl font-bold text-[#1B2B4B]"
+          style={{ fontFamily: HEADING_FONT }}
+        >
+          {title}
+        </h2>
+        {description && <p className="mt-2 text-sm text-[#7A8899]">{description}</p>}
       </div>
       <div className="space-y-4">{children}</div>
     </section>
@@ -638,12 +693,12 @@ function Field({
 }) {
   return (
     <label className="block">
-      <span className="mb-1 flex items-center gap-1 text-sm font-medium text-neutral-800">
+      <span className="mb-1 flex items-center gap-1 text-sm font-semibold text-[#1B2B4B]">
         {label}
-        {required && <span className="text-red-600">*</span>}
+        {required && <span className="text-[#B34A3F]">*</span>}
       </span>
       {children}
-      {hint && <span className="mt-1 block text-xs text-neutral-500">{hint}</span>}
+      {hint && <span className="mt-1 block text-xs text-[#7A8899]">{hint}</span>}
     </label>
   )
 }
@@ -668,8 +723,8 @@ function RadioGroup({
             <label
               className={`flex cursor-pointer items-start gap-3 rounded-md border p-3 text-sm transition-colors ${
                 selected
-                  ? 'border-teal-600 bg-teal-50'
-                  : 'border-neutral-200 bg-white hover:border-neutral-300'
+                  ? 'border-[#2A7F6F] bg-[#EAF5F2]'
+                  : 'border-[#E5E9EF] bg-white hover:border-[#B8C1CC]'
               }`}
             >
               <input
@@ -678,9 +733,9 @@ function RadioGroup({
                 value={opt.value}
                 checked={selected}
                 onChange={() => onChange(opt.value)}
-                className="mt-0.5 h-4 w-4 text-teal-700 focus:ring-teal-600"
+                className="mt-0.5 h-4 w-4 accent-[#2A7F6F]"
               />
-              <span className="text-neutral-800">{opt.label}</span>
+              <span className="text-[#2C3A4A]">{opt.label}</span>
             </label>
             {selected && opt.reveal && (
               <div className="ml-7 mt-3 space-y-4">{opt.reveal}</div>
@@ -700,4 +755,4 @@ function formatEIN(raw: string): string {
 }
 
 const inputCls =
-  'block w-full rounded-md border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 shadow-sm placeholder:text-neutral-400 focus:border-teal-600 focus:outline-none focus:ring-1 focus:ring-teal-600'
+  'block w-full rounded-md border border-[#D4D9E0] bg-white px-3 py-2 text-sm text-[#2C3A4A] shadow-sm placeholder:text-[#B8C1CC] focus:border-[#2A7F6F] focus:outline-none focus:ring-1 focus:ring-[#2A7F6F]'
