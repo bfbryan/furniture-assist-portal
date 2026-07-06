@@ -28,9 +28,28 @@
 //              Referring Agency, Referring Staff, Agency Email, Staff Phone
 //     DELETED: Assigned By, Emergency
 //
+// Schema migration (July 2026) — CLIENTS TABLE FORK (COMPLETE):
+//
+//   Clients (new table):
+//     Owns all client identity: First Name, Last Name, DOB, Phone,
+//     Address, Address 2, City, State, Zip, County, Preferred Language.
+//     Primary formula: {Last Name} & "-" & {First Name} & "-" &
+//                      DATETIME_FORMAT({DOB}, 'MM/DD/YYYY')
+//
+//   Client Referrals:
+//     NEW:     Client (link → Clients, single)
+//     CHANGED (Text/Date/Phone → Lookup via Client):
+//              First Name, Last Name, DOB, Phone, Address, Address 2,
+//              City, State, Zip, County, Preferred Language
+//     Unique ID formula updated to ARRAYJOIN({Last Name}) etc. so it
+//     resolves against the new lookup shape.
+//
 // Every contact-facing field on Agencies now comes through Agency Users
 // via the Primary Admin link. Every staff/agency-facing field on a
 // Client Referral comes through Agency Users via the Referring Staff Link.
+// Every client-identity field on a Client Referral comes through Clients
+// via the Client link and must be unwrapped with safeLookupString.
+
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -38,6 +57,7 @@ const HEADERS = {
   Authorization: `Bearer ${API_KEY}`,
   'Content-Type': 'application/json',
 }
+
 
 async function airtableFetch(table: string, params: string = '') {
   const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}${params}`
@@ -49,10 +69,12 @@ async function airtableFetch(table: string, params: string = '') {
   return res.json()
 }
 
+
 // Lookups return arrays even when the underlying field is a single value.
 // This unwraps `["foo"]` -> `"foo"` and `[]` / undefined -> null. Used for
-// all admin-* lookups on Agencies and all staff/agency lookups on Client
-// Referrals after the June 2026 migration.
+// all admin-* lookups on Agencies, all staff/agency lookups on Client
+// Referrals (June 2026 migration), and all client-identity lookups on
+// Client Referrals (July 2026 migration).
 function unwrapLookup<T = string>(value: unknown): T | null {
   if (value === undefined || value === null) return null
   if (Array.isArray(value)) {
@@ -61,6 +83,7 @@ function unwrapLookup<T = string>(value: unknown): T | null {
   }
   return value as T
 }
+
 
 // DEFENSIVE GUARD (June 2026):
 //   If a "Referring Agency" / "Referring Staff" / "Agency Email" /
@@ -83,11 +106,26 @@ function safeLookupString(value: unknown): string | null {
   return v
 }
 
+
+// Numeric lookup unwrap. Some client-identity lookups on Client Referrals
+// (e.g. Zip when stored as a number on Clients) come back as [12345].
+// Coerces to string for consistent display, or null when empty.
+function safeLookupNumberAsString(value: unknown): string | null {
+  const v = unwrapLookup<unknown>(value)
+  if (v === null || v === undefined) return null
+  if (typeof v === 'number') return String(v)
+  if (typeof v === 'string') return v
+  return null
+}
+
+
 export async function getAgencyUserByClerkId(clerkUserId: string) {
   const formula = encodeURIComponent(`{Clerk User ID} = "${clerkUserId}"`)
   const data = await airtableFetch('Agency Users', `?filterByFormula=${formula}&maxRecords=1`)
 
+
   if (!data.records || data.records.length === 0) return null
+
 
   const record = data.records[0]
   return {
@@ -100,6 +138,7 @@ export async function getAgencyUserByClerkId(clerkUserId: string) {
     status: record.fields['Status'] as string,
   }
 }
+
 
 export async function getAgencyById(agencyId: string) {
   const data = await airtableFetch('Agencies', `/${agencyId}`)
@@ -124,14 +163,18 @@ export async function getAgencyById(agencyId: string) {
   }
 }
 
+
 // Internal helper: shape a Client Referrals record into the list-view object.
 // Pulls staff / agency / agency-email / staff-phone from the Referring Staff
-// Link lookups (post-migration) rather than the deleted plaintext fields.
+// Link lookups (June 2026) and all client identity from the Client link
+// lookups (July 2026) — all unwrapped via safeLookupString.
 function shapeReferralListItem(record: any) {
   const f = record.fields
+  const firstName = safeLookupString(f['First Name']) ?? ''
+  const lastName = safeLookupString(f['Last Name']) ?? ''
   return {
     id: record.id,
-    clientName: `${f['First Name'] ?? ''} ${f['Last Name'] ?? ''}`.trim(),
+    clientName: `${firstName} ${lastName}`.trim(),
     referralDate: f['Referral Date'] as string,
     appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
     appointmentTime: (f['Appointment Time'] as string) ?? null,
@@ -140,14 +183,15 @@ function shapeReferralListItem(record: any) {
     appointmentSlipUrl: f['Appt Slip'] as string,
     referredBy: safeLookupString(f['Referring Staff']),
     dataPageUrl: f['Data Page URL'] as string,
-    address: (f['Address'] as string) ?? null,
-    address2: (f['Address 2'] as string) ?? null,
-    city: (f['City'] as string) ?? null,
-    state: (f['State'] as string) ?? null,
-    zip: (f['Zip'] as string) ?? null,
-    phone: (f['Phone'] as string) ?? null,
+    address: safeLookupString(f['Address']),
+    address2: safeLookupString(f['Address 2']),
+    city: safeLookupString(f['City']),
+    state: safeLookupString(f['State']),
+    zip: safeLookupNumberAsString(f['Zip']),
+    phone: safeLookupString(f['Phone']),
   }
 }
+
 
 export async function getReferralsByAgencyId(agencyName: string) {
   // {Referring Agency} is now a lookup, but Airtable formulas can still
@@ -159,6 +203,7 @@ export async function getReferralsByAgencyId(agencyName: string) {
   )
   return data.records.map(shapeReferralListItem)
 }
+
 
 export async function getReferralsByStaffName(agencyName: string, staffName: string) {
   // Both {Referring Agency} and {Referring Staff} are now lookups through
@@ -174,7 +219,9 @@ export async function getReferralsByStaffName(agencyName: string, staffName: str
   return data.records.map(shapeReferralListItem)
 }
 
+
 // ─── DAWSON PORTAL FUNCTIONS ───────────────────────────────────────────────
+
 
 export async function getAllAgencies(status?: string) {
   // Accept either single status ("Approved") or comma-separated ("Approved,Unclaimed")
@@ -189,10 +236,12 @@ export async function getAllAgencies(status?: string) {
     }
   }
 
+
   const params = formula
     ? `?filterByFormula=${formula}&sort[0][field]=Agency%20Name&sort[0][direction]=asc`
     : `?sort[0][field]=Agency%20Name&sort[0][direction]=asc`
   const data = await airtableFetch('Agencies', params)
+
 
   return data.records.map((record: any) => {
     const f = record.fields
@@ -226,6 +275,7 @@ export async function getAllAgencies(status?: string) {
   })
 }
 
+
 export async function getAllReferrals(filters?: {
   review?: string
   statuses?: string[]
@@ -234,9 +284,11 @@ export async function getAllReferrals(filters?: {
 }) {
   const conditions: string[] = []
 
+
   if (filters?.review) {
     conditions.push(`{Referral Review} = "${filters.review}"`)
   }
+
 
   if (filters?.statuses && filters.statuses.length > 0) {
     const statusOr = filters.statuses
@@ -245,17 +297,21 @@ export async function getAllReferrals(filters?: {
     conditions.push(`OR(${statusOr})`)
   }
 
+
   if (filters?.dateFrom) {
     conditions.push(`{Referral Date} >= "${filters.dateFrom}"`)
   }
+
 
   const formula = conditions.length > 0
     ? encodeURIComponent(`AND(${conditions.join(', ')})`)
     : ''
 
+
   const params = formula
     ? `?filterByFormula=${formula}&sort[0][field]=Referral%20Date&sort[0][direction]=desc`
     : `?sort[0][field]=Referral%20Date&sort[0][direction]=desc`
+
 
   // Fetch referrals + agency name→id map in parallel.
   // The map enables a clickable Agency cell on the Scheduled page (and any
@@ -265,6 +321,7 @@ export async function getAllReferrals(filters?: {
     airtableFetch('Client Referrals', params),
     airtableFetch('Agencies', '?fields%5B%5D=Agency%20Name'),
   ])
+
 
   // Build TWO indexes: one by name (when Referring Agency lookup returns
   // a clean name string) and one by rec ID (defensive fallback for the
@@ -276,6 +333,7 @@ export async function getAllReferrals(filters?: {
   const normalizeAgencyKey = (raw: string) =>
     raw.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
 
+
   const agencyIdByName = new Map<string, string>()
   const agencyNameById = new Map<string, string>()
   for (const a of agencyIndex.records) {
@@ -285,17 +343,24 @@ export async function getAllReferrals(filters?: {
     if (raw) agencyNameById.set(a.id, raw)
   }
 
+
   const records = data.records.map((record: any) => {
     const f = record.fields
-    const firstName = (f['First Name'] as string) ?? ''
-    const lastName = (f['Last Name'] as string) ?? ''
+    // Client identity fields are LOOKUPS post-July-2026 migration —
+    // safeLookupString unwraps the [value] array shape and guards
+    // against rec-ID fallback (though clients don't chain via link,
+    // the guard is harmless).
+    const firstName = safeLookupString(f['First Name']) ?? ''
+    const lastName = safeLookupString(f['Last Name']) ?? ''
 
-    // Referring Agency / Staff / Phone are LOOKUPS post-migration.
+
+    // Referring Agency / Staff / Phone are LOOKUPS post-June-2026 migration.
     // safeLookupString returns null for rec-ID strings (caught by guard)
     // so the UI never accidentally renders a "recAbCd..." instead of a name.
     let agencyName = safeLookupString(f['Referring Agency'])
     const staffName = safeLookupString(f['Referring Staff'])
     const staffPhone = safeLookupString(f['Staff Phone'])
+
 
     // FALLBACK: if Referring Agency got filtered to null because it's
     // still misconfigured as a link field, try to recover the name via
@@ -305,10 +370,12 @@ export async function getAllReferrals(filters?: {
       agencyName = agencyNameById.get(rawAgencyValue) ?? null
     }
 
+
     const agencyKey = agencyName ? normalizeAgencyKey(agencyName) : ''
     let referringAgencyId = agencyKey
       ? (agencyIdByName.get(agencyKey) ?? null)
       : null
+
 
     // Second fallback for the ID: if the raw value already IS a rec ID
     // (link-field case), use it directly so the link still works.
@@ -320,9 +387,11 @@ export async function getAllReferrals(filters?: {
       referringAgencyId = rawAgencyValue
     }
 
+
     // Referring Staff Link is a single link field; grab the linked user id
     // so the list view can deep-link to a Staff ID page when we build it.
     const referringStaffId = (f['Referring Staff Link'] as string[])?.[0] ?? null
+
 
     return {
       id: record.id,
@@ -344,13 +413,15 @@ export async function getAllReferrals(filters?: {
       referringStaffId,                    // resolved from Referring Staff Link
       agencyName,
       dataPageUrl: (f['Data Page URL'] as string) ?? null,
-      address: (f['Address'] as string) ?? null,
-      city: (f['City'] as string) ?? null,
-      state: (f['State'] as string) ?? null,
-      zip: (f['Zip'] as string) ?? null,
-      phone: (f['Phone'] as string) ?? null,
+      // Client identity — all lookups via {Client} link
+      address: safeLookupString(f['Address']),
+      city: safeLookupString(f['City']),
+      state: safeLookupString(f['State']),
+      zip: safeLookupNumberAsString(f['Zip']),
+      phone: safeLookupString(f['Phone']),
     }
   })
+
 
   // Client-side search filter
   if (filters?.search) {
@@ -362,8 +433,10 @@ export async function getAllReferrals(filters?: {
     )
   }
 
+
   return records
 }
+
 
 export async function getDashboardStats() {
   const [agencies, referrals] = await Promise.all([
@@ -371,11 +444,14 @@ export async function getDashboardStats() {
     airtableFetch('Client Referrals', '?sort[0][field]=Referral%20Date&sort[0][direction]=desc'),
   ])
 
+
   const now = new Date()
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
 
+
   const agencyRecords = agencies.records
   const referralRecords = referrals.records
+
 
   return {
     totalAgencies: agencyRecords.length,
@@ -391,9 +467,12 @@ export async function getDashboardStats() {
     thisMonthReferrals: referralRecords.filter((r: any) => r.fields['Referral Date'] >= startOfMonth).length,
     recentReferrals: referralRecords.slice(0, 5).map((record: any) => {
       const f = record.fields
+      // Identity fields are lookups post-July-2026.
+      const firstName = safeLookupString(f['First Name']) ?? ''
+      const lastName = safeLookupString(f['Last Name']) ?? ''
       return {
         id: record.id,
-        clientName: `${f['First Name'] ?? ''} ${f['Last Name'] ?? ''}`.trim(),
+        clientName: `${firstName} ${lastName}`.trim(),
         referralDate: f['Referral Date'] as string,
         referralReview: f['Referral Review'] as string,
         appointmentStatus: f['Appointment Status'] as string,
@@ -421,10 +500,12 @@ export async function getDashboardStats() {
   }
 }
 
+
 export async function getAgencyWithDetails(agencyId: string) {
   // Fetch agency first to get the name
   const agency = await airtableFetch('Agencies', `/${agencyId}`)
   const agencyName = agency.fields['Agency Name'] as string
+
 
   // Then fetch users and referrals in parallel.
   // Referrals filter uses {Referring Agency} which is now a lookup through
@@ -444,6 +525,7 @@ export async function getAgencyWithDetails(agencyId: string) {
     ),
   ])
 
+
   const af = agency.fields
   const adminFirst = safeLookupString(af['Admin First Name']) ?? ''
   const adminLast = safeLookupString(af['Admin Last Name']) ?? ''
@@ -451,6 +533,7 @@ export async function getAgencyWithDetails(agencyId: string) {
   const adminPhone = safeLookupString(af['Admin Phone'])
   // Primary Admin is a link field on Agencies — single linked Agency User id.
   const primaryAdminId = (af['Primary Admin'] as string[])?.[0] ?? null
+
 
   return {
     id: agency.id,
@@ -500,16 +583,22 @@ export async function getAgencyWithDetails(agencyId: string) {
       isPrimaryAdmin: primaryAdminId === r.id,
     })),
     referralCount: referrals.records.length,
-    referrals: referrals.records.map((r: any) => ({
-      id: r.id,
-      clientName: `${r.fields['First Name'] ?? ''} ${r.fields['Last Name'] ?? ''}`.trim(),
-      referralDate: r.fields['Referral Date'] as string,
-      referralReview: r.fields['Referral Review'] as string,
-      appointmentStatus: r.fields['Appointment Status'] as string,
-      referredBy: safeLookupString(r.fields['Referring Staff']),
-    })),
+    referrals: referrals.records.map((r: any) => {
+      // Client identity fields are lookups post-July-2026 migration.
+      const firstName = safeLookupString(r.fields['First Name']) ?? ''
+      const lastName = safeLookupString(r.fields['Last Name']) ?? ''
+      return {
+        id: r.id,
+        clientName: `${firstName} ${lastName}`.trim(),
+        referralDate: r.fields['Referral Date'] as string,
+        referralReview: r.fields['Referral Review'] as string,
+        appointmentStatus: r.fields['Appointment Status'] as string,
+        referredBy: safeLookupString(r.fields['Referring Staff']),
+      }
+    }),
   }
 }
+
 
 export async function updateReferralReview(referralId: string, review: string) {
   const res = await fetch(
@@ -524,9 +613,11 @@ export async function updateReferralReview(referralId: string, review: string) {
   return res.json()
 }
 
+
 export async function getReferralById(referralId: string) {
   const data = await airtableFetch('Client Referrals', `/${referralId}`)
   const f = data.fields
+
 
   const item = (label: string, fieldName: string) => {
     const raw = f[fieldName]
@@ -534,6 +625,7 @@ export async function getReferralById(referralId: string) {
     return { name: label, qty: raw }
   }
   const compact = <T,>(arr: (T | null)[]) => arr.filter((x): x is T => x !== null)
+
 
   const itemsDisbursed = {
     livingRoom: compact([
@@ -583,27 +675,37 @@ export async function getReferralById(referralId: string) {
     distributionNotes: (f['Distribution Notes'] as string) ?? null,
   }
 
+
   // Referring Staff Link is a single link to Agency Users. The plaintext
   // counterparts (Referring Agency / Referring Staff / Agency Email /
-  // Staff Phone) are LOOKUPS through that link as of June 2026 and come
-  // back wrapped in arrays — unwrap them here. safeLookupString also
-  // guards against the field still being misconfigured as a link.
+  // Staff Phone) are LOOKUPS through that link as of June 2026.
+  // Client identity fields (First Name, Last Name, DOB, Phone, Address,
+  // Address 2, City, State, Zip, County, Preferred Language) are LOOKUPS
+  // through the {Client} link as of July 2026. All come back wrapped in
+  // arrays — unwrap them here via safeLookupString.
   const referringStaffLinkId = (f['Referring Staff Link'] as string[])?.[0] ?? null
+  const clientLinkId = (f['Client'] as string[])?.[0] ?? null
+
+
+  const firstName = safeLookupString(f['First Name']) ?? ''
+  const lastName = safeLookupString(f['Last Name']) ?? ''
+
 
   return {
     id: data.id,
-    clientName: `${f['First Name'] ?? ''} ${f['Last Name'] ?? ''}`.trim(),
-    firstName: f['First Name'] as string,
-    lastName: f['Last Name'] as string,
-    dob: (f['DOB'] as string) ?? null,
-    phone: (f['Phone'] as string) ?? null,
-    language: (f['Preferred Language'] as string) ?? null,
-    address: (f['Address'] as string) ?? null,
-    address2: (f['Address 2'] as string) ?? null,
-    city: (f['City'] as string) ?? null,
-    state: (f['State'] as string) ?? null,
-    zip: (f['Zip'] as string) ?? null,
-    county: (f['County'] as string) ?? null,
+    clientName: `${firstName} ${lastName}`.trim(),
+    firstName,
+    lastName,
+    // DOB lookup — Airtable returns dates through lookups as ISO strings.
+    dob: safeLookupString(f['DOB']),
+    phone: safeLookupString(f['Phone']),
+    language: safeLookupString(f['Preferred Language']),
+    address: safeLookupString(f['Address']),
+    address2: safeLookupString(f['Address 2']),
+    city: safeLookupString(f['City']),
+    state: safeLookupString(f['State']),
+    zip: safeLookupNumberAsString(f['Zip']),
+    county: safeLookupString(f['County']),
     hhSize: (f['# in HH'] as string) ?? null,
     children: (f['# Children'] as string) ?? null,
     items: (f['Items Requested'] as string) ?? null,
@@ -621,13 +723,16 @@ export async function getReferralById(referralId: string) {
     referringAgency: safeLookupString(f['Referring Agency']),
     agencyEmail: safeLookupString(f['Agency Email']),
     referringStaffLinkId,                             // for deep-link to Staff ID page
+    clientId: clientLinkId,                           // for deep-link to Client detail (future)
     possibleDuplicate: (f['Possible Duplicate'] as boolean) ?? false,
     itemsDisbursed,
   }
 }
 
+
 export async function getSaturdaySchedule() {
   const data = await airtableFetch('Saturday Schedule', '?sort[0][field]=Date&sort[0][direction]=asc')
+
 
   return data.records.map((record: any) => ({
     id: record.id,
@@ -645,6 +750,7 @@ export async function getSaturdaySchedule() {
   }))
 }
 
+
 export async function updateAgencyNotes(id: string, notes: string) {
   const res = await fetch(
     `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Agencies')}/${id}`,
@@ -658,12 +764,14 @@ export async function updateAgencyNotes(id: string, notes: string) {
   return res.json()
 }
 
+
 export async function getAgencyUsersByAgencyId(agencyId: string) {
   const formula = encodeURIComponent(`{Agency} = "${agencyId}"`)
   const data = await airtableFetch(
     'Agency Users',
     `?filterByFormula=${formula}&sort[0][field]=Last%20Name&sort[0][direction]=asc`,
   )
+
 
   return data.records.map((r: any) => ({
     id: r.id,
@@ -682,6 +790,7 @@ export async function getAgencyUsersByAgencyId(agencyId: string) {
     recordCreationDate: (r.fields['Record Creation Date'] as string) ?? null,
   }))
 }
+
 
 // Note: Agency Users Status options changed in June 2026 — added 'Invited'
 // and 'Unclaimed' (the latter was already used by importers; the type

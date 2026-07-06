@@ -11,29 +11,29 @@
  * Agency Email / Staff Phone on Client Referrals are LOOKUPS through
  * Referring Staff Link. We do NOT write to them.
  *
- * Schema migration (July 2026) — CLIENTS TABLE FORK:
- *   Client identity moved off Client Referrals onto new Clients table.
+ * Schema migration (July 2026) — CLIENTS TABLE FORK (COMPLETE):
+ *   Client identity moved off Client Referrals onto the Clients table.
  *   Referrals now link to a Client via the `Client` single-link field.
+ *   Identity fields on Client Referrals (First Name, Last Name, DOB,
+ *   Phone, Address, Address 2, City, State, Zip, County, Preferred
+ *   Language) are LOOKUPS through the {Client} link — NOT writable.
  *
- *   FIND-OR-CREATE order (new step 3):
+ *   FIND-OR-CREATE order:
  *     1. Dedupe check on referral (Unique ID = Last-First-DOB-ApptDate)
  *     2. Find or create Agency
- *     3. Find or create Agency User (Staff)  — unchanged
- *     4. Find or create Client               ← NEW
- *     5. Create Referral, linked to Client
+ *     3. Find or create Agency User (Staff)
+ *     4. Find or create Client
+ *     5. Create Referral, linked to Client (identity flows via lookups)
  *
  *   Client dedupe key = Unique ID formula on Clients table:
  *     {Last Name} & "-" & {First Name} & "-" & DATETIME_FORMAT({DOB}, 'MM/DD/YYYY')
  *
- *   Referral fields DROPPED (identity moved to Client):
- *     First Name, Last Name, DOB, Phone, Address, Address 2, City, State,
- *     Zip, County, Preferred Language
- *
- *   Referral fields KEPT (per-visit):
- *     # in HH, # of Children, Items Requested, External Notes,
- *     Internal Notes, Referral Date, Appointment Date/Time, Appointment
- *     Status, Referral Review, Referring Staff Link, all furniture
- *     disbursement fields, Was New Agency, Client (NEW link)
+ *   Referral fields WRITTEN (per-visit only):
+ *     # in HH, # Children, Items Requested, External Notes,
+ *     Internal Notes, Referral Date, Appointment Time, Appointment
+ *     Status, Referral Review, Referring Staff Link, Saturday Schedule
+ *     link, Preferred Date, Scheduling Flexibility, Was New Agency,
+ *     Client (link).
  *
  * Idempotency:
  *   - Agency: normalized Agency Name.
@@ -44,9 +44,12 @@
  *     => blocked.
  */
 
+
 import Airtable from 'airtable'
 
+
 // ---------- Types ----------
+
 
 export type ReferralInput = {
   // Client identity (goes to Clients table, not Referral)
@@ -62,9 +65,11 @@ export type ReferralInput = {
   county?: string | null
   preferredLanguage?: string | null
 
+
   // Per-visit (stays on Referral)
   hhSize?: number | null
   children?: number | null
+
 
   // Agency + Staff
   agencyName: string
@@ -72,6 +77,7 @@ export type ReferralInput = {
   staffLastName?: string | null
   staffPhone?: string | null
   staffEmail?: string | null
+
 
   // Referral metadata
   referralDate?: string | null
@@ -83,6 +89,7 @@ export type ReferralInput = {
   preferredDate?: string | null
   schedulingFlexibility?: string | null
 }
+
 
 export type CreateResult =
   | {
@@ -106,9 +113,12 @@ export type CreateResult =
     }
   | { status: 'error'; reason: string; field?: string }
 
+
 type AirtableRecord = { id: string; get: (field: string) => unknown }
 
+
 // ---------- Config ----------
+
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID || 'app0DK6F9KoTm38Po'
 const TABLES = {
@@ -119,21 +129,26 @@ const TABLES = {
   SATURDAY_SCHEDULE: 'Saturday Schedule',
 }
 
+
 function getBase() {
   const apiKey = process.env.AIRTABLE_API_KEY
   if (!apiKey) throw new Error('AIRTABLE_API_KEY missing')
   return new Airtable({ apiKey }).base(BASE_ID)
 }
 
+
 // ---------- Normalizers ----------
+
 
 function normName(s: string): string {
   return (s || '').trim().toLowerCase().replace(/\s+/g, ' ')
 }
 
+
 function normEmail(s: string): string {
   return (s || '').trim().toLowerCase()
 }
+
 
 function toMDY(input: string): string {
   if (!input) return ''
@@ -151,6 +166,7 @@ function toMDY(input: string): string {
   return s
 }
 
+
 /**
  * Client unique id — matches the Clients table primary formula:
  *   {Last Name} & "-" & {First Name} & "-" & DATETIME_FORMAT({DOB}, 'MM/DD/YYYY')
@@ -165,15 +181,15 @@ function buildClientUniqueId(
   return `${lastName.trim()}-${firstName.trim()}-${dobStr}`
 }
 
+
 /**
- * Referral unique id — matches the Client Referrals table primary formula:
- *   {Last Name} & "-" & {First Name} & "-" & DATETIME_FORMAT({DOB}, 'MM/DD/YYYY')
+ * Referral unique id — matches the Client Referrals table primary formula
+ * (post-July-2026 migration; identity fields are now lookups through
+ * {Client}, but the formula still resolves to the same string via
+ * ARRAYJOIN):
+ *   ARRAYJOIN({Last Name}) & "-" & ARRAYJOIN({First Name}) & "-"
+ *     & IF({DOB}, DATETIME_FORMAT({DOB}, 'MM/DD/YYYY'), "")
  *     & IF({Appointment Date}, "-" & DATETIME_FORMAT({Appointment Date}, 'MM/DD/YYYY'), "")
- *
- * TRANSITION NOTE: Client Referrals still has plain-text First Name / Last Name
- * / DOB columns during this migration. After the schema trim step, those
- * columns move to lookups from Client. This formula will need to be re-pointed
- * at that time.
  */
 function buildReferralUniqueId(
   firstName: string,
@@ -187,9 +203,12 @@ function buildReferralUniqueId(
   return `${lastName.trim()}-${firstName.trim()}-${dobStr}${suffix}`
 }
 
+
 // ---------- Saturday Schedule lookup ----------
 
+
 export type SaturdayMap = Map<string, string>
+
 
 export async function loadSaturdayScheduleMap(): Promise<SaturdayMap> {
   const base = getBase()
@@ -209,6 +228,7 @@ export async function loadSaturdayScheduleMap(): Promise<SaturdayMap> {
   return map
 }
 
+
 function normalizeApptTimeSlot(raw: string | null | undefined): string | null {
   if (!raw) return null
   const s = String(raw).trim().toLowerCase()
@@ -225,6 +245,7 @@ function normalizeApptTimeSlot(raw: string | null | undefined): string | null {
   return null
 }
 
+
 function parseItems(input: string | null | undefined): string[] {
   if (!input) return []
   return input
@@ -233,7 +254,9 @@ function parseItems(input: string | null | undefined): string[] {
     .filter(Boolean)
 }
 
+
 // ---------- Lookup helpers ----------
+
 
 async function findAgencyByName(
   base: ReturnType<typeof getBase>,
@@ -248,6 +271,7 @@ async function findAgencyByName(
     .all()) as unknown as AirtableRecord[]
   return records.find(r => normName(String(r.get('Agency Name') || '')) === target) || null
 }
+
 
 async function findAgencyUserByEmailAndAgency(
   base: ReturnType<typeof getBase>,
@@ -270,6 +294,7 @@ async function findAgencyUserByEmailAndAgency(
   )
 }
 
+
 async function findClientByUniqueId(
   base: ReturnType<typeof getBase>,
   clientUniqueId: string,
@@ -282,6 +307,7 @@ async function findClientByUniqueId(
     .all()) as unknown as AirtableRecord[]
   return records[0] || null
 }
+
 
 async function findReferralByUniqueId(
   base: ReturnType<typeof getBase>,
@@ -296,7 +322,9 @@ async function findReferralByUniqueId(
   return records[0] || null
 }
 
+
 // ---------- Main ----------
+
 
 export async function createReferralWithAgency(
   input: ReferralInput,
@@ -317,7 +345,9 @@ export async function createReferralWithAgency(
     }
   }
 
+
   const base = getBase()
+
 
   const clientUniqueId = buildClientUniqueId(input.firstName, input.lastName, input.dob)
   const referralUniqueId = buildReferralUniqueId(
@@ -326,6 +356,7 @@ export async function createReferralWithAgency(
     input.dob,
     input.appointmentDate,
   )
+
 
   try {
     // 1. Dedupe: same client + same appointment date already exists?
@@ -338,6 +369,7 @@ export async function createReferralWithAgency(
         reason: 'duplicate_unique_id',
       }
     }
+
 
     // 2. Find or create Agency
     let agencyRecord = await findAgencyByName(base, input.agencyName)
@@ -356,16 +388,19 @@ export async function createReferralWithAgency(
       agencyCreated = true
     }
 
+
     // 3. Find or create Agency User (Staff)
     let staffRecord: AirtableRecord | null = null
     let staffCreated = false
     let staffNeedsReview = false
+
 
     const hasStaffEmail = !!(input.staffEmail && input.staffEmail.trim())
     const hasStaffName = !!(
       (input.staffFirstName && input.staffFirstName.trim()) ||
       (input.staffLastName && input.staffLastName.trim())
     )
+
 
     if (hasStaffEmail) {
       staffRecord = await findAgencyUserByEmailAndAgency(
@@ -409,7 +444,8 @@ export async function createReferralWithAgency(
       staffNeedsReview = true
     }
 
-    // 4. Find or create Client (NEW STEP)
+
+    // 4. Find or create Client
     let clientRecord = await findClientByUniqueId(base, clientUniqueId)
     let clientCreated = false
     if (!clientRecord) {
@@ -441,12 +477,14 @@ export async function createReferralWithAgency(
     // overwrites when Dawson's Excel row has stale/blank data for a client
     // we already know well.
 
+
     // 5. Create the Client Referral
     const hasAppointment = !!input.appointmentDate?.trim()
     const effectiveReferralDate =
       (input.referralDate || '').trim() ||
       (input.appointmentDate || '').trim() ||
       ''
+
 
     let saturdayLinkId: string | null = null
     if (hasAppointment && saturdayMap) {
@@ -455,30 +493,16 @@ export async function createReferralWithAgency(
     const apptTimeSlot = normalizeApptTimeSlot(input.appointmentTime)
     const fullyScheduled = !!(saturdayLinkId && apptTimeSlot)
 
-    // TRANSITION-WINDOW NOTE: Client Referrals still has First Name /
-    // Last Name / DOB / Phone / Address / Address 2 / City / State / Zip /
-    // County / Preferred Language as writable text columns during this
-    // migration. We continue to write them so:
-    //   (a) the existing Unique ID formula on Client Referrals still
-    //       resolves cleanly (it references {Last Name}, {First Name},
-    //       {DOB} directly on the referral)
-    //   (b) all existing read paths, print sheets, and Saturday sheet
-    //       workflows keep working unchanged this Saturday
-    // AFTER the AT schema trim step, these become lookups from {Client}
-    // and this block collapses to just the per-visit fields.
+
+    // Client identity fields (First Name, Last Name, DOB, Phone, Address,
+    // Address 2, City, State, Zip, County, Preferred Language) are now
+    // LOOKUPS on Client Referrals sourced from the {Client} link — they
+    // are NOT writable. Airtable returns 422 on any write to a lookup.
+    // Identity data lives on the Clients table (written above in step 4)
+    // and flows through to the referral via lookups. See lib/airtable.ts
+    // for the read path (safeLookupString unwraps the array shape).
     const referralFields: Record<string, unknown> = {
-      // Identity — still written during transition (see note above)
-      'First Name': input.firstName.trim(),
-      'Last Name': input.lastName.trim(),
-      Phone: input.phone || '',
-      Address: input.address || '',
-      'Address 2': input.address2 || '',
-      City: input.city || '',
-      State: input.state || '',
-      Zip: input.zip || '',
-      County: input.county || '',
-      'Preferred Language': input.preferredLanguage || 'English',
-      // Per-visit
+      // Per-visit fields only
       '# in HH': input.hhSize ?? null,
       '# Children': input.children ?? null,
       'Items Requested': parseItems(input.itemsRequested),
@@ -487,15 +511,13 @@ export async function createReferralWithAgency(
       'Referral Review': 'Approved',
       'Appointment Status': fullyScheduled ? 'Scheduled' : 'Pending Schedule',
       'Was New Agency': agencyCreated,
-      // NEW: link to Client
+      // Link to Client — drives all identity lookups on the referral
       Client: [clientRecord.id],
     }
 
+
     if (staffRecord) {
       referralFields['Referring Staff Link'] = [staffRecord.id]
-    }
-    if (input.dob && input.dob.trim()) {
-      referralFields['DOB'] = toMDY(input.dob)
     }
     if (effectiveReferralDate) {
       referralFields['Referral Date'] = toMDY(effectiveReferralDate)
@@ -513,9 +535,11 @@ export async function createReferralWithAgency(
       referralFields['Scheduling Flexibility'] = input.schedulingFlexibility
     }
 
+
     const createdReferral = (await base(TABLES.CLIENT_REFERRALS).create([
       { fields: referralFields as Partial<Record<string, unknown>> as never },
     ])) as unknown as AirtableRecord[]
+
 
     return {
       status: 'created',

@@ -10,28 +10,34 @@
 //   Airtable auto-schedule automation handles both Specific Date and
 //   Flexible branches; see prior notes.
 //
-// July 2026 schema migration — CLIENTS TABLE FORK:
-//   Client identity (name, DOB, phone, address) now also lives on a
-//   Clients table. Every referral submitted here now:
-//     1. Finds or creates a Client by Unique ID (Last-First-DOB)
-//     2. Populates the Client link on the referral
-//   Client identity fields continue to be DUAL-WRITTEN to Client Referrals
-//   during the transition so the existing Unique ID formula and read
-//   paths keep working. Post-Saturday cleanup step converts those to
-//   lookups and this route stops writing them.
+// July 2026 schema migration — CLIENTS TABLE FORK (COMPLETE):
+//   Client identity moved off Client Referrals onto the Clients table.
+//   Client identity fields on Client Referrals (First Name, Last Name,
+//   DOB, Phone, Address, Address 2, City, State, Zip, County, Preferred
+//   Language) are now LOOKUPS through the {Client} link — NOT writable.
+//   Airtable returns 422 on any write to a lookup field.
+//
+//   Referral flow:
+//     1. Validate scheduling
+//     2. Resolve Agency (existing or create Unclaimed)
+//     3. Resolve Staff  (existing or create Unclaimed)
+//     4. Resolve Client (find by Unique ID / create with identity fields)
+//     5. Duplicate check against Client's prior referrals
+//     6. Create referral — writes per-visit fields + Client link only
 //
 // Duplicate detection:
-//   - Old logic: {Last Name} + IS_SAME({DOB}) on Client Referrals → always
-//     true for repeat clients (bad post-fork).
-//   - New logic: {Last Name} + IS_SAME({DOB}) + IS_SAME({Preferred Date})
-//     — flags only when the same person is being scheduled for the same
-//     target Saturday. Flexible submissions skip the check (no target date).
+//   Flags when the same Client already has a referral for the same
+//   Preferred Date. Query strategy: find Client by Unique ID, then look
+//   for any linked referral whose Preferred Date matches. Flexible
+//   submissions skip the check (no target date).
+
 
 
 
 
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
+
 
 
 
@@ -46,12 +52,14 @@ const ALLOWED_USER_IDS = [
 
 
 
+
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
 const HEADERS = {
   Authorization: `Bearer ${API_KEY}`,
   'Content-Type': 'application/json',
 }
+
 
 
 
@@ -64,11 +72,13 @@ function formatDOB(dob: string) {
 
 
 
+
 function isSaturday(isoDate: string): boolean {
   const [y, m, d] = isoDate.split('-').map(Number)
   const dt = new Date(y, m - 1, d, 12, 0, 0)
   return !isNaN(dt.getTime()) && dt.getDay() === 6
 }
+
 
 
 
@@ -84,25 +94,27 @@ function buildClientUniqueId(firstName: string, lastName: string, dobFormatted: 
 
 
 
-// Duplicate detection (updated for Clients fork):
-//   Flags only when the same person is being scheduled for the same
-//   Preferred Date. Repeat clients on different Saturdays are NOT flagged.
-//   Flexible submissions have no target date → skip the check.
+
+// Duplicate detection (post-fork):
+//   Flags when the given Client (by record ID) already has a referral
+//   for the same Preferred Date. Returns false when clientId is null
+//   (new client) or when preferredDate is absent (Flexible submission).
 async function checkDuplicate(
-  lastName: string,
-  dobFormatted: string,
+  clientId: string | null,
   preferredDate: string | null | undefined,
 ): Promise<boolean> {
-  if (!preferredDate) return false
-  const safeLast = lastName.replace(/"/g, '\\"')
+  if (!clientId || !preferredDate) return false
+  // FIND on the {Client} lookup/link stringified via ARRAYJOIN — the
+  // referral's Client link is a single-record array containing this id.
   const formula = encodeURIComponent(
-    `AND({Last Name} = "${safeLast}", IS_SAME({DOB}, "${dobFormatted}", 'day'), IS_SAME({Preferred Date}, "${preferredDate}", 'day'))`
+    `AND(FIND("${clientId}", ARRAYJOIN({Client})) > 0, IS_SAME({Preferred Date}, "${preferredDate}", 'day'))`
   )
   const url = `https://api.airtable.com/v0/${BASE_ID}/Client%20Referrals?filterByFormula=${formula}&maxRecords=1`
   const res = await fetch(url, { headers: HEADERS })
   const data = await res.json()
   return data.records && data.records.length > 0
 }
+
 
 
 
@@ -118,6 +130,7 @@ async function findClientByUniqueId(clientUniqueId: string): Promise<string | nu
   if (!data.records || data.records.length === 0) return null
   return data.records[0].id as string
 }
+
 
 
 
@@ -156,6 +169,7 @@ async function createClient(params: {
 
 
 
+
   const url = `https://api.airtable.com/v0/${BASE_ID}/Clients`
   const res = await fetch(url, {
     method: 'POST',
@@ -166,6 +180,7 @@ async function createClient(params: {
   const data = await res.json()
   return data.id
 }
+
 
 
 
@@ -192,6 +207,7 @@ async function createUnclaimedAgency(name: string): Promise<{ id: string; name: 
 
 
 
+
 async function createUnclaimedAgencyUser(params: {
   agencyId: string
   firstName: string
@@ -213,6 +229,7 @@ async function createUnclaimedAgencyUser(params: {
 
 
 
+
   const res = await fetch(url, {
     method: 'POST',
     headers: HEADERS,
@@ -226,6 +243,7 @@ async function createUnclaimedAgencyUser(params: {
 
 
 
+
 export async function POST(req: Request) {
   const { userId } = await auth()
   if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
@@ -235,7 +253,9 @@ export async function POST(req: Request) {
 
 
 
+
   const body = await req.json()
+
 
 
 
@@ -257,6 +277,7 @@ export async function POST(req: Request) {
 
 
 
+
   // ---- Scheduling validation ----
   const isFlexible = flexible === true
   if (!isFlexible) {
@@ -271,9 +292,11 @@ export async function POST(req: Request) {
 
 
 
+
   // ---- Resolve agency (existing or new) ----
   let resolvedAgencyId: string
   let wasNewAgency = false
+
 
 
 
@@ -299,8 +322,10 @@ export async function POST(req: Request) {
 
 
 
+
   // ---- Resolve staff (existing or new) ----
   let resolvedStaffId: string
+
 
 
 
@@ -330,14 +355,16 @@ export async function POST(req: Request) {
 
 
 
+
   // ---- Resolve client (existing or new) ----
-  // NEW step (July 2026 fork). Client identity is looked up by Unique ID
-  // (Last-First-DOB). If a returning client already exists, we link to
-  // that record and do NOT overwrite their contact/address info.
+  // Client identity is looked up by Unique ID (Last-First-DOB). If a
+  // returning client already exists, we link to that record and do NOT
+  // overwrite their contact/address info.
   const dobFormatted = formatDOB(dob)
   const clientUniqueId = buildClientUniqueId(firstName, lastName, dobFormatted)
   let resolvedClientId: string
   let clientCreated = false
+
 
 
 
@@ -369,36 +396,35 @@ export async function POST(req: Request) {
 
 
 
+
   // ---- Duplicate flag ----
-  const isDuplicate = await checkDuplicate(lastName, dobFormatted, isFlexible ? null : preferredDate)
+  // Checks whether this Client already has a referral on the same
+  // Preferred Date. Skipped for Flexible submissions (no target date).
+  const isDuplicate = await checkDuplicate(
+    resolvedClientId,
+    isFlexible ? null : preferredDate,
+  )
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
 
 
 
+
   // ---- Build referral fields ----
-  // TRANSITION-WINDOW NOTE: Client identity fields (First Name, Last Name,
-  // DOB, Phone, Address, City, State, Zip, County, Preferred Language)
-  // are dual-written to Client Referrals during the July 2026 migration
-  // so the existing Unique ID formula and read paths keep working. After
-  // the schema trim step, those fields become lookups from {Client} and
-  // this block collapses to just per-visit + link fields.
+  // Client identity fields (First Name, Last Name, DOB, Phone, Address,
+  // Address 2, City, State, Zip, County, Preferred Language) are now
+  // LOOKUPS on Client Referrals sourced from the {Client} link. They
+  // are NOT writable — Airtable returns 422 on any write to a lookup.
+  // Identity data lives on the Clients table (written above) and flows
+  // through to the referral via lookups.
   const fields: Record<string, any> = {
-    'First Name': firstName,
-    'Last Name': lastName,
-    'Address': address,
-    'City': city,
-    'State': state,
-    'Zip': zip,
-    'Phone': phone,
+    // Per-visit fields only
     '# in HH': parseInt(hhSize),
     '# Children': parseInt(children),
-    'DOB': dobFormatted,
-    'Preferred Language': language,
     'Items Requested': items,
     'Referral Date': today,
     'Referring Staff Link': [resolvedStaffId],
-    'Client': [resolvedClientId],                // NEW link
+    'Client': [resolvedClientId],
     'Referral Review': 'Approved',
     'Appointment Status': 'Unscheduled',
     'Possible Duplicate': isDuplicate,
@@ -409,10 +435,12 @@ export async function POST(req: Request) {
 
 
 
-  if (address2) fields['Address 2'] = address2
-  if (notes) fields['Internal Notes'] = notes
-  if (county) fields['County'] = county
+
+  // Notes submitted by the agency belong on External Notes (agency-visible).
+  // Internal Notes are staff-only and populated via the detail page.
+  if (notes) fields['External Notes'] = notes
   if (!isFlexible && preferredDate) fields['Preferred Date'] = preferredDate
+
 
 
 
@@ -427,10 +455,12 @@ export async function POST(req: Request) {
 
 
 
+
   if (!res.ok) {
     const err = await res.text()
     return NextResponse.json({ error: err }, { status: 500 })
   }
+
 
 
 
