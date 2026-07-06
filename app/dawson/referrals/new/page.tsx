@@ -391,9 +391,9 @@ useEffect(() => {
               style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
               Add Another
             </button>
-            <button onClick={() => router.push('/dawson/referrals/review')}
+            <button onClick={() => router.push('/dawson/referrals/scheduled')}
               style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
-              View Referrals
+              View Scheduled
             </button>
           </div>
         </div>
