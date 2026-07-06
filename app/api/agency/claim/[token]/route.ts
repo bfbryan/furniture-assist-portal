@@ -10,7 +10,7 @@
  *        + set Claim Token Used At (once)
  *
  * Token stays valid after submit (per Ben's design choice). Latest submission wins.
- * Lookup uses the hidden 'Submitted By User ID' text field (mirrors userRec.id)
+ * Lookup uses the hidden 'Submitted by User ID' text field (mirrors userRec.id)
  * because filterByFormula against linked-record fields matches the linked table's
  * primary field, not the record ID — unreliable if two users share a name.
  * Expiry: 7 days from Claim Token Sent At (enforced server-side here).
@@ -140,7 +140,7 @@ export async function GET(_req: Request, { params }: Params) {
     const agencyFields = agencyRes.fields || {}
 
     // 4. Existing submission (if this user has already submitted, seed the form)
-    const subFormula = `{Submitted By User ID} = "${userRec.id}"`
+    const subFormula = `{Submitted by User ID} = "${userRec.id}"`
     const subRes = await atFetch(
       `/${encodeURIComponent(TABLE_SUBMISSIONS)}?filterByFormula=${encodeFormula(
         subFormula
@@ -290,7 +290,7 @@ export async function POST(req: Request, { params }: Params) {
     }
 
     // 3. Upsert Agency Profile Submissions row using the hidden ID field.
-    const subFormula = `{Submitted By User ID} = "${userRec.id}"`
+    const subFormula = `{Submitted by User ID} = "${userRec.id}"`
     const subRes = await atFetch(
       `/${encodeURIComponent(TABLE_SUBMISSIONS)}?filterByFormula=${encodeFormula(
         subFormula
@@ -300,7 +300,7 @@ export async function POST(req: Request, { params }: Params) {
 
     const submissionFields: Record<string, unknown> = {
       'Submitted By User': [userRec.id],
-      'Submitted By User ID': userRec.id,
+      'Submitted by User ID': userRec.id,
       Agency: [agencyId],
       'User First Name': body.userFirstName.trim(),
       'User Last Name': body.userLastName.trim(),
