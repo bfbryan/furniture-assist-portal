@@ -4,13 +4,16 @@ import { useState, useMemo } from "react";
 import Link from "next/link";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
+// July 2026: statuses now match the six Airtable Appointment Status values
+// 1:1. Order in the union = display order in filter pills and STATUS_CONFIG.
 
 export type ReferralStatus =
-  | "Pending Review"
+  | "Unscheduled"
   | "Pending Schedule"
   | "Scheduled"
+  | "Cancelled"
   | "Completed"
-  | "Cancelled";
+  | "No Show";
 
 export interface AgencyReferral {
   id: string;           // Airtable record ID
@@ -25,14 +28,16 @@ interface AgencyReferralsPanelProps {
 }
 
 // ─── Status config ─────────────────────────────────────────────────────────────
-// Matches the color accents already in use in ReferralTable.tsx
+// Colors match the accent scheme used across the Dawson admin views.
+// No Show is purple to stay visually distinct from Cancelled (red) and
+// Completed (gray) — all three are terminal states but semantically different.
 
 const STATUS_CONFIG: Record<
   ReferralStatus,
   { label: string; pill: string; dot: string }
 > = {
-  "Pending Review": {
-    label: "Pending review",
+  Unscheduled: {
+    label: "Unscheduled",
     pill: "bg-amber-50 text-amber-800 border-amber-200",
     dot: "bg-amber-400",
   },
@@ -46,15 +51,20 @@ const STATUS_CONFIG: Record<
     pill: "bg-emerald-50 text-emerald-800 border-emerald-200",
     dot: "bg-emerald-400",
   },
+  Cancelled: {
+    label: "Cancelled",
+    pill: "bg-red-50 text-red-700 border-red-200",
+    dot: "bg-red-400",
+  },
   Completed: {
     label: "Completed",
     pill: "bg-gray-100 text-gray-600 border-gray-200",
     dot: "bg-gray-400",
   },
-  Cancelled: {
-    label: "Cancelled",
-    pill: "bg-red-50 text-red-700 border-red-200",
-    dot: "bg-red-400",
+  "No Show": {
+    label: "No show",
+    pill: "bg-purple-50 text-purple-800 border-purple-200",
+    dot: "bg-purple-400",
   },
 };
 
@@ -125,10 +135,12 @@ export default function AgencyReferralsPanel({
           <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
             {referrals.length} total
           </span>
-          {/* Pending Review alert badge — visible even when collapsed */}
-          {(counts["Pending Review"] ?? 0) > 0 && (
+          {/* Unscheduled alert badge — visible even when collapsed.
+              This is the new "attention required" state, replacing the
+              old Pending Review badge. */}
+          {(counts["Unscheduled"] ?? 0) > 0 && (
             <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-              {counts["Pending Review"]} pending review
+              {counts["Unscheduled"]} unscheduled
             </span>
           )}
         </div>

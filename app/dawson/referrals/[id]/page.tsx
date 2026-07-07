@@ -111,13 +111,19 @@ function ItemGroup({ title, items }: { title: string; items: { name: string; qty
 }
 
 function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
+  // Sort items alphabetically within each category to match Saturday pickup
+  // sheet order — makes manual QA/QC against the paper sheet a straight top-to-
+  // bottom read. Uses localeCompare for stable, case-insensitive ordering.
+  const sortAlpha = (items: { name: string; qty: string | number }[]) =>
+    [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+
   const groups = [
-    { title: 'Living Room', items: d.livingRoom },
-    { title: 'Bedroom', items: d.bedroom },
-    { title: 'Dining Room', items: d.diningRoom },
-    { title: 'Kitchen / Household', items: d.kitchen },
-    { title: 'Clothes & Shoes', items: d.linens },
-    { title: 'Baby / Kids', items: d.misc },
+    { title: 'Living Room', items: sortAlpha(d.livingRoom) },
+    { title: 'Bedroom', items: sortAlpha(d.bedroom) },
+    { title: 'Dining Room', items: sortAlpha(d.diningRoom) },
+    { title: 'Kitchen / Household', items: sortAlpha(d.kitchen) },
+    { title: 'Clothes & Shoes', items: sortAlpha(d.linens) },
+    { title: 'Baby / Kids', items: sortAlpha(d.misc) },
   ].filter(g => g.items.length > 0)
 
   const totalCount = groups.reduce((sum, g) => sum + g.items.length, 0)
