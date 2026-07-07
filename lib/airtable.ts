@@ -531,6 +531,10 @@ export async function getAgencyWithDetails(agencyId: string) {
       id: r.id,
       clientName: `${r.fields['First Name'] ?? ''} ${r.fields['Last Name'] ?? ''}`.trim(),
       referralDate: r.fields['Referral Date'] as string,
+      // July 2026: include appointment date so the agency detail panel can
+      // show "Appt Date" for Scheduled/Completed/No Show rows instead of
+      // the (less useful) submission date.
+      appointmentDate: (r.fields['Appointment Date'] as string[])?.[0] ?? null,
       referralReview: r.fields['Referral Review'] as string,
       appointmentStatus: r.fields['Appointment Status'] as string,
       referredBy: safeLookupString(r.fields['Referring Staff']),

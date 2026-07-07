@@ -21,6 +21,7 @@ type Referral = {
   id: string
   clientName: string
   referralDate: string
+  appointmentDate: string | null   // July 2026: shown as “Appt Date” in the panel when present
   referralReview: string
   appointmentStatus: string
   referredBy: string | null
@@ -156,6 +157,7 @@ function toAgencyReferral(r: Referral): AgencyReferral {
     clientName: r.clientName,
     submittedBy: r.referredBy ?? '—',
     referralDate: r.referralDate,
+    appointmentDate: r.appointmentDate,
     status,
   }
 }

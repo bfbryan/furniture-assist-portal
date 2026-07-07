@@ -16,10 +16,11 @@ export type ReferralStatus =
   | "No Show";
 
 export interface AgencyReferral {
-  id: string;           // Airtable record ID
-  clientName: string;   // Client Referrals → "Client Name" field
-  submittedBy: string;  // Client Referrals → "Submitted By" (Agency User name)
-  referralDate: string; // ISO date string — display formatted
+  id: string;                        // Airtable record ID
+  clientName: string;                // Client Referrals → "Client Name" field
+  submittedBy: string;               // Client Referrals → "Submitted By" (Agency User name)
+  referralDate: string;              // Submission date (ISO)
+  appointmentDate: string | null;    // Scheduled appt date (ISO) — null until scheduled
   status: ReferralStatus;
 }
 
@@ -229,7 +230,12 @@ export default function AgencyReferralsPanel({
                           {r.clientName}
                         </p>
                         <p className="text-xs text-gray-400 mt-0.5">
-                          {r.submittedBy} · {formatDate(r.referralDate)}
+                          {r.submittedBy} ·{" "}
+                          {r.appointmentDate ? (
+                            <>Appt Date {formatDate(r.appointmentDate)}</>
+                          ) : (
+                            <>Submission Date {formatDate(r.referralDate)}</>
+                          )}
                         </p>
                       </div>
                       <span
