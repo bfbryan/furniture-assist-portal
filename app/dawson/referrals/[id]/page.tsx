@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 
 type ItemsDisbursed = {
   livingRoom: { name: string; qty: string | number }[]
@@ -207,6 +208,7 @@ function InternalNotesModal({ currentNotes, onSave, onCancel, saving }: {
 }
 
 export default function ReferralDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter()
   const [referral, setReferral] = useState<Referral | null>(null)
   const [loading, setLoading] = useState(true)
   const [referralId, setReferralId] = useState<string>('')
@@ -268,10 +270,20 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       {/* Top bar */}
       <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <a href="/dawson/referrals/review" style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {/* July 2026: back button uses router.back() so it returns to wherever the user came
+              from — Review queue, History, Agency detail page's referrals panel, Print sheets, etc.
+              Falls back to Review queue if there's no history (fresh tab / deep link). */}
+          <button
+            type="button"
+            onClick={() => {
+              if (window.history.length > 1) router.back()
+              else router.push('/dawson/referrals/review')
+            }}
+            style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-            Referrals
-          </a>
+            Back
+          </button>
           <span style={{ color: '#EDE9E1' }}>→</span>
           <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>{referral.clientName}</div>
           {referral.possibleDuplicate && (

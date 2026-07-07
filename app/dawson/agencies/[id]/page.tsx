@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import AgencyReferralsPanel, { AgencyReferral, ReferralStatus } from "@/components/AgencyReferralsPanel"
 
 type AgencyUser = {
@@ -163,6 +164,7 @@ function toAgencyReferral(r: Referral): AgencyReferral {
 }
 
 export default function AgencyDetailPage({ params }: { params: Promise<{ id: string }> }) {
+  const router = useRouter()
   const [agency, setAgency] = useState<Agency | null>(null)
   const [loading, setLoading] = useState(true)
   const [statusLoading, setStatusLoading] = useState(false)
@@ -273,10 +275,20 @@ useEffect(() => {
         position: 'sticky', top: 0, zIndex: 50,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <a href={back.href} style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
-  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-  {back.label}
-</a>
+          {/* July 2026: back button uses router.back() so it returns to whichever list
+              (Active / Pending / Inactive / Unclaimed) the user came from.
+              Falls back to /dawson/agencies if there's no history (fresh tab). */}
+          <button
+            type="button"
+            onClick={() => {
+              if (window.history.length > 1) router.back()
+              else router.push('/dawson/agencies')
+            }}
+            style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
           <span style={{ color: '#EDE9E1' }}>→</span>
           <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>{agency.name}</div>
           {agency.possibleDuplicate && (

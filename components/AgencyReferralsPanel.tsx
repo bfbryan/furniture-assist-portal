@@ -30,13 +30,19 @@ interface AgencyReferralsPanelProps {
 
 // ─── Status config ─────────────────────────────────────────────────────────────
 // Colors match the accent scheme used across the Dawson admin views.
-// No Show is purple to stay visually distinct from Cancelled (red) and
-// Completed (gray) — all three are terminal states but semantically different.
+// July 2026: No Show switched from purple → FA gold (#C9A84C) to match the
+// history page's pill color for cross-page consistency. Uses inline style
+// (`pillStyle`) because Tailwind's amber palette is a green-tinted yellow
+// that doesn't match the FA warm gold exactly.
 
-const STATUS_CONFIG: Record<
-  ReferralStatus,
-  { label: string; pill: string; dot: string }
-> = {
+type StatusStyle = {
+  label: string;
+  pill: string;                              // Tailwind classes (when set)
+  pillStyle?: React.CSSProperties;           // inline style override (when set, wins over `pill`)
+  dot: string;
+};
+
+const STATUS_CONFIG: Record<ReferralStatus, StatusStyle> = {
   Unscheduled: {
     label: "Unscheduled",
     pill: "bg-amber-50 text-amber-800 border-amber-200",
@@ -64,8 +70,14 @@ const STATUS_CONFIG: Record<
   },
   "No Show": {
     label: "No show",
-    pill: "bg-purple-50 text-purple-800 border-purple-200",
-    dot: "bg-purple-400",
+    // Match history page: bg rgba(201,168,76,0.15), text #C9A84C, border same gold @ 30% alpha
+    pill: "",
+    pillStyle: {
+      backgroundColor: "rgba(201,168,76,0.15)",
+      color: "#C9A84C",
+      borderColor: "rgba(201,168,76,0.3)",
+    },
+    dot: "bg-[#C9A84C]",
   },
 };
 
@@ -240,6 +252,7 @@ export default function AgencyReferralsPanel({
                       </div>
                       <span
                         className={`ml-4 shrink-0 text-[10px] font-semibold uppercase tracking-wide px-2.5 py-1 rounded-full border ${cfg.pill}`}
+                        style={cfg.pillStyle}
                       >
                         {cfg.label}
                       </span>
