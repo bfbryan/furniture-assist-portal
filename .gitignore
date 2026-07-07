@@ -39,3 +39,11 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Local claim token exports (contain live tokens — never commit)
+claim-urls-*.csv
+debuger-claim-filter.js
+
+# Token exports
+claim-urls-*.csv
+debuger-claim-filter.js
