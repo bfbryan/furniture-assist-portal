@@ -12,8 +12,10 @@
 // Returns per-row results so the UI can show success/skipped/error counts.
 
 import { NextResponse } from 'next/server'
+import { auth, clerkClient } from '@clerk/nextjs/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { upsertAgencyAndUser } from '@/lib/upsertAgencyAndUser'
+import { writeImportLog } from '@/lib/airtable'
 
 // Bump serverless function timeout to 60s. 33 rows × ~500ms each = ~16s,
 // but we want headroom for slow Airtable responses. Default (10s on Hobby /
@@ -46,11 +48,13 @@ export async function POST(req: Request) {
   // ---- Auth ----
   // Use the canonical Dawson-access helper (same as every other Dawson admin
   // route). Handles Ben + Dawson + Ray + Chase and centralizes the allowlist.
-  const denied = await requireDawsonAccess({ status: 401 })
+  // Helper returns a 403 NextResponse to short-circuit if unauthorized, or
+  // null to proceed.
+  const denied = await requireDawsonAccess()
   if (denied) return denied
 
   // ---- Parse body ----
-  let body: { rows: AgencyImportRow[] }
+  let body: { rows: AgencyImportRow[]; sourceFilename?: string }
   try {
     body = await req.json()
   } catch {
@@ -58,6 +62,7 @@ export async function POST(req: Request) {
   }
 
   const rows = body.rows
+  const sourceFilename = typeof body.sourceFilename === 'string' ? body.sourceFilename : undefined
   if (!Array.isArray(rows) || rows.length === 0) {
     return NextResponse.json(
       { error: 'rows array is required and must not be empty' },
@@ -165,5 +170,48 @@ export async function POST(req: Request) {
     errors: results.filter(r => r.status === 'error').length,
   }
 
-  return NextResponse.json({ summary, results })
+  // ---- Audit trail (non-blocking) ----
+  // The Agencies importer counts a row as "created" only when BOTH the
+  // Agency AND User were freshly minted. "Skipped" here means one of the
+  // two already existed. Errors are true hard-failures.
+  let uploadedBy = 'unknown'
+  try {
+    const { userId } = await auth()
+    if (userId) {
+      uploadedBy = userId
+      const client = await clerkClient()
+      const me = await client.users.getUser(userId)
+      if (me?.emailAddresses?.[0]?.emailAddress) {
+        uploadedBy = me.emailAddresses[0].emailAddress
+      }
+    }
+  } catch {
+    // keep uploadedBy = userId or 'unknown'
+  }
+
+  const skippedCount = summary.agencyExisted + summary.bothExisted
+  const nonCreated = results.filter(r => r.status !== 'created')
+  const skippedSummary = nonCreated.length === 0
+    ? 'All rows created.'
+    : nonCreated
+        .map(r => {
+          const who = `${r.agencyName || '(no agency)'} / ${r.email || '(no email)'}`
+          const detail = r.reason || r.status.replace(/_/g, ' ')
+          return `Row ${r.rowIndex}: ${r.status.toUpperCase()} — ${who} — ${detail}`
+        })
+        .join('\n')
+
+  const importLogId = await writeImportLog({
+    importType: 'Agencies',
+    uploadedBy,
+    total: summary.total,
+    created: summary.bothCreated,
+    skipped: skippedCount,
+    errors: summary.errors,
+    resultsJson: { summary, results },
+    skippedRowsSummary: skippedSummary,
+    sourceFilename,
+  })
+
+  return NextResponse.json({ summary, results, importLogId })
 }

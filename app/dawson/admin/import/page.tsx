@@ -1,8 +1,13 @@
 'use client'
 
 
-import { useState, useRef, useMemo } from 'react'
+import { useState, useRef, useMemo, useEffect } from 'react'
 import * as XLSX from 'xlsx'
+
+// sessionStorage key for the last import result. Kept short-lived so leaving
+// the tab doesn't linger stale data, but survives a page-blank / accidental
+// refresh so the audit trail never disappears mid-review.
+const RESULTS_STORAGE_KEY = 'dawson.importReferrals.lastResults.v1'
 
 
 // ============================================================================
@@ -616,6 +621,51 @@ export default function ImportReferralsPage() {
   const [importing, setImporting] = useState(false)
   const [results, setResults] = useState<ImportResult[] | null>(null)
   const [parseError, setParseError] = useState<string | null>(null)
+  const [importLogId, setImportLogId] = useState<string | null>(null)
+  const [lastImportFilename, setLastImportFilename] = useState<string | null>(null)
+  const [lastImportAt, setLastImportAt] = useState<string | null>(null)
+
+
+  // On mount, restore the most recent import result (if any) from sessionStorage.
+  // This means a page-blank / refresh / navigation-and-back doesn't lose the
+  // audit view. Cleared explicitly via the "Clear results" button.
+  useEffect(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? window.sessionStorage.getItem(RESULTS_STORAGE_KEY) : null
+      if (!raw) return
+      const parsed = JSON.parse(raw)
+      if (parsed && Array.isArray(parsed.results)) {
+        setResults(parsed.results)
+        setImportLogId(parsed.importLogId || null)
+        setLastImportFilename(parsed.fileName || null)
+        setLastImportAt(parsed.completedAt || null)
+      }
+    } catch {
+      // ignore restore failures — audit trail is nice-to-have on refresh
+    }
+  }, [])
+
+
+  // Whenever results are set (or cleared), mirror to sessionStorage.
+  useEffect(() => {
+    try {
+      if (!results) {
+        window.sessionStorage.removeItem(RESULTS_STORAGE_KEY)
+        return
+      }
+      window.sessionStorage.setItem(
+        RESULTS_STORAGE_KEY,
+        JSON.stringify({
+          results,
+          importLogId,
+          fileName: lastImportFilename,
+          completedAt: lastImportAt,
+        }),
+      )
+    } catch {
+      // sessionStorage quota exceeded or unavailable — non-fatal
+    }
+  }, [results, importLogId, lastImportFilename, lastImportAt])
 
 
   function handleFile(file: File) {
@@ -702,11 +752,16 @@ export default function ImportReferralsPage() {
     if (validRows.length === 0) return
     setImporting(true)
     setResults(null)
+    setImportLogId(null)
     try {
       const res = await fetch('/api/dawson/admin/import-referrals', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ rows: validRows.map(r => r.data) }),
+        body: JSON.stringify({
+          rows: validRows.map(r => r.data),
+          // Pass the source filename so the Import Log record shows what was uploaded.
+          sourceFilename: fileName,
+        }),
       })
       const json = await res.json()
       if (!res.ok) {
@@ -718,11 +773,46 @@ export default function ImportReferralsPage() {
         rowIndex: validRows[i].rowIndex,
       }))
       setResults(remapped)
+      setImportLogId(json.importLogId || null)
+      setLastImportFilename(fileName)
+      setLastImportAt(new Date().toISOString())
     } catch (err) {
       setParseError(err instanceof Error ? err.message : 'Network error')
     } finally {
       setImporting(false)
     }
+  }
+
+
+  function copyResultsJson() {
+    if (!results) return
+    const payload = {
+      completedAt: lastImportAt,
+      fileName: lastImportFilename,
+      importLogId,
+      summary,
+      results,
+    }
+    const text = JSON.stringify(payload, null, 2)
+    try {
+      navigator.clipboard.writeText(text)
+    } catch {
+      // fallback: put into a textarea and select for manual copy
+      const ta = document.createElement('textarea')
+      ta.value = text
+      document.body.appendChild(ta)
+      ta.select()
+      try { document.execCommand('copy') } catch { /* ignore */ }
+      document.body.removeChild(ta)
+    }
+  }
+
+
+  function clearResults() {
+    setResults(null)
+    setImportLogId(null)
+    setLastImportFilename(null)
+    setLastImportAt(null)
   }
 
 
@@ -1021,26 +1111,30 @@ export default function ImportReferralsPage() {
         {/* Results */}
         {results && summary && (
           <div style={card}>
-            <div style={{ ...cardHeader, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={h2}>Results</h2>
-              <button onClick={downloadResultsCsv} style={{
-                padding: '6px 14px',
-                borderRadius: '7px',
-                border: '1px solid #EDE9E1',
-                background: 'white',
-                color: '#2A7F6F',
-                fontFamily: 'var(--font-montserrat)',
-                fontWeight: 700,
-                fontSize: '12px',
-                cursor: 'pointer',
-              }}>
-                Download CSV ↓
-              </button>
+            <div style={{ ...cardHeader, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+              <div>
+                <h2 style={h2}>Results</h2>
+                {(lastImportFilename || lastImportAt || importLogId) && (
+                  <div style={{ marginTop: '4px', fontSize: '11px', color: '#7A8899' }}>
+                    {lastImportFilename && <span>{lastImportFilename}</span>}
+                    {lastImportAt && <span>{lastImportFilename ? ' · ' : ''}{new Date(lastImportAt).toLocaleString()}</span>}
+                    {importLogId && <span> · Import Log: <span style={{ fontFamily: 'monospace' }}>{importLogId}</span></span>}
+                  </div>
+                )}
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={copyResultsJson} style={resultsBtn}>Copy JSON</button>
+                <button onClick={downloadResultsCsv} style={resultsBtn}>Download CSV ↓</button>
+                <button onClick={clearResults} style={{ ...resultsBtn, color: '#7A8899' }}>Clear</button>
+              </div>
             </div>
-            <div style={{ padding: '20px 24px', display: 'flex', gap: '24px', fontSize: '14px' }}>
+            <div style={{ padding: '20px 24px', display: 'flex', gap: '24px', fontSize: '14px', flexWrap: 'wrap' }}>
               <div><strong style={{ color: '#2A7F6F' }}>✓ {summary.created}</strong> created</div>
               <div><strong style={{ color: '#C9A84C' }}>↻ {summary.skipped}</strong> skipped (already exist)</div>
               <div><strong style={{ color: '#C0392B' }}>⚠ {summary.errors}</strong> errors</div>
+              <div style={{ marginLeft: 'auto', color: '#7A8899' }}>
+                {summary.created} / {results.length} imported
+              </div>
             </div>
             <div style={{ maxHeight: '420px', overflowY: 'auto', borderTop: '1px solid #EDE9E1' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '12px' }}>
@@ -1131,4 +1225,17 @@ const td: React.CSSProperties = {
   padding: '8px 14px',
   color: '#2C3A4A',
   verticalAlign: 'top',
+}
+
+
+const resultsBtn: React.CSSProperties = {
+  padding: '6px 14px',
+  borderRadius: '7px',
+  border: '1px solid #EDE9E1',
+  background: 'white',
+  color: '#2A7F6F',
+  fontFamily: 'var(--font-montserrat)',
+  fontWeight: 700,
+  fontSize: '12px',
+  cursor: 'pointer',
 }
