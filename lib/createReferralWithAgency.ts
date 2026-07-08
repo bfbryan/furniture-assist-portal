@@ -476,29 +476,16 @@ export async function createReferralWithAgency(
     const apptTimeSlot = normalizeApptTimeSlot(input.appointmentTime)
     const fullyScheduled = !!(saturdayLinkId && apptTimeSlot)
 
-    // TRANSITION-WINDOW NOTE: Client Referrals still has First Name /
-    // Last Name / DOB / Phone / Address / Address 2 / City / State / Zip /
-    // County / Preferred Language as writable text columns during this
-    // migration. We continue to write them so:
-    //   (a) the existing Unique ID formula on Client Referrals still
-    //       resolves cleanly (it references {Last Name}, {First Name},
-    //       {DOB} directly on the referral)
-    //   (b) all existing read paths, print sheets, and Saturday sheet
-    //       workflows keep working unchanged this Saturday
-    // AFTER the AT schema trim step, these become lookups from {Client}
-    // and this block collapses to just the per-visit fields.
+    // SCHEMA-TRIM COMPLETE (07/08/26): First Name, Last Name, DOB, Phone,
+    // Address, Address 2, City, State, Zip, County, Preferred Language on
+    // Client Referrals are all lookups via {Client} now — no longer writable.
+    // Writing to them returns INVALID_VALUE_FOR_COLUMN 422. All identity is
+    // owned by the Clients table and surfaces on Client Referrals via the
+    // lookup fields.
+    //
+    // The Client Referrals Unique ID formula uses ARRAYJOIN({Last Name}) etc.
+    // to resolve against the lookup shape, so dedupe still works.
     const referralFields: Record<string, unknown> = {
-      // Identity — still written during transition (see note above)
-      'First Name': input.firstName.trim(),
-      'Last Name': input.lastName.trim(),
-      Phone: input.phone || '',
-      Address: input.address || '',
-      'Address 2': input.address2 || '',
-      City: input.city || '',
-      State: input.state || '',
-      Zip: input.zip || '',
-      County: input.county || '',
-      'Preferred Language': input.preferredLanguage || 'English',
       // Per-visit
       '# in HH': input.hhSize ?? null,
       '# Children': input.children ?? null,
@@ -515,9 +502,9 @@ export async function createReferralWithAgency(
     if (staffRecord) {
       referralFields['Referring Staff Link'] = [staffRecord.id]
     }
-    if (input.dob && input.dob.trim()) {
-      referralFields['DOB'] = toMDY(input.dob)
-    }
+    // DOB no longer written to Client Referrals — it's a lookup from {Client}
+    // now. It's still written to the Clients table when present (see the
+    // Client-create block above).
     if (effectiveReferralDate) {
       referralFields['Referral Date'] = toMDY(effectiveReferralDate)
     }
