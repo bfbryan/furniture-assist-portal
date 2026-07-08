@@ -570,8 +570,11 @@ function parseRow(row: RawRow, rowIndex: number): ParsedRow {
     appointmentDate: apptParsed.us || '',
     appointmentTime: apptTime,
     itemsRequested: wantsResult.categories.join(', '),
-    externalNotes: s(row['Notes']),
-    internalNotes: '',
+    // Dawson's sheet "Notes" column is HIS notes (internal scheduling/context),
+    // NOT notes submitted by the agency. Route to Internal Notes.
+    // External Notes is reserved for agency-portal submissions (future).
+    externalNotes: '',
+    internalNotes: s(row['Notes']),
     preferredDate: '',
     schedulingFlexibility: '',
   }
