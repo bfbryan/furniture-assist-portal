@@ -17,6 +17,7 @@ type ItemsDisbursed = {
 
 type Referral = {
   id: string
+  clientId: string | null                    // NEW: rec ID of the linked Client — needed for PATCH
   clientName: string
   firstName: string
   lastName: string
@@ -46,17 +47,80 @@ type Referral = {
   // staff identity (Excel Branch c — no email, no name).
   referredBy: string | null
   referringAgency: string | null
+  referringAgencyId: string | null           // NEW: for link to Agency detail page
   referredByPhone: string | null
   agencyEmail: string | null
-  referringStaffLinkId: string | null   // link to Agency User — for future Staff ID deep-link
+  referringStaffLinkId: string | null        // link to Agency User — for future Staff ID deep-link
   possibleDuplicate: boolean
   itemsDisbursed: ItemsDisbursed | null
 }
+
+// ---------------------------------------------------------------------------
+// Constants
+// ---------------------------------------------------------------------------
+
+// The 6 canonical Items Requested categories. MUST stay in sync with
+// dawson-import-referrals-page.tsx CATEGORIES constant AND the agency
+// submission form. Any change here needs to be mirrored there.
+const ITEM_CATEGORIES = [
+  'Bedroom Furniture',
+  'Living Room Furniture',
+  'Dining Room Furniture',
+  'Clothes',
+  'Household Items (including kitchen & linens)',
+  'Baby Items',
+]
+
+// NJ counties. Dawson works exclusively in NJ; if the org expands out-of-
+// state, add "Other" or convert this to a free-text field.
+const NJ_COUNTIES = [
+  'Atlantic', 'Bergen', 'Burlington', 'Camden', 'Cape May', 'Cumberland',
+  'Essex', 'Gloucester', 'Hudson', 'Hunterdon', 'Mercer', 'Middlesex',
+  'Monmouth', 'Morris', 'Ocean', 'Passaic', 'Salem', 'Somerset',
+  'Sussex', 'Union', 'Warren',
+]
+
+const LANGUAGES = ['English', 'Spanish', 'Haitian Creole', 'French', 'Arabic', 'Portuguese', 'Other']
+
+const STATES = ['NJ', 'NY', 'PA', 'CT', 'DE']
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return '—'
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// DOB comes from AT in "M/D/YYYY" format (created by our toMDY helper).
+// The native <input type="date"> needs YYYY-MM-DD. These two convert both ways.
+function dobToInputValue(dob: string | null): string {
+  if (!dob) return ''
+  // Try MDY first (our storage format), then fall back to native Date parse
+  const mdy = dob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (mdy) {
+    const [, m, d, y] = mdy
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+  const parsed = new Date(dob)
+  if (isNaN(parsed.getTime())) return ''
+  return parsed.toISOString().slice(0, 10)
+}
+function inputValueToMDY(input: string): string {
+  if (!input) return ''
+  const iso = input.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!iso) return input
+  const [, y, m, d] = iso
+  return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`
+}
+
+// Format phone as (XXX) XXX-XXXX on blur. Strips non-digits.
+function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length !== 10) return raw // leave as-typed if not exactly 10
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
 }
 
 function getPortalStatus(review: string, status: string) {
@@ -79,10 +143,19 @@ const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText
   Rejected:   { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',     badgeText: '#C0392B' },
 }
 
+// Card accent colors. Teal = editable surfaces (guides Dawson's eye to
+// "safe to touch" zones). Muted grey = read-only. See mockup for rationale.
+const EDIT_ACCENT = '#2A7F6F'  // teal — editable card
+const READ_ACCENT = '#7A8899'  // muted grey — read-only card
+
+// ---------------------------------------------------------------------------
+// Shared UI atoms
+// ---------------------------------------------------------------------------
+
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1' }}>
-      <div style={{ width: '160px', flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em', paddingTop: '1px' }}>
+      <div style={{ width: '130px', flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em', paddingTop: '1px' }}>
         {label}
       </div>
       <div style={{ fontSize: '14px', color: '#1B2B4B', flex: 1 }}>
@@ -92,29 +165,60 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
-function ItemGroup({ title, items }: { title: string; items: { name: string; qty: string | number }[] }) {
-  if (!items || items.length === 0) return null
+function Card({
+  accent,
+  title,
+  headerRight,
+  children,
+}: {
+  accent: string
+  title: string
+  headerRight?: React.ReactNode
+  children: React.ReactNode
+}) {
   return (
-    <div style={{ marginBottom: '18px' }}>
-      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2A7F6F', marginBottom: '8px' }}>
-        {title}
+    <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
+      <div style={{ background: accent, height: '4px' }} />
+      <div style={{ padding: '14px 20px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>{title}</h2>
+        {headerRight}
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px 18px' }}>
-        {items.map((it, i) => (
-          <div key={i} style={{ display: 'flex', justifyContent: 'space-between', fontSize: '13px', color: '#2C3A4A', borderBottom: '1px dotted #EDE9E1', padding: '4px 0' }}>
-            <span>{it.name}</span>
-            <span style={{ fontWeight: 700, color: '#1B2B4B' }}>{it.qty}</span>
-          </div>
-        ))}
+      <div style={{ padding: '12px 20px' }}>
+        {children}
       </div>
     </div>
   )
 }
 
+function EditButton({ onClick, label = 'Edit' }: { onClick: () => void; label?: string }) {
+  return (
+    <button onClick={onClick}
+      style={{ padding: '5px 12px', borderRadius: '6px', border: 'none', background: 'rgba(42,127,111,0.1)', color: '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
+      {label}
+    </button>
+  )
+}
+
+// Reusable input style — keeps all inputs visually consistent
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #EDE9E1',
+  fontSize: '13px', color: '#1B2B4B', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', background: 'white',
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', gap: '16px', padding: '8px 0', alignItems: 'center' }}>
+      <div style={{ width: '130px', flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ flex: 1 }}>{children}</div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Items Disbursed (unchanged from previous version)
+// ---------------------------------------------------------------------------
+
 function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
-  // Sort items alphabetically within each category to match Saturday pickup
-  // sheet order — makes manual QA/QC against the paper sheet a straight top-to-
-  // bottom read. Uses localeCompare for stable, case-insensitive ordering.
   const sortAlpha = (items: { name: string; qty: string | number }[]) =>
     [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
 
@@ -131,81 +235,489 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
 
   if (totalCount === 0 && !d.distributionNotes && !d.volunteerInitials) {
     return (
-      <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-        <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1' }}>
-          <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Items Disbursed</h2>
-        </div>
-        <div style={{ padding: '20px 24px', fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>
-          No items recorded yet.
-        </div>
-      </div>
+      <Card accent={READ_ACCENT} title="Items Disbursed">
+        <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '8px 0' }}>No items recorded yet.</div>
+      </Card>
     )
   }
 
   return (
-    <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-      <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Items Disbursed</h2>
+    <Card
+      accent={READ_ACCENT}
+      title="Items Disbursed"
+      headerRight={
         <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#7A8899' }}>
           {d.volunteerInitials && <span><strong style={{ color: '#1B2B4B' }}>{d.volunteerInitials}</strong> · vol</span>}
           {d.checkoutTime && <span>{d.checkoutTime}</span>}
         </div>
-      </div>
-
-      <div style={{ padding: '18px 24px' }}>
-        <div style={{ columnCount: 3, columnGap: '28px' }}>
-          {groups.map((g, gi) => (
-            <div key={gi} style={{ breakInside: 'avoid', marginBottom: '14px' }}>
-              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2A7F6F', marginBottom: '6px' }}>
-                {g.title}
+      }
+    >
+      <div style={{ columnCount: 3, columnGap: '28px', padding: '6px 0' }}>
+        {groups.map((g, gi) => (
+          <div key={gi} style={{ breakInside: 'avoid', marginBottom: '14px' }}>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2A7F6F', marginBottom: '6px' }}>
+              {g.title}
+            </div>
+            {g.items.map((it, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12.5px', color: '#2C3A4A', padding: '3px 0', borderBottom: '1px dotted #EDE9E1', gap: '8px' }}>
+                <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</span>
+                <span style={{ fontWeight: 700, color: '#1B2B4B', flexShrink: 0 }}>{it.qty}</span>
               </div>
-              {g.items.map((it, i) => (
-                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12.5px', color: '#2C3A4A', padding: '3px 0', borderBottom: '1px dotted #EDE9E1', gap: '8px' }}>
-                  <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</span>
-                  <span style={{ fontWeight: 700, color: '#1B2B4B', flexShrink: 0 }}>{it.qty}</span>
-                </div>
-              ))}
-            </div>
-          ))}
-        </div>
-
-        {d.distributionNotes && (
-          <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #EDE9E1' }}>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#7A8899', marginBottom: '6px' }}>
-              Distribution Notes
-            </div>
-            <div style={{ fontSize: '13px', color: '#2C3A4A', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
-              {d.distributionNotes}
-            </div>
+            ))}
           </div>
-        )}
+        ))}
       </div>
-    </div>
+
+      {d.distributionNotes && (
+        <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #EDE9E1' }}>
+          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#7A8899', marginBottom: '6px' }}>
+            Distribution Notes
+          </div>
+          <div style={{ fontSize: '13px', color: '#2C3A4A', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+            {d.distributionNotes}
+          </div>
+        </div>
+      )}
+    </Card>
   )
 }
-function InternalNotesModal({ currentNotes, onSave, onCancel, saving }: {
-  currentNotes: string; onSave: (notes: string) => void; onCancel: () => void; saving: boolean
+
+// ---------------------------------------------------------------------------
+// Client Info — display + inline edit
+// ---------------------------------------------------------------------------
+
+type ClientEditState = {
+  firstName: string
+  lastName: string
+  dob: string       // stored as YYYY-MM-DD for the <input>; converted to MDY on save
+  phone: string
+  language: string
+  address: string
+  address2: string
+  city: string
+  state: string
+  zip: string
+  county: string
+  hhSize: string
+  children: string
+}
+
+function referralToClientEditState(r: Referral): ClientEditState {
+  return {
+    firstName: r.firstName ?? '',
+    lastName: r.lastName ?? '',
+    dob: dobToInputValue(r.dob),
+    phone: r.phone ?? '',
+    language: r.language ?? '',
+    address: r.address ?? '',
+    address2: r.address2 ?? '',
+    city: r.city ?? '',
+    state: r.state ?? 'NJ',
+    zip: r.zip ?? '',
+    county: r.county ?? '',
+    hhSize: r.hhSize ?? '',
+    children: r.children ?? '',
+  }
+}
+
+function ClientInfoCard({
+  referral,
+  onSaved,
+}: {
+  referral: Referral
+  onSaved: (updated: Partial<Referral>) => void
 }) {
-  const [value, setValue] = useState(currentNotes)
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState<ClientEditState>(referralToClientEditState(referral))
+
+  function startEdit() {
+    setForm(referralToClientEditState(referral))
+    setError(null)
+    setEditing(true)
+  }
+  function cancelEdit() {
+    setEditing(false)
+    setError(null)
+  }
+
+  async function save() {
+    if (!referral.clientId) {
+      setError('Cannot save — no linked Client record. Contact Ben.')
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      // Convert DOB back to MDY (our AT storage format).
+      // Phone is formatted on blur but we normalize once more here just in case.
+      const payload = {
+        firstName: form.firstName.trim(),
+        lastName: form.lastName.trim(),
+        dob: form.dob ? inputValueToMDY(form.dob) : '',
+        phone: form.phone ? formatPhone(form.phone) : '',
+        language: form.language,
+        address: form.address.trim(),
+        address2: form.address2.trim(),
+        city: form.city.trim(),
+        state: form.state,
+        zip: form.zip.replace(/\D/g, '').slice(0, 5),
+        county: form.county,
+        hhSize: form.hhSize,
+        children: form.children,
+      }
+      const res = await fetch(`/api/dawson/clients/${referral.clientId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || `Save failed (${res.status})`)
+      }
+      // Reflect the change locally without a full refetch. Referral fields on
+      // Client Referrals are lookups, so the display values come from Client —
+      // updating them here keeps the UI in sync until the next fetch.
+      onSaved({
+        firstName: payload.firstName,
+        lastName: payload.lastName,
+        clientName: `${payload.firstName} ${payload.lastName}`.trim(),
+        dob: payload.dob || null,
+        phone: payload.phone || null,
+        language: payload.language || null,
+        address: payload.address || null,
+        address2: payload.address2 || null,
+        city: payload.city || null,
+        state: payload.state || null,
+        zip: payload.zip || null,
+        county: payload.county || null,
+        hhSize: payload.hhSize || null,
+        children: payload.children || null,
+      })
+      setEditing(false)
+    } catch (e: any) {
+      setError(e.message ?? 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <Card
+        accent={EDIT_ACCENT}
+        title="Client Information"
+        headerRight={<EditButton onClick={startEdit} />}
+      >
+        <InfoRow label="Full Name" value={referral.clientName} />
+        <InfoRow label="Date of Birth" value={formatDate(referral.dob)} />
+        <InfoRow label="Phone" value={referral.phone} />
+        <InfoRow label="Language" value={referral.language} />
+        <InfoRow label="Address" value={
+          referral.address ? (
+            <>{referral.address}{referral.address2 ? `, ${referral.address2}` : ''}<br />
+            {referral.city}, {referral.state} {referral.zip}</>
+          ) : null
+        } />
+        <InfoRow label="County" value={referral.county} />
+        <InfoRow label="Household Size" value={referral.hhSize} />
+        <InfoRow label="Children" value={referral.children} />
+      </Card>
+    )
+  }
+
+  // Edit mode
   return (
-    <div style={{ position: 'fixed', inset: 0, background: 'rgba(27,43,75,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000 }}>
-      <div style={{ background: 'white', borderRadius: '14px', padding: '32px', width: '500px', boxShadow: '0 8px 40px rgba(27,43,75,0.18)' }}>
-        <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B', marginBottom: '8px' }}>Internal Notes</div>
-        <div style={{ fontSize: '13px', color: '#7A8899', marginBottom: '16px' }}>These notes are only visible to Furniture Assist staff.</div>
-        <textarea value={value} onChange={e => setValue(e.target.value)} rows={6} placeholder="Add internal notes about this referral..."
-          style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#1B2B4B', fontFamily: 'inherit', resize: 'vertical', outline: 'none', boxSizing: 'border-box', background: 'white' }} />
-        <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end', marginTop: '16px' }}>
-          <button onClick={onCancel} disabled={saving}
-            style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>Cancel</button>
-          <button onClick={() => onSave(value)} disabled={saving}
-            style={{ padding: '8px 18px', borderRadius: '8px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
-            {saving ? 'Saving...' : 'Save Notes'}
+    <Card
+      accent={EDIT_ACCENT}
+      title="Client Information — Editing"
+      headerRight={
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button onClick={cancelEdit} disabled={saving}
+            style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button onClick={save} disabled={saving}
+            style={{ padding: '5px 14px', borderRadius: '6px', border: 'none', background: EDIT_ACCENT, color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : 'Save'}
           </button>
         </div>
-      </div>
-    </div>
+      }
+    >
+      <Field label="First Name">
+        <input style={inputStyle} value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} />
+      </Field>
+      <Field label="Last Name">
+        <input style={inputStyle} value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} />
+      </Field>
+      <Field label="Date of Birth">
+        <input type="date" style={inputStyle} value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} />
+      </Field>
+      <Field label="Phone">
+        <input style={inputStyle} value={form.phone}
+          onChange={e => setForm({ ...form, phone: e.target.value })}
+          onBlur={e => setForm({ ...form, phone: formatPhone(e.target.value) })}
+          placeholder="(555) 555-5555" />
+      </Field>
+      <Field label="Language">
+        <select style={inputStyle} value={form.language} onChange={e => setForm({ ...form, language: e.target.value })}>
+          <option value="">—</option>
+          {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+      </Field>
+      <Field label="Address">
+        <input style={inputStyle} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} />
+      </Field>
+      <Field label="Address 2">
+        <input style={inputStyle} value={form.address2} onChange={e => setForm({ ...form, address2: e.target.value })} placeholder="Apt / Unit" />
+      </Field>
+      <Field label="City">
+        <input style={inputStyle} value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} />
+      </Field>
+      <Field label="State">
+        <select style={inputStyle} value={form.state} onChange={e => setForm({ ...form, state: e.target.value })}>
+          {STATES.map(s => <option key={s} value={s}>{s}</option>)}
+        </select>
+      </Field>
+      <Field label="Zip">
+        <input style={inputStyle} value={form.zip}
+          onChange={e => setForm({ ...form, zip: e.target.value.replace(/\D/g, '').slice(0, 5) })}
+          inputMode="numeric" maxLength={5} />
+      </Field>
+      <Field label="County">
+        <select style={inputStyle} value={form.county} onChange={e => setForm({ ...form, county: e.target.value })}>
+          <option value="">—</option>
+          {NJ_COUNTIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </Field>
+      <Field label="Household Size">
+        <input style={inputStyle} value={form.hhSize}
+          onChange={e => setForm({ ...form, hhSize: e.target.value.replace(/\D/g, '').slice(0, 2) })}
+          inputMode="numeric" />
+      </Field>
+      <Field label="Children">
+        <input style={inputStyle} value={form.children}
+          onChange={e => setForm({ ...form, children: e.target.value.replace(/\D/g, '').slice(0, 2) })}
+          inputMode="numeric" />
+      </Field>
+      {error && (
+        <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(192,57,43,0.08)', borderRadius: '6px', fontSize: '12px', color: '#C0392B' }}>{error}</div>
+      )}
+    </Card>
   )
 }
+
+// ---------------------------------------------------------------------------
+// Items Requested — display + inline edit (6-category checkbox multi-select)
+// ---------------------------------------------------------------------------
+
+function parseItemsToSet(items: string | null): Set<string> {
+  if (!items) return new Set()
+  return new Set(items.split(',').map(s => s.trim()).filter(Boolean))
+}
+
+function ItemsRequestedCard({
+  referral,
+  onSaved,
+}: {
+  referral: Referral
+  onSaved: (updated: Partial<Referral>) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(parseItemsToSet(referral.items))
+
+  function startEdit() {
+    setSelected(parseItemsToSet(referral.items))
+    setError(null)
+    setEditing(true)
+  }
+  function cancelEdit() {
+    setEditing(false)
+    setError(null)
+  }
+  function toggle(cat: string) {
+    const next = new Set(selected)
+    if (next.has(cat)) next.delete(cat)
+    else next.add(cat)
+    setSelected(next)
+  }
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      // Preserve the canonical order of the 6 categories rather than the
+      // click order Dawson happened to use. Matches how imports write them.
+      const ordered = ITEM_CATEGORIES.filter(c => selected.has(c))
+      const itemsStr = ordered.join(', ')
+      const res = await fetch(`/api/dawson/referrals/${referral.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: itemsStr }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || `Save failed (${res.status})`)
+      }
+      onSaved({ items: itemsStr })
+      setEditing(false)
+    } catch (e: any) {
+      setError(e.message ?? 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    const current = referral.items
+      ? referral.items.split(',').map(s => s.trim()).filter(Boolean)
+      : []
+    return (
+      <Card
+        accent={EDIT_ACCENT}
+        title="Items Requested"
+        headerRight={<EditButton onClick={startEdit} />}
+      >
+        {current.length === 0 ? (
+          <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '4px 0' }}>No items specified.</div>
+        ) : (
+          current.map((item, i) => (
+            <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
+              <span style={{ color: '#2A7F6F', fontWeight: 700, flexShrink: 0 }}>•</span>
+              <span style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.6 }}>{item}</span>
+            </div>
+          ))
+        )}
+      </Card>
+    )
+  }
+
+  return (
+    <Card
+      accent={EDIT_ACCENT}
+      title="Items Requested — Editing"
+      headerRight={
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button onClick={cancelEdit} disabled={saving}
+            style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button onClick={save} disabled={saving}
+            style={{ padding: '5px 14px', borderRadius: '6px', border: 'none', background: EDIT_ACCENT, color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      }
+    >
+      {ITEM_CATEGORIES.map(cat => (
+        <label key={cat} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px 0', cursor: 'pointer', fontSize: '14px', color: '#2C3A4A' }}>
+          <input type="checkbox" checked={selected.has(cat)} onChange={() => toggle(cat)}
+            style={{ width: '16px', height: '16px', accentColor: EDIT_ACCENT, cursor: 'pointer' }} />
+          <span>{cat}</span>
+        </label>
+      ))}
+      {error && (
+        <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(192,57,43,0.08)', borderRadius: '6px', fontSize: '12px', color: '#C0392B' }}>{error}</div>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Internal Notes — display + inline edit (replaces the old modal)
+// ---------------------------------------------------------------------------
+
+function InternalNotesCard({
+  referral,
+  onSaved,
+}: {
+  referral: Referral
+  onSaved: (updated: Partial<Referral>) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [value, setValue] = useState(referral.internalNotes ?? '')
+
+  function startEdit() {
+    setValue(referral.internalNotes ?? '')
+    setError(null)
+    setEditing(true)
+  }
+  function cancelEdit() {
+    setEditing(false)
+    setError(null)
+  }
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/dawson/referrals/${referral.id}/notes`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ internalNotes: value }),
+      })
+      if (!res.ok) {
+        const j = await res.json().catch(() => ({}))
+        throw new Error(j.error || `Save failed (${res.status})`)
+      }
+      onSaved({ internalNotes: value })
+      setEditing(false)
+    } catch (e: any) {
+      setError(e.message ?? 'Save failed')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <Card
+        accent={EDIT_ACCENT}
+        title="Internal Notes"
+        headerRight={<EditButton onClick={startEdit} label={referral.internalNotes ? 'Edit' : '+ Add'} />}
+      >
+        {referral.internalNotes ? (
+          <div style={{ fontSize: '13px', color: '#1B2B4B', whiteSpace: 'pre-wrap', lineHeight: 1.6, padding: '4px 0' }}>{referral.internalNotes}</div>
+        ) : (
+          <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '4px 0' }}>No internal notes added yet.</div>
+        )}
+      </Card>
+    )
+  }
+
+  return (
+    <Card
+      accent={EDIT_ACCENT}
+      title="Internal Notes — Editing"
+      headerRight={
+        <div style={{ display: 'flex', gap: '6px' }}>
+          <button onClick={cancelEdit} disabled={saving}
+            style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
+            Cancel
+          </button>
+          <button onClick={save} disabled={saving}
+            style={{ padding: '5px 14px', borderRadius: '6px', border: 'none', background: EDIT_ACCENT, color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+            {saving ? 'Saving…' : 'Save'}
+          </button>
+        </div>
+      }
+    >
+      <textarea value={value} onChange={e => setValue(e.target.value)} rows={6}
+        placeholder="Add internal notes about this referral..."
+        style={{ ...inputStyle, resize: 'vertical', fontSize: '13px', lineHeight: 1.5, padding: '10px' }} />
+      {error && (
+        <div style={{ marginTop: '8px', padding: '8px 12px', background: 'rgba(192,57,43,0.08)', borderRadius: '6px', fontSize: '12px', color: '#C0392B' }}>{error}</div>
+      )}
+    </Card>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main page
+// ---------------------------------------------------------------------------
 
 export default function ReferralDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
@@ -214,8 +726,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const [referralId, setReferralId] = useState<string>('')
   const [confirm, setConfirm] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState(false)
-  const [notesModal, setNotesModal] = useState(false)
-  const [notesSaving, setNotesSaving] = useState(false)
 
   useEffect(() => {
     params.then(({ id }) => {
@@ -238,15 +748,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     } finally { setActionLoading(false) }
   }
 
-  async function handleSaveNotes(internalNotes: string) {
-    setNotesSaving(true)
-    try {
-      const res = await fetch(`/api/dawson/referrals/${referralId}/notes`, {
-        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ internalNotes }),
-      })
-      if (res.ok && referral) { setReferral({ ...referral, internalNotes }); setNotesModal(false) }
-    } finally { setNotesSaving(false) }
+  // Local mutator — components pass partial updates back up so the UI stays
+  // in sync without a full refetch.
+  function applyUpdate(u: Partial<Referral>) {
+    setReferral(prev => prev ? { ...prev, ...u } : prev)
   }
 
   if (loading) return (
@@ -258,21 +763,32 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
   const status = getPortalStatus(referral.referralReview, referral.appointmentStatus)
   const colors = STATUS_COLORS[status] ?? { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' }
-
   const showItemsDisbursed = status === 'Completed' || status === 'Cancelled'
+
+  // Agency link: only render as link if we have an ID; otherwise plain text.
+  // Staff link: only render as link if we have a link ID; otherwise plain
+  // text (or the "No staff linked" callout if the referral was imported
+  // without any staff identity at all).
+  const agencyDisplay = referral.referringAgency
+    ? (referral.referringAgencyId
+        ? <a href={`/dawson/agencies/${referral.referringAgencyId}`} style={{ color: '#2A7F6F', textDecoration: 'none', fontWeight: 600 }}>{referral.referringAgency} ↗</a>
+        : referral.referringAgency)
+    : null
+
+  const staffDisplay = referral.referredBy
+    ? (referral.referringStaffLinkId
+        ? <a href={`/dawson/staff/${referral.referringStaffLinkId}`} style={{ color: '#2A7F6F', textDecoration: 'none', fontWeight: 600 }}>{referral.referredBy} ↗</a>
+        : referral.referredBy)
+    : (!referral.referringStaffLinkId
+        ? <span style={{ color: '#C9A84C', fontStyle: 'italic' }}>No staff linked — fix at agency claim</span>
+        : null)
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      {notesModal && (
-        <InternalNotesModal currentNotes={referral.internalNotes ?? ''} onSave={handleSaveNotes} onCancel={() => setNotesModal(false)} saving={notesSaving} />
-      )}
 
       {/* Top bar */}
       <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          {/* July 2026: back button uses router.back() so it returns to wherever the user came
-              from — Review queue, History, Agency detail page's referrals panel, Print sheets, etc.
-              Falls back to Review queue if there's no history (fresh tab / deep link). */}
           <button
             type="button"
             onClick={() => {
@@ -329,149 +845,78 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         </div>
       </header>
 
-      <div style={{ padding: '28px 32px', display: 'grid', gridTemplateColumns: '1fr 450px', gap: '20px', alignItems: 'start' }}>
+      {/* 3-column body */}
+      <div style={{ padding: '28px 32px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', alignItems: 'start' }}>
 
-        {/* LEFT */}
+        {/* LEFT: Client Info */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-          {/* Client Info */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ background: colors.accent, height: '4px' }} />
-            <div style={{ padding: '24px' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '11px', letterSpacing: '0.10em', textTransform: 'uppercase', color: '#7A8899', margin: '0 0 12px' }}>Client Information</h2>
-              <InfoRow label="Full Name" value={referral.clientName} />
-              <InfoRow label="Date of Birth" value={formatDate(referral.dob)} />
-              <InfoRow label="Staff Phone" value={referral.referredByPhone} />
-              <InfoRow label="Language" value={referral.language} />
-              <InfoRow label="Address" value={
-                referral.address ? (
-                  <>{referral.address}{referral.address2 ? `, ${referral.address2}` : ''}<br />
-                  {referral.city}, {referral.state} {referral.zip}
-                  {referral.county ? ` · ${referral.county} County` : ''}</>
-                ) : null
-              } />
-              <InfoRow label="Household Size" value={referral.hhSize} />
-              <InfoRow label="Children" value={referral.children} />
-            </div>
-          </div>
-
-          {/* Items Requested */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Items Requested</h2>
-            </div>
-            <div style={{ padding: '16px 24px' }}>
-              {referral.items ? (
-                (Array.isArray(referral.items) ? referral.items : referral.items.split(',')).map((item, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
-                    <span style={{ color: '#2A7F6F', fontWeight: 700, flexShrink: 0 }}>•</span>
-                    <span style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.6 }}>{item.trim()}</span>
-                  </div>
-                ))
-              ) : (
-                <div style={{ fontSize: '13px', color: '#7A8899' }}>No items specified</div>
-              )}
-            </div>
-          </div>
-
-          {/* Items Disbursed — only for Completed/Cancelled */}
-          {showItemsDisbursed && referral.itemsDisbursed && (
-            <ItemsDisbursedCard d={referral.itemsDisbursed} />
-          )}
-
-          
-
+          <ClientInfoCard referral={referral} onSaved={applyUpdate} />
         </div>
 
-        {/* RIGHT */}
+        {/* MIDDLE: Items Requested + Internal Notes */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <ItemsRequestedCard referral={referral} onSaved={applyUpdate} />
+          <InternalNotesCard referral={referral} onSaved={applyUpdate} />
+        </div>
+
+        {/* RIGHT: Appointment + Referral Details + Agency Notes */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-          {/* Referral Details */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #EDE9E1' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Referral Details</h2>
-            </div>
-            <div style={{ padding: '12px 20px' }}>
-              <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
-              <InfoRow label="Agency" value={referral.referringAgency} />
-              <InfoRow label="Staff" value={
-                referral.referredBy
-                  ? referral.referredBy
-                  : !referral.referringStaffLinkId
-                    ? <span style={{ color: '#C9A84C', fontStyle: 'italic' }}>No staff linked — fix at agency claim</span>
-                    : null
-              } />
-              <InfoRow label="Staff Phone" value={referral.referredByPhone} />
-              <InfoRow label="Agency Email" value={referral.agencyEmail ? <a href={`mailto:${referral.agencyEmail}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{referral.agencyEmail}</a> : null} />
-              <InfoRow label="Review Status" value={
-                <span style={{ fontWeight: 700, color: referral.referralReview === 'Approved' ? '#2A7F6F' : referral.referralReview === 'Rejected' ? '#C0392B' : '#C9A84C' }}>
-                  {referral.referralReview}
-                </span>
-              } />
-            </div>
-          </div>
-{/* External Notes */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Agency Notes</h2>
-            </div>
-            <div style={{ padding: '16px 24px' }}>
-              {referral.externalNotes ? (
-                <div style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{referral.externalNotes}</div>
-              ) : (
-                <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>No notes submitted by agency.</div>
-              )}
-            </div>
-          </div>
-          {/* Appointment */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #EDE9E1' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Appointment</h2>
-            </div>
-            <div style={{ padding: '12px 20px' }}>
-              <InfoRow label="Status" value={<span style={{ fontWeight: 700, color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>} />
-              <InfoRow label="Date" value={referral.appointmentDate ? formatDate(referral.appointmentDate) : '—'} />
-              <InfoRow label="Time" value={referral.appointmentTime || '—'} />
-              {referral.appointmentSlipUrl && (
-                <div style={{ paddingTop: '12px' }}>
-                  <a href={referral.appointmentSlipUrl} target="_blank" rel="noreferrer"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#2A7F6F', textDecoration: 'none' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-                    View Appointment Slip
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
+          <Card accent={READ_ACCENT} title="Appointment">
+            <InfoRow label="Status" value={<span style={{ fontWeight: 700, color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>} />
+            <InfoRow label="Date" value={referral.appointmentDate ? formatDate(referral.appointmentDate) : '—'} />
+            <InfoRow label="Time" value={referral.appointmentTime || '—'} />
+            {referral.appointmentSlipUrl && (
+              <div style={{ paddingTop: '12px' }}>
+                <a href={referral.appointmentSlipUrl} target="_blank" rel="noreferrer"
+                  style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#2A7F6F', textDecoration: 'none' }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                  View Appointment Slip
+                </a>
+              </div>
+            )}
+          </Card>
 
-          {/* Internal Notes */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Internal Notes</h2>
-              <button onClick={() => setNotesModal(true)}
-                style={{ padding: '5px 12px', borderRadius: '6px', border: 'none', background: 'rgba(42,127,111,0.1)', color: '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
-                {referral.internalNotes ? 'Edit' : '+ Add Note'}
-              </button>
-            </div>
-            <div style={{ padding: '16px 20px' }}>
-              {referral.internalNotes ? (
-                <div style={{ fontSize: '13px', color: '#1B2B4B', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{referral.internalNotes}</div>
-              ) : (
-                <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>No internal notes added yet.</div>
-              )}
-            </div>
-          </div>
+          <Card accent={READ_ACCENT} title="Referral Details">
+            <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
+            <InfoRow label="Agency" value={agencyDisplay} />
+            <InfoRow label="Staff" value={staffDisplay} />
+            <InfoRow label="Staff Phone" value={referral.referredByPhone} />
+            <InfoRow label="Agency Email" value={referral.agencyEmail ? <a href={`mailto:${referral.agencyEmail}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{referral.agencyEmail}</a> : null} />
+            <InfoRow label="Review Status" value={
+              <span style={{ fontWeight: 700, color: referral.referralReview === 'Approved' ? '#2A7F6F' : referral.referralReview === 'Rejected' ? '#C0392B' : '#C9A84C' }}>
+                {referral.referralReview}
+              </span>
+            } />
+          </Card>
 
-          {/* Possible Duplicate Warning */}
+          <Card accent={READ_ACCENT} title="Agency Notes">
+            {referral.externalNotes ? (
+              <div style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.7, whiteSpace: 'pre-wrap', padding: '4px 0' }}>{referral.externalNotes}</div>
+            ) : (
+              <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '4px 0' }}>No notes submitted by agency.</div>
+            )}
+          </Card>
+
           {referral.possibleDuplicate && (
             <div style={{ background: 'rgba(192,57,43,0.06)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '12px', padding: '16px 20px' }}>
               <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#C0392B', marginBottom: '6px' }}>⚠ Possible Duplicate</div>
               <div style={{ fontSize: '12px', color: '#7A8899', lineHeight: 1.6 }}>This client may already be in the system. Review before approving.</div>
             </div>
           )}
-
         </div>
       </div>
+
+      {/* Items Disbursed spans the two left columns below when appointment
+          is Completed or Cancelled — mirrors the mockup we approved. */}
+      {showItemsDisbursed && referral.itemsDisbursed && (
+        <div style={{ padding: '0 32px 32px' }}>
+          <div style={{ maxWidth: 'calc(66.67% - 10px)' }}>
+            <ItemsDisbursedCard d={referral.itemsDisbursed} />
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

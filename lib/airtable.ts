@@ -555,6 +555,26 @@ export async function updateReferralReview(referralId: string, review: string) {
   return res.json()
 }
 
+// Update fields on a Clients record. First Name / Last Name / DOB /
+// Address / Phone / etc. live here — Client Referrals reads them as
+// lookups through the Client link, so this is the only place identity
+// edits from the Client Detail page should land.
+export async function updateClient(
+  clientId: string,
+  fields: Record<string, unknown>,
+) {
+  const res = await fetch(
+    `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Clients')}/${clientId}`,
+    {
+      method: 'PATCH',
+      headers: HEADERS,
+      body: JSON.stringify({ fields }),
+    },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 export async function getReferralById(referralId: string) {
   const data = await airtableFetch('Client Referrals', `/${referralId}`)
   const f = data.fields
@@ -621,22 +641,41 @@ export async function getReferralById(referralId: string) {
   // guards against the field still being misconfigured as a link.
   const referringStaffLinkId = (f['Referring Staff Link'] as string[])?.[0] ?? null
 
+  // Client link — single rec ID pointing at Clients. Needed so the Client
+  // Detail page can PATCH identity fields (First Name / DOB / Address /
+  // etc.) which live on Clients, not on Client Referrals.
+  const clientId = (f['Client'] as string[])?.[0] ?? null
+
+  // Referring Agency link — single rec ID pointing at Agencies. Powers the
+  // teal deep-link in the Agency read-only card on the detail page.
+  const referringAgencyId = (f['Referring Agency Link'] as string[])?.[0]
+    ?? (f['Agency'] as string[])?.[0]
+    ?? null
+
+  // First Name / Last Name / DOB / Phone / Address / etc. became LOOKUPS
+  // through the Client link in June 2026, so they come back wrapped in
+  // arrays. safeLookupString handles the unwrap AND guards against a
+  // misconfigured link returning a rec ID string.
+  const firstName = safeLookupString(f['First Name']) ?? ''
+  const lastName  = safeLookupString(f['Last Name'])  ?? ''
+
   return {
     id: data.id,
-    clientName: `${f['First Name'] ?? ''} ${f['Last Name'] ?? ''}`.trim(),
-    firstName: f['First Name'] as string,
-    lastName: f['Last Name'] as string,
-    dob: (f['DOB'] as string) ?? null,
-    phone: (f['Phone'] as string) ?? null,
-    language: (f['Preferred Language'] as string) ?? null,
-    address: (f['Address'] as string) ?? null,
-    address2: (f['Address 2'] as string) ?? null,
-    city: (f['City'] as string) ?? null,
-    state: (f['State'] as string) ?? null,
-    zip: (f['Zip'] as string) ?? null,
-    county: (f['County'] as string) ?? null,
-    hhSize: (f['# in HH'] as string) ?? null,
-    children: (f['# Children'] as string) ?? null,
+    clientId,                                         // for PATCH /api/dawson/clients/[id]
+    clientName: `${firstName} ${lastName}`.trim(),
+    firstName,
+    lastName,
+    dob:       safeLookupString(f['DOB']),
+    phone:     safeLookupString(f['Phone']),
+    language:  safeLookupString(f['Preferred Language']),
+    address:   safeLookupString(f['Address']),
+    address2:  safeLookupString(f['Address 2']),
+    city:      safeLookupString(f['City']),
+    state:     safeLookupString(f['State']),
+    zip:       safeLookupString(f['Zip']),
+    county:    safeLookupString(f['County']),
+    hhSize:    safeLookupString(f['# in HH']),
+    children:  safeLookupString(f['# Children']),
     items: (f['Items Requested'] as string) ?? null,
     externalNotes: (f['External Notes'] as string) ?? null,
     internalNotes: (f['Internal Notes'] as string) ?? null,
@@ -652,6 +691,7 @@ export async function getReferralById(referralId: string) {
     referringAgency: safeLookupString(f['Referring Agency']),
     agencyEmail: safeLookupString(f['Agency Email']),
     referringStaffLinkId,                             // for deep-link to Staff ID page
+    referringAgencyId,                                // for deep-link to Agency detail page
     possibleDuplicate: (f['Possible Duplicate'] as boolean) ?? false,
     itemsDisbursed,
   }
