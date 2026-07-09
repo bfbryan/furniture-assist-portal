@@ -512,9 +512,17 @@ function ClientInfoCard({
 // Items Requested — display + inline edit (6-category checkbox multi-select)
 // ---------------------------------------------------------------------------
 
-function parseItemsToSet(items: string | null): Set<string> {
-  if (!items) return new Set()
-  return new Set(items.split(',').map(s => s.trim()).filter(Boolean))
+function parseItemsToSet(items: unknown): Set<string> {
+  // Defensive: `items` should be string | null, but if the Airtable field
+  // ever comes back as an array (e.g. schema drift to a lookup) we don't
+  // want the whole page to crash. Coerce to a string first.
+  const str = typeof items === 'string'
+    ? items
+    : Array.isArray(items)
+      ? items.filter(x => typeof x === 'string').join(',')
+      : ''
+  if (!str) return new Set()
+  return new Set(str.split(',').map(s => s.trim()).filter(Boolean))
 }
 
 function ItemsRequestedCard({
@@ -571,9 +579,7 @@ function ItemsRequestedCard({
   }
 
   if (!editing) {
-    const current = referral.items
-      ? referral.items.split(',').map(s => s.trim()).filter(Boolean)
-      : []
+    const current = Array.from(parseItemsToSet(referral.items))
     return (
       <Card
         accent={EDIT_ACCENT}
