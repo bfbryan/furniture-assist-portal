@@ -350,9 +350,10 @@ function ClientInfoCard({
     setSaving(true)
     setError(null)
     try {
+      // Identity fields land on the Clients table.
       // Convert DOB back to MDY (our AT storage format).
       // Phone is formatted on blur but we normalize once more here just in case.
-      const payload = {
+      const clientPayload = {
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         dob: form.dob ? inputValueToMDY(form.dob) : '',
@@ -364,36 +365,58 @@ function ClientInfoCard({
         state: form.state,
         zip: form.zip.replace(/\D/g, '').slice(0, 5),
         county: form.county,
-        hhSize: form.hhSize,
-        children: form.children,
       }
-      const res = await fetch(`/api/dawson/clients/${referral.clientId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (!res.ok) {
-        const j = await res.json().catch(() => ({}))
-        throw new Error(j.error || `Save failed (${res.status})`)
+      // # in HH and # Children are per-visit — they live on the Client
+      // Referrals row, not on the Client. Send them separately.
+      const referralPayload: Record<string, string> = {}
+      if (form.hhSize !== (referral.hhSize ?? '')) referralPayload.hhSize = form.hhSize
+      if (form.children !== (referral.children ?? '')) referralPayload.children = form.children
+
+      // Fire both PATCHes in parallel. If either fails we surface the error.
+      const requests: Promise<Response>[] = [
+        fetch(`/api/dawson/clients/${referral.clientId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(clientPayload),
+        }),
+      ]
+      if (Object.keys(referralPayload).length > 0) {
+        requests.push(
+          fetch(`/api/dawson/referrals/${referral.id}`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(referralPayload),
+          }),
+        )
+      }
+      const results = await Promise.all(requests)
+      for (const res of results) {
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}))
+          const msg = typeof j?.error === 'string'
+            ? j.error
+            : j?.error?.message ?? `Save failed (${res.status})`
+          throw new Error(msg)
+        }
       }
       // Reflect the change locally without a full refetch. Referral fields on
       // Client Referrals are lookups, so the display values come from Client —
       // updating them here keeps the UI in sync until the next fetch.
       onSaved({
-        firstName: payload.firstName,
-        lastName: payload.lastName,
-        clientName: `${payload.firstName} ${payload.lastName}`.trim(),
-        dob: payload.dob || null,
-        phone: payload.phone || null,
-        language: payload.language || null,
-        address: payload.address || null,
-        address2: payload.address2 || null,
-        city: payload.city || null,
-        state: payload.state || null,
-        zip: payload.zip || null,
-        county: payload.county || null,
-        hhSize: payload.hhSize || null,
-        children: payload.children || null,
+        firstName: clientPayload.firstName,
+        lastName: clientPayload.lastName,
+        clientName: `${clientPayload.firstName} ${clientPayload.lastName}`.trim(),
+        dob: clientPayload.dob || null,
+        phone: clientPayload.phone || null,
+        language: clientPayload.language || null,
+        address: clientPayload.address || null,
+        address2: clientPayload.address2 || null,
+        city: clientPayload.city || null,
+        state: clientPayload.state || null,
+        zip: clientPayload.zip || null,
+        county: clientPayload.county || null,
+        hhSize: form.hhSize || null,
+        children: form.children || null,
       })
       setEditing(false)
     } catch (e: any) {
@@ -558,18 +581,22 @@ function ItemsRequestedCard({
     try {
       // Preserve the canonical order of the 6 categories rather than the
       // click order Dawson happened to use. Matches how imports write them.
+      // Send as string[] because Items Requested is a multi-select in AT.
       const ordered = ITEM_CATEGORIES.filter(c => selected.has(c))
-      const itemsStr = ordered.join(', ')
       const res = await fetch(`/api/dawson/referrals/${referral.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ items: itemsStr }),
+        body: JSON.stringify({ items: ordered }),
       })
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
-        throw new Error(j.error || `Save failed (${res.status})`)
+        const msg = typeof j?.error === 'string'
+          ? j.error
+          : j?.error?.message ?? `Save failed (${res.status})`
+        throw new Error(msg)
       }
-      onSaved({ items: itemsStr })
+      // Reflect back as a comma-string (same shape getReferralById returns).
+      onSaved({ items: ordered.join(', ') })
       setEditing(false)
     } catch (e: any) {
       setError(e.message ?? 'Save failed')
@@ -879,6 +906,27 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
                   View Appointment Slip
                 </a>
+              </div>
+            )}
+            {/* Appointment actions — only render for Approved / Scheduled referrals.
+                Reschedule + Cancel modals are TODO; for now the buttons alert.
+                Once those flows exist, wire onClick to open them. */}
+            {(status === 'Scheduled' || referral.referralReview === 'Approved') && status !== 'Completed' && status !== 'Cancelled' && (
+              <div style={{ display: 'flex', gap: '8px', paddingTop: '14px', marginTop: '4px', borderTop: '1px solid #EDE9E1' }}>
+                <button
+                  type="button"
+                  onClick={() => alert('Reschedule flow coming soon.')}
+                  style={{ flex: 1, padding: '8px 12px', borderRadius: '7px', border: '1px solid rgba(201,168,76,0.35)', background: 'rgba(201,168,76,0.1)', color: '#8A6D14', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                >
+                  Reschedule
+                </button>
+                <button
+                  type="button"
+                  onClick={() => alert('Cancel flow coming soon.')}
+                  style={{ flex: 1, padding: '8px 12px', borderRadius: '7px', border: '1px solid rgba(192,57,43,0.3)', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}
+                >
+                  Cancel
+                </button>
               </div>
             )}
           </Card>

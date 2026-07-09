@@ -14,8 +14,12 @@ import { NextRequest, NextResponse } from 'next/server'
 import { updateClient } from '@/lib/airtable'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 
-// Map JSON payload keys → Airtable Clients field names. Order matches the
-// ClientInfoCard form.
+// Map JSON payload keys → Airtable Clients field names.
+//
+// NOTE: # in HH and # Children are per-VISIT on Client Referrals —
+// they DON'T live on Clients. Route those through PATCH /api/dawson/
+// referrals/[id] instead. Everything below is identity data owned
+// by the Clients table.
 const FIELD_MAP: Record<string, string> = {
   firstName: 'First Name',
   lastName:  'Last Name',
@@ -28,8 +32,6 @@ const FIELD_MAP: Record<string, string> = {
   state:     'State',
   zip:       'Zip',
   county:    'County',
-  hhSize:    '# in HH',
-  children:  '# Children',
 }
 
 export async function PATCH(

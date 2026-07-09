@@ -646,11 +646,20 @@ export async function getReferralById(referralId: string) {
   // etc.) which live on Clients, not on Client Referrals.
   const clientId = (f['Client'] as string[])?.[0] ?? null
 
-  // Referring Agency link — single rec ID pointing at Agencies. Powers the
-  // teal deep-link in the Agency read-only card on the detail page.
-  const referringAgencyId = (f['Referring Agency Link'] as string[])?.[0]
-    ?? (f['Agency'] as string[])?.[0]
-    ?? null
+  // Referring Agency ID — derived from Referring Staff Link → Agency Users
+  // → Agency. Client Referrals doesn't have a direct link to Agencies,
+  // so we chase the chain through the linked Agency User. Cost: one extra
+  // API fetch per detail view, only when a staff link exists.
+  let referringAgencyId: string | null = null
+  if (referringStaffLinkId) {
+    try {
+      const user = await airtableFetch('Agency Users', `/${referringStaffLinkId}`)
+      referringAgencyId = (user.fields?.['Agency'] as string[])?.[0] ?? null
+    } catch {
+      // Non-fatal — the link will render as plain text if this fails.
+      referringAgencyId = null
+    }
+  }
 
   // First Name / Last Name / DOB / Phone / Address / etc. became LOOKUPS
   // through the Client link in June 2026, so they come back wrapped in
@@ -674,9 +683,17 @@ export async function getReferralById(referralId: string) {
     state:     safeLookupString(f['State']),
     zip:       safeLookupString(f['Zip']),
     county:    safeLookupString(f['County']),
-    hhSize:    safeLookupString(f['# in HH']),
-    children:  safeLookupString(f['# Children']),
-    items: safeLookupString(f['Items Requested']),
+    // # in HH / # Children are per-VISIT on Client Referrals (not on Clients)
+    // — they're plain text on the referral row, not lookups. Coerce numbers
+    // to strings so the UI can render them uniformly.
+    hhSize:   f['# in HH']    != null ? String(f['# in HH'])    : null,
+    children: f['# Children'] != null ? String(f['# Children']) : null,
+    // Items Requested is a multi-select on Client Referrals — comes back
+    // as string[]. Join with ", " for display; the page splits it again to
+    // build the checkbox state.
+    items: Array.isArray(f['Items Requested'])
+      ? (f['Items Requested'] as string[]).join(', ')
+      : (typeof f['Items Requested'] === 'string' ? (f['Items Requested'] as string) : null),
     externalNotes: safeLookupString(f['External Notes']),
     internalNotes: safeLookupString(f['Internal Notes']),
     referralDate: f['Referral Date'] as string,
