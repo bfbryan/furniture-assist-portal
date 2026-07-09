@@ -19,12 +19,7 @@ export async function GET(
   return NextResponse.json(referral)
 }
 
-// PATCH — handles the per-visit editable fields on the referral row:
-//   • Items Requested (multi-select — accepts string[] OR a comma-string
-//     that we split for you)
-//   • # in HH
-//   • # Children
-//
+// PATCH — currently only handles Items Requested on the referral row.
 // Client identity fields (name / DOB / address / etc.) live on the Clients
 // table and are lookups here, so those edits go through /api/dawson/clients/[id].
 // Internal Notes has its own /notes route.
@@ -36,33 +31,12 @@ export async function PATCH(
   if (denied) return denied
 
   const { id } = await params
-  const body = await req.json().catch(() => ({} as Record<string, unknown>))
+  const body = await req.json().catch(() => ({}))
+  const { items } = body as { items?: string }
 
-  const fields: Record<string, unknown> = {}
-
-  // Items Requested is a multi-select — Airtable rejects a comma-string.
-  // Accept either shape from the client and normalize to string[].
-  if ('items' in body) {
-    const raw = body.items
-    let arr: string[] = []
-    if (Array.isArray(raw)) {
-      arr = raw.filter((x): x is string => typeof x === 'string' && x.trim() !== '')
-    } else if (typeof raw === 'string') {
-      arr = raw.split(',').map(s => s.trim()).filter(Boolean)
-    }
-    fields['Items Requested'] = arr
-  }
-
-  if ('hhSize' in body && typeof body.hhSize === 'string') {
-    fields['# in HH'] = body.hhSize
-  }
-  if ('children' in body && typeof body.children === 'string') {
-    fields['# Children'] = body.children
-  }
-
-  if (Object.keys(fields).length === 0) {
+  if (typeof items !== 'string') {
     return NextResponse.json(
-      { error: 'No editable fields in payload' },
+      { error: 'Expected { items: string } in body' },
       { status: 400 },
     )
   }
@@ -75,7 +49,7 @@ export async function PATCH(
         Authorization: `Bearer ${API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ fields }),
+      body: JSON.stringify({ fields: { 'Items Requested': items } }),
     },
   )
 
