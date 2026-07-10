@@ -542,6 +542,97 @@ export async function getAgencyWithDetails(agencyId: string) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// getStaffWithDetails
+// ---------------------------------------------------------------------------
+// Mirrors getAgencyWithDetails but for a single Agency User (staff member).
+// Powers /dawson/staff/[id] — the deep-link from the referral detail page
+// and the agency detail page's staff list.
+//
+// Returns: staff identity + status + role, agency link (id + name), and
+// every Client Referral where {Referring Staff Link} points at this user.
+// The referral list is sorted newest-first so the panel opens with recent
+// activity at the top.
+//
+// Edge cases handled:
+//   • Staff exists but has no linked Agency (rare — placeholder imports):
+//     agencyId/agencyName come back null, no error.
+//   • Staff has zero referrals: referrals: [] (empty list, not null).
+//   • Not found: caller (route) should map the airtableFetch 404 to a 404
+//     response.
+export async function getStaffWithDetails(staffId: string) {
+  const user = await airtableFetch('Agency Users', `/${staffId}`)
+  const uf = user.fields
+
+  const firstName = ((uf['First Name'] as string) ?? '').trim()
+  const lastName  = ((uf['Last Name']  as string) ?? '').trim()
+  const fullName  = `${firstName} ${lastName}`.trim()
+
+  // Agency is a single-link field on Agency Users — grab the first id.
+  const agencyId = (uf['Agency'] as string[])?.[0] ?? null
+
+  // Fetch the linked agency (for name + status) and this staff's referrals
+  // in parallel. Skip the agency fetch cleanly if the staff has no Agency.
+  //
+  // Referrals filter uses {Referring Staff} — the lookup field on Client
+  // Referrals that pulls the linked staff's display name through
+  // Referring Staff Link. Filtering by the raw link field's record id
+  // (either ARRAYJOIN or & "" serialization) does not work reliably here,
+  // so we mirror the pattern getAgencyWithDetails uses for its own filter
+  // against the {Referring Agency} lookup, which is proven in production.
+  // Trade-off: two staff members with the exact same full name would show
+  // each other's referrals. Acceptable for now — revisit once we hit a
+  // real collision.
+  const [agency, referralData] = await Promise.all([
+    agencyId
+      ? airtableFetch('Agencies', `/${agencyId}`).catch(() => null)
+      : Promise.resolve(null),
+    fullName
+      ? airtableFetch(
+          'Client Referrals',
+          `?filterByFormula=${encodeURIComponent(
+            `{Referring Staff} = "${fullName.replace(/"/g, '\\"')}"`,
+          )}&sort[0][field]=Referral%20Date&sort[0][direction]=desc`,
+        )
+      : Promise.resolve({ records: [] }),
+  ])
+
+  const referrals = (referralData.records ?? []).map((r: any) => {
+    const f = r.fields
+    return {
+      id: r.id,
+      clientName: `${f['First Name'] ?? ''} ${f['Last Name'] ?? ''}`.trim(),
+      referralDate: f['Referral Date'] as string,
+      appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
+      referralReview: f['Referral Review'] as string,
+      appointmentStatus: f['Appointment Status'] as string,
+      referredBy: safeLookupString(f['Referring Staff']),
+    }
+  })
+
+  return {
+    id: user.id,
+    firstName,
+    lastName,
+    name: fullName,
+    email:  ((uf['Email']        as string) ?? '').trim() || null,
+    phone:  ((uf['Phone Number'] as string) ?? '').trim() || null,
+    role:   (uf['Role']   as string) ?? null,
+    status: (uf['Status'] as string) ?? null,
+    invitedDate:         (uf['Invited Date']         as string) ?? null,
+    recordCreationDate:  (uf['Record Creation Date'] as string) ?? null,
+    // June 2026 flag from Excel-import placeholders.
+    needsReview: (uf['Needs Review'] as boolean) ?? false,
+    clerkUserId: (uf['Clerk User ID'] as string) ?? null,
+    // Agency link — null for placeholder / orphaned staff records.
+    agencyId,
+    agencyName:   agency ? ((agency.fields['Agency Name'] as string) ?? null) : null,
+    agencyStatus: agency ? ((agency.fields['Status']      as string) ?? null) : null,
+    referrals,
+    referralCount: referrals.length,
+  }
+}
+
 export async function updateReferralReview(referralId: string, review: string) {
   const res = await fetch(
     `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Client Referrals')}/${referralId}`,
@@ -646,11 +737,20 @@ export async function getReferralById(referralId: string) {
   // etc.) which live on Clients, not on Client Referrals.
   const clientId = (f['Client'] as string[])?.[0] ?? null
 
-  // Referring Agency link — single rec ID pointing at Agencies. Powers the
-  // teal deep-link in the Agency read-only card on the detail page.
-  const referringAgencyId = (f['Referring Agency Link'] as string[])?.[0]
-    ?? (f['Agency'] as string[])?.[0]
-    ?? null
+  // Referring Agency ID — derived from Referring Staff Link → Agency Users
+  // → Agency. Client Referrals doesn't have a direct link to Agencies,
+  // so we chase the chain through the linked Agency User. Cost: one extra
+  // API fetch per detail view, only when a staff link exists.
+  let referringAgencyId: string | null = null
+  if (referringStaffLinkId) {
+    try {
+      const user = await airtableFetch('Agency Users', `/${referringStaffLinkId}`)
+      referringAgencyId = (user.fields?.['Agency'] as string[])?.[0] ?? null
+    } catch {
+      // Non-fatal — the link will render as plain text if this fails.
+      referringAgencyId = null
+    }
+  }
 
   // First Name / Last Name / DOB / Phone / Address / etc. became LOOKUPS
   // through the Client link in June 2026, so they come back wrapped in
@@ -674,11 +774,19 @@ export async function getReferralById(referralId: string) {
     state:     safeLookupString(f['State']),
     zip:       safeLookupString(f['Zip']),
     county:    safeLookupString(f['County']),
-    hhSize:    safeLookupString(f['# in HH']),
-    children:  safeLookupString(f['# Children']),
-    items: (f['Items Requested'] as string) ?? null,
-    externalNotes: (f['External Notes'] as string) ?? null,
-    internalNotes: (f['Internal Notes'] as string) ?? null,
+    // # in HH / # Children are per-VISIT on Client Referrals (not on Clients)
+    // — they're plain text on the referral row, not lookups. Coerce numbers
+    // to strings so the UI can render them uniformly.
+    hhSize:   f['# in HH']    != null ? String(f['# in HH'])    : null,
+    children: f['# Children'] != null ? String(f['# Children']) : null,
+    // Items Requested is a multi-select on Client Referrals — comes back
+    // as string[]. Join with ", " for display; the page splits it again to
+    // build the checkbox state.
+    items: Array.isArray(f['Items Requested'])
+      ? (f['Items Requested'] as string[]).join(', ')
+      : (typeof f['Items Requested'] === 'string' ? (f['Items Requested'] as string) : null),
+    externalNotes: safeLookupString(f['External Notes']),
+    internalNotes: safeLookupString(f['Internal Notes']),
     referralDate: f['Referral Date'] as string,
     referredByPhone: safeLookupString(f['Staff Phone']),
     referralReview: f['Referral Review'] as string,
