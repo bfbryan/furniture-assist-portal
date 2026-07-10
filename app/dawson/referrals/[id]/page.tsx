@@ -975,7 +975,20 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
   const status = getPortalStatus(referral.referralReview, referral.appointmentStatus)
   const colors = STATUS_COLORS[status] ?? { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' }
-  const showItemsDisbursed = status === 'Completed' || status === 'Cancelled'
+  // Items Disbursed card is Completed-only. Cancelled + No Show mean
+  // nothing was ever handed out, so the empty card was just visual noise.
+  const showItemsDisbursed = status === 'Completed'
+
+  // Days-since counter for No Show. Uses appointmentDate as the anchor
+  // (that's the date the client didn't show up on). Falls back to null
+  // silently if the date is missing/malformed.
+  const daysSinceNoShow = (() => {
+    if (referral.appointmentStatus !== 'No Show' || !referral.appointmentDate) return null
+    const appt = new Date(referral.appointmentDate + 'T12:00:00')
+    if (isNaN(appt.getTime())) return null
+    const diffMs = Date.now() - appt.getTime()
+    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
+  })()
 
   // Agency link: only render as link if we have an ID; otherwise plain text.
   // Staff link: only render as link if we have a link ID; otherwise plain
@@ -1087,9 +1100,18 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
                 </a>
               </div>
             )}
+            {daysSinceNoShow !== null && (
+              <div style={{ paddingTop: '4px' }}>
+                <div style={{ fontSize: '12px', fontWeight: 700, color: '#C9A84C', letterSpacing: '0.03em' }}>
+                  {daysSinceNoShow === 0 ? 'No-show today' : `${daysSinceNoShow} day${daysSinceNoShow === 1 ? '' : 's'} since no-show`}
+                </div>
+              </div>
+            )}
             {/* Appointment actions — mirror the Scheduled page action widget.
-                Opens the shared Cancel + Reschedule modals below. */}
-            {(status === 'Scheduled' || referral.referralReview === 'Approved') && status !== 'Completed' && status !== 'Cancelled' && (
+                Opens the shared Cancel + Reschedule modals below.
+                No Show is included: Dawson often learns days later whether
+                a no-show should become a reschedule or a cancel. */}
+            {(status === 'Scheduled' || status === 'No Show' || referral.referralReview === 'Approved') && status !== 'Completed' && status !== 'Cancelled' && (
               <div style={{ display: 'flex', gap: '8px', paddingTop: '14px', marginTop: '4px', borderTop: '1px solid #EDE9E1' }}>
                 <button
                   type="button"
