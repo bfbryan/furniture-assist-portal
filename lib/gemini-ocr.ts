@@ -371,31 +371,40 @@ THE ONLY TWO RULES:
            that digit as the quantity. Multi-digit numbers (10, 12, etc.) are
            allowed; return the full number.
 
-           BE GENEROUS in digit recognition. Handwritten digits are messy:
+           BE GENEROUS in digit recognition. Handwritten digits are messy
+           because reviewers fill QTY at end-of-day after a fast-paced
+           warehouse shift:
            - A "1" may be a plain vertical line, a line with a small serif,
              or a line with a curly hook at the top — all count as 1.
            - A "2" may look like a stylized Z, a curly S-shape, or have
              an unusual base loop — count as 2.
+           - A "3" may look like a stylized E or a rounded double-hump.
            - A digit written with a slight cross-out or correction still
-             counts as the visible digit.
-           - When in doubt between two digits (e.g. 1 vs 2), check the HASH
-             column count as a tiebreaker: if HASH has 2 marks and QTY looks
-             like it could be 1 or 2, return 2.
+             counts as the visible digit — read the corrected version.
+           - When torn between two digits (e.g. 1 vs 2), pick the one the
+             ink shape most resembles. Do NOT use the HASH column to
+             disambiguate. HASH is chaotic scratchpad data (may include
+             marks from volunteers writing on the wrong sheet, scratched
+             corrections, etc.) and cannot override QTY.
 
   Rule 2 — Return 0 ONLY if the QTY cell is completely empty (no ink at
            all) OR if the QTY cell contains something that is definitely
            NOT a digit (a checkmark, an X, a slash mark with no digit shape).
 
-Do NOT interpret tally marks in the HASH column as a QTY value — HASH is
-for cross-checking your QTY reading only, never as the primary source.
+Do NOT interpret tally marks in the HASH column as a QTY value — QTY is
+the SOLE source of truth. HASH is working-memory scratchpad from a chaotic
+Saturday warehouse floor and often contains inaccurate marks (wrong sheet,
+scratched items, double-writes).
 Do NOT infer quantity from context, from adjacent rows, or from anywhere else.
 If QTY has ANY handwritten ink shaped like a digit, return that digit.
 If QTY is truly blank, return 0.
 
-HASH-QTY CROSS-CHECK (mandatory):
-  For every row, if the HASH column has any tally marks BUT you are about
-  to return 0 for QTY, LOOK AGAIN at the QTY cell. There is very likely a
-  digit there that you missed. Only return 0 if QTY is truly empty.
+RE-CHECK BEFORE RETURNING 0 (mandatory):
+  Before finalizing 0 for any row, look one more time at the QTY cell.
+  Ask yourself: is there ANY ink shape in the QTY cell that could plausibly
+  be a handwritten digit? If yes — even if messy, stylized, or partially
+  scratched — return that digit instead of 0. Only return 0 if the QTY
+  cell is completely, unambiguously blank.
 
 This is intentional: the reviewer has already decided what the client received
 and written the number in QTY. Any ink outside the QTY column is working
@@ -419,10 +428,10 @@ reviewer decision to not disburse the item.
 
 MANDATORY SELF-CHECK BEFORE RETURNING (do this silently, do not include in output):
   1. Verify all 30 item keys are present in the items object.
-  2. For every row where you returned 0: re-verify the HASH column is ALSO
-     empty. If HASH has tally marks but you returned 0 for QTY, look one
-     more time at the QTY cell — you likely missed a digit. Only keep 0 if
-     QTY is truly, completely blank.
+  2. For every row where you returned 0: look ONE more time at the QTY cell
+     specifically (ignore the HASH column). Ask: is there any ink shape in
+     QTY that could plausibly be a digit? If yes, return that digit instead
+     of 0. Only keep 0 if the QTY cell is completely, unambiguously blank.
   3. Verify no value is a string — all quantities must be integers.
 
 
