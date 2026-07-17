@@ -627,6 +627,9 @@ async function writeToAirtable(
 
   if (!res.ok) {
     const body = await res.text()
+    console.error(`[OCR PATCH FAIL] recordId=${recordId} status=${res.status}`)
+    console.error(`[OCR PATCH FAIL] fields=${JSON.stringify(fields)}`)
+    console.error(`[OCR PATCH FAIL] response=${body}`)
     throw new Error(`Airtable PATCH ${res.status}: ${body}`)
   }
 }
