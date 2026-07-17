@@ -200,9 +200,11 @@ async function resolveRecordId(
     return idLooksGood ? ocrId : null
   }
 
-  // 1. Exact ID match
+  // 1. Exact ID match (case-insensitive: Gemini often can't distinguish
+  //    lowercase y/Y, c/C, o/O, s/S, w/W, x/X, z/Z in printed record IDs)
   if (idLooksGood) {
-    const exact = candidates.find((c) => c.id === ocrId)
+    const ocrIdLower = ocrId.toLowerCase()
+    const exact = candidates.find((c) => c.id.toLowerCase() === ocrIdLower)
     if (exact) return exact.id
     console.warn(`OCR id ${ocrId} not in candidate set for ${ocrDate} — falling back to name match`)
   }
