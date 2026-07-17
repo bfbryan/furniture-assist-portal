@@ -367,18 +367,35 @@ QTY-ONLY POLICY (July 2026):
 
 THE ONLY TWO RULES:
 
-  Rule 1 — If the QTY cell contains a clearly written arabic digit (1-9), use
+  Rule 1 — If the QTY cell contains any handwritten digit (0-9), use
            that digit as the quantity. Multi-digit numbers (10, 12, etc.) are
            allowed; return the full number.
 
-  Rule 2 — Otherwise (QTY cell is blank, unclear, a stray mark, a tally,
-           a slash, a partial digit, or anything that is not a clearly
-           written arabic digit), return 0 for that row.
+           BE GENEROUS in digit recognition. Handwritten digits are messy:
+           - A "1" may be a plain vertical line, a line with a small serif,
+             or a line with a curly hook at the top — all count as 1.
+           - A "2" may look like a stylized Z, a curly S-shape, or have
+             an unusual base loop — count as 2.
+           - A digit written with a slight cross-out or correction still
+             counts as the visible digit.
+           - When in doubt between two digits (e.g. 1 vs 2), check the HASH
+             column count as a tiebreaker: if HASH has 2 marks and QTY looks
+             like it could be 1 or 2, return 2.
 
-Do NOT interpret tally marks, hashmarks, ticks, or ambiguous ink as a quantity.
-Do NOT look at the HASH column to fill in a missing QTY value.
+  Rule 2 — Return 0 ONLY if the QTY cell is completely empty (no ink at
+           all) OR if the QTY cell contains something that is definitely
+           NOT a digit (a checkmark, an X, a slash mark with no digit shape).
+
+Do NOT interpret tally marks in the HASH column as a QTY value — HASH is
+for cross-checking your QTY reading only, never as the primary source.
 Do NOT infer quantity from context, from adjacent rows, or from anywhere else.
-The QTY digit is the only signal. If it is not a clear digit, the answer is 0.
+If QTY has ANY handwritten ink shaped like a digit, return that digit.
+If QTY is truly blank, return 0.
+
+HASH-QTY CROSS-CHECK (mandatory):
+  For every row, if the HASH column has any tally marks BUT you are about
+  to return 0 for QTY, LOOK AGAIN at the QTY cell. There is very likely a
+  digit there that you missed. Only return 0 if QTY is truly empty.
 
 This is intentional: the reviewer has already decided what the client received
 and written the number in QTY. Any ink outside the QTY column is working
@@ -402,9 +419,10 @@ reviewer decision to not disburse the item.
 
 MANDATORY SELF-CHECK BEFORE RETURNING (do this silently, do not include in output):
   1. Verify all 30 item keys are present in the items object.
-  2. Verify every non-zero value came from a clearly written arabic digit in
-     the QTY column of that row. If you filled a value from a hashmark,
-     tally, or partial stroke, correct it to 0.
+  2. For every row where you returned 0: re-verify the HASH column is ALSO
+     empty. If HASH has tally marks but you returned 0 for QTY, look one
+     more time at the QTY cell — you likely missed a digit. Only keep 0 if
+     QTY is truly, completely blank.
   3. Verify no value is a string — all quantities must be integers.
 
 
