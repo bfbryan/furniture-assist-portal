@@ -158,7 +158,7 @@ function CategoryBlock({ cat }: { cat: { name: string; items: string[] } }) {
       {/* Combined section header: name + HASH + QTY labels */}
       <div style={{
         background: '#1B2B4B', color: '#ffffff', padding: '3px 7px',
-        display: 'grid', gridTemplateColumns: '1fr 78px 54px',
+        display: 'grid', gridTemplateColumns: '1fr 65px 65px',
         fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
         WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
       } as React.CSSProperties}>
@@ -169,10 +169,10 @@ function CategoryBlock({ cat }: { cat: { name: string; items: string[] } }) {
       {cat.items.map((item, i) => (
         <div key={item} style={{
           display: 'grid',
-          gridTemplateColumns: '1fr 78px 54px',
+          gridTemplateColumns: '1fr 65px 65px',
           borderBottom: i < cat.items.length - 1 ? '1px solid #555' : 'none',
           background: 'white',
-          minHeight: '20px',
+          minHeight: '23px',
           WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
         } as React.CSSProperties}>
           <div style={{ padding: '2px 5px', fontSize: '12px', color: '#1a1a1a', fontWeight: 400, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
