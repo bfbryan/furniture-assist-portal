@@ -386,21 +386,54 @@ THE ONLY TWO RULES:
            that digit as the quantity. Multi-digit numbers (10, 12, etc.) are
            allowed; return the full number.
 
+           HOUSE CONVENTION — THE 1-VS-2 TEST (READ THIS FIRST):
+           This warehouse handles almost exclusively low quantities:
+           1, 2, 3, 4, 5. The values 3, 4, 5 have distinctive digit
+           shapes and are easy to read. The ONLY visually ambiguous
+           pair is 1 vs 2. To eliminate ambiguity, reviewers follow
+           this strict convention:
+
+             1 = a SINGLE VERTICAL STROKE, like a pipe "|" or a lowercase
+                 L. NO curves. NO top serif. NO base line. Just one
+                 straight down-stroke.
+
+             2 = a CURVED shape with a base, like normal handwritten 2.
+                 ALWAYS has a visible curve at the top and a horizontal
+                 base stroke.
+
+           THE BINARY TEST: for any single-character QTY mark, ask
+           ONE question: "is there a visible curve in the ink?"
+             - NO curve (just a straight vertical stroke) → 1
+             - YES curve (any curved top or base loop) → 2
+
+           A 1 with a serif or hook that got written by mistake still
+           counts as 1, BUT the default and expected form is a plain
+           vertical stroke. When in doubt about a single-character
+           mark that has ANY vertical component and ambiguous curves,
+           choose 1. Only choose 2 when the curve is unmistakable.
+
+           This convention exists specifically to reduce OCR errors
+           on the two most common values. Trust the convention.
+
            BE GENEROUS in digit recognition. Handwritten digits are messy
            because reviewers fill QTY at end-of-day after a fast-paced
            warehouse shift:
-           - A "1" may be a plain vertical line, a line with a small serif,
-             or a line with a curly hook at the top — all count as 1.
-           - A "2" may look like a stylized Z, a curly S-shape, or have
-             an unusual base loop — count as 2.
+           - A "1" is a plain vertical stroke by house convention. May
+             occasionally have a small serif or hook if the reviewer
+             wrote it that way — still a 1.
+           - A "2" is always curved with a base loop — stylized Z or
+             S-shape with a base. No curve = not a 2.
            - A "3" may look like a stylized E or a rounded double-hump.
+           - A "7" may have a horizontal slash through the middle
+             (European convention) — still a 7.
            - A digit written with a slight cross-out or correction still
              counts as the visible digit — read the corrected version.
            - When torn between two digits (e.g. 1 vs 2), pick the one the
-             ink shape most resembles. Do NOT use the HASH column to
-             disambiguate. HASH is chaotic scratchpad data (may include
-             marks from volunteers writing on the wrong sheet, scratched
-             corrections, etc.) and cannot override QTY.
+             ink shape most resembles by the curve test above. Do NOT
+             use the HASH column to disambiguate. HASH is chaotic
+             scratchpad data (may include marks from volunteers writing
+             on the wrong sheet, scratched corrections, etc.) and cannot
+             override QTY.
 
   Rule 2 — Return 0 if the QTY cell is empty or near-empty (no clear
            handwritten digit visible), OR if the QTY cell contains something
@@ -640,17 +673,31 @@ async function writeToAirtable(
     if (result.volunteer_initials) fields['Volunteer Initials'] = result.volunteer_initials
     if (result.checkout_time) fields['Check-out Time'] = result.checkout_time
 
+    // Always write every item field. Missing/zero quantities are set to null
+    // to CLEAR any prior values from an earlier scan of this record.
+    // Without this, PATCH is additive and stale items from prior runs persist.
     if (result.items) {
       for (const fieldName of ITEM_FIELDS) {
         const qty = result.items[fieldName]
         const num = typeof qty === 'number' ? qty : parseInt(String(qty), 10)
-        if (num && num > 0) {
-          fields[fieldName] = num
-        }
+        fields[fieldName] = num && num > 0 ? num : null
+      }
+    } else {
+      // No items in OCR result — clear all item fields defensively.
+      for (const fieldName of ITEM_FIELDS) {
+        fields[fieldName] = null
       }
     }
   } else if (outcome === 'Reschedule') {
-    // Hand off to the existing Airtable "Reschedule" automation
+    // Hand off to the existing Airtable "Reschedule" automation.
+    // Reschedule means no items were disbursed — clear all item fields
+    // and any stale initials/checkout data from prior scans.
+    for (const fieldName of ITEM_FIELDS) {
+      fields[fieldName] = null
+    }
+    fields['Volunteer Initials'] = null
+    fields['Check-out Time'] = null
+
     const newDate = parseRescheduleDate(result.reschedule_date)
     if (newDate) {
       fields['Scheduling Flexibility'] = 'Specific Date'
@@ -662,9 +709,15 @@ async function writeToAirtable(
       fields['Manual Review Needed'] = false
       fields['OCR Notes'] = 'Reschedule marked — no date in notes, using next available'
     }
+  } else {
+    // No Show: status-only update, but clear items/initials/checkout defensively
+    // so a stale prior scan does not leave phantom data behind.
+    for (const fieldName of ITEM_FIELDS) {
+      fields[fieldName] = null
+    }
+    fields['Volunteer Initials'] = null
+    fields['Check-out Time'] = null
   }
-  // No Show and Cancelled: status-only update. Items/initials/checkout not written.
-  // Distribution Notes still passes through above if present.
 
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}/${recordId}`
 
