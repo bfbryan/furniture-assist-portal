@@ -112,11 +112,10 @@ export class CandidateCache {
       throw new Error('AIRTABLE_BASE_ID or AIRTABLE_API_KEY not set')
     }
 
-    // filterByFormula: same as Apps Script — pending records only, matched by date
-    const formula = `AND(` +
-      `DATETIME_FORMAT({Appointment Date}, 'YYYY-MM-DD') = '${isoDate}',` +
-      `NOT({Sheet Processed})` +
-    `)`
+    // filterByFormula: match by date. Include ALL records for that date,
+    // even already-processed ones — supports re-uploads (e.g. an initial
+    // upload was Completed, a follow-up sheet marks it Reschedule).
+    const formula = `DATETIME_FORMAT({Appointment Date}, 'YYYY-MM-DD') = '${isoDate}'`
 
     const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}` +
       `?filterByFormula=${encodeURIComponent(formula)}` +
@@ -169,7 +168,18 @@ export class CandidateCache {
 // ============================================================
 
 function normName(s: string | undefined): string {
-  return String(s || '').toLowerCase().replace(/[^a-z]/g, '')
+  // Lowercase, then collapse 1/I/l, 0/O, 5/S, 8/B, 2/Z lookalikes
+  // (Gemini can't distinguish these glyphs in the printed name banner).
+  // Then strip anything that isn't a-z or a digit — keeps digits so a name
+  // like "client1" survives normalization instead of collapsing to "client".
+  return String(s || '')
+    .toLowerCase()
+    .replace(/[1il]/g, '1')
+    .replace(/[0o]/g, '0')
+    .replace(/[5s]/g, '5')
+    .replace(/[8b]/g, '8')
+    .replace(/[2z]/g, '2')
+    .replace(/[^a-z0-9]/g, '')
 }
 
 
@@ -200,31 +210,73 @@ async function resolveRecordId(
     return idLooksGood ? ocrId : null
   }
 
-  // 1. Exact ID match (case-insensitive: Gemini often can't distinguish
-  //    lowercase y/Y, c/C, o/O, s/S, w/W, x/X, z/Z in printed record IDs)
+  // 1. Fuzzy ID match. Gemini frequently confuses lookalike glyphs in
+  //    printed record IDs — most notoriously 1/I/l (sans-serif digit one,
+  //    uppercase i, lowercase L are visually indistinguishable), plus
+  //    0/O, 5/S, 8/B, 2/Z. We normalize both the OCR id and each candidate
+  //    to a canonical lookalike-free form before comparing, then case-fold.
+  //    Airtable record IDs use base62 (a-z, A-Z, 0-9), so this normalization
+  //    is safe within our own ID space.
+  const normalizeId = (id: string): string =>
+    id
+      .toLowerCase()
+      .replace(/[1il]/g, '1') // 1, I, l → 1
+      .replace(/[0o]/g, '0')  // 0, O → 0
+      .replace(/[5s]/g, '5')  // 5, S → 5
+      .replace(/[8b]/g, '8')  // 8, B → 8
+      .replace(/[2z]/g, '2')  // 2, Z → 2
   if (idLooksGood) {
-    const ocrIdLower = ocrId.toLowerCase()
-    const exact = candidates.find((c) => c.id.toLowerCase() === ocrIdLower)
-    if (exact) return exact.id
+    const ocrIdNorm = normalizeId(ocrId)
+    const exact = candidates.find((c) => normalizeId(c.id) === ocrIdNorm)
+    if (exact) {
+      if (exact.id !== ocrId) {
+        console.log(`OCR id ${ocrId} matched candidate ${exact.id} via lookalike normalization`)
+      }
+      return exact.id
+    }
     console.warn(`OCR id ${ocrId} not in candidate set for ${ocrDate} — falling back to name match`)
   }
 
-  // 2. Fuzzy last-name match
+  // 2. Fuzzy last-name match (scoped to candidates for ocrDate)
   if (ocrLast) {
     const lastMatches = candidates.filter((c) => normName(c.lastName) === ocrLast)
-    if (lastMatches.length === 1) return lastMatches[0].id
+    if (lastMatches.length === 1) {
+      console.log(`Resolved ${lastMatches[0].id} via last-name match on ${ocrDate}`)
+      return lastMatches[0].id
+    }
     if (lastMatches.length > 1 && ocrFirst) {
       const both = lastMatches.filter((c) => normName(c.firstName) === ocrFirst)
-      if (both.length === 1) return both[0].id
+      if (both.length === 1) {
+        console.log(`Resolved ${both[0].id} via first+last name match on ${ocrDate}`)
+        return both[0].id
+      }
+      console.warn(`Ambiguous last-name match for ${ocrLast} on ${ocrDate}: ${lastMatches.length} candidates`)
     }
   }
 
-  // 3. Full name match
+  // 3. Full name match (scoped to candidates for ocrDate)
   if (ocrFirst && ocrLast) {
     const both = candidates.filter(
       (c) => normName(c.firstName) === ocrFirst && normName(c.lastName) === ocrLast,
     )
-    if (both.length === 1) return both[0].id
+    if (both.length === 1) {
+      console.log(`Resolved ${both[0].id} via full-name match on ${ocrDate}`)
+      return both[0].id
+    }
+    if (both.length > 1) {
+      console.warn(`Ambiguous full-name match for ${ocrFirst} ${ocrLast} on ${ocrDate}: ${both.length} candidates`)
+    }
+  }
+
+  // 4. Last-resort fallback: if the OCR ID looks well-formed but didn't
+  //    match any candidate for this date, trust the ID. This handles cases
+  //    where the record was already Sheet Processed (excluded from candidates)
+  //    or where date/name variance kept it out of the candidate set. Airtable
+  //    PATCH will reject the id if it truly doesn't exist, giving a clean
+  //    downstream error instead of a silent "could not resolve".
+  if (idLooksGood) {
+    console.warn(`No candidate match for ${ocrId} on ${ocrDate}; trusting OCR id as last resort`)
+    return ocrId
   }
 
   return null
