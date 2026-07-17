@@ -316,7 +316,7 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
     <div style={{
       pageBreakAfter: index < total - 1 ? 'always' : 'avoid',
       pageBreakInside: 'avoid',
-      padding: '14px 18px 28px',
+      padding: '12px 18px 10px',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '11px',
       color: '#1a1a1a',
