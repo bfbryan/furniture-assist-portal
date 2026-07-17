@@ -157,12 +157,12 @@ function CategoryBlock({ cat }: { cat: { name: string; items: string[] } }) {
     <div style={{ border: '1.5px solid #333', borderRadius: '3px', overflow: 'hidden', marginBottom: '5px' }}>
       {/* Combined section header: name + HASH + QTY labels */}
       <div style={{
-        background: '#1B2B4B', color: '#ffffff', padding: '3px 7px',
+        background: '#1B2B4B', color: '#ffffff', padding: '3px 0',
         display: 'grid', gridTemplateColumns: '1fr 65px 65px',
         fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
         WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
       } as React.CSSProperties}>
-        <div style={{ color: '#ffffff' }}>{cat.name}</div>
+        <div style={{ color: '#ffffff', padding: '0 7px' }}>{cat.name}</div>
         <div style={{ textAlign: 'center', fontSize: '10px', color: '#ffffff' }}>Hash</div>
         <div style={{ textAlign: 'center', fontSize: '10px', color: '#ffffff' }}>Qty</div>
       </div>
@@ -172,7 +172,7 @@ function CategoryBlock({ cat }: { cat: { name: string; items: string[] } }) {
           gridTemplateColumns: '1fr 65px 65px',
           borderBottom: i < cat.items.length - 1 ? '1px solid #555' : 'none',
           background: 'white',
-          minHeight: '23px',
+          minHeight: '24px',
           WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
         } as React.CSSProperties}>
           <div style={{ padding: '2px 5px', fontSize: '12px', color: '#1a1a1a', fontWeight: 400, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
