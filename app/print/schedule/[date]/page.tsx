@@ -327,7 +327,7 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
     }}>
 
 
-      {/* TOP BANNER: Logo+title (wrapped) | [flex spacer] | No Show | Cancelled | Reschedule | [flex spacer] | Client# */}
+      {/* TOP BANNER: Logo+title (wrapped) | [flex spacer] | Reschedule | [flex spacer] | Client# */}
       <div style={{
         display: 'flex', alignItems: 'stretch',
         marginBottom: '18px', paddingBottom: '10px',
@@ -353,9 +353,7 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
 
         {/* Outcome boxes — centered as a group */}
         <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch', flexShrink: 0 }}>
-          <OutcomeBox label="No Show" color="#6A1B9A" />
-          <OutcomeBox label="Cancelled" color="#C0392B" />
-          <OutcomeBox label="Reschedule" color="#C9A84C" />
+          <OutcomeBox label="Reschedule" color="#C0392B" />
         </div>
 
 

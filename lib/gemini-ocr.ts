@@ -273,28 +273,43 @@ Extract the following and return ONLY valid JSON (no markdown, no commentary):
    If you cannot clearly read an ID matching the "rec" + 14 char format,
    return empty string "" — do NOT guess or fabricate a value.
 
-2. outcome: which appointment outcome box at the top of the sheet is marked.
-   The sheet has three outcome boxes in the header, each with a small SQUARE
-   CHECKBOX inside a larger colored labeled panel:
-     - NO SHOW box    (purple/violet border, label reads "NO SHOW")
-     - CANCELLED box  (red border, label reads "CANCELLED")
-     - RESCHEDULE box (gold/yellow border, label reads "RESCHEDULE")
-   IMPORTANT: The colored border of the outer labeled panel is PRINTED, not
-   handwriting. Do NOT confuse the printed colored border with a mark. The
-   CHECKBOX is the small blank square INSIDE the panel — look at what is drawn
-   inside THAT small square.
-   A checkbox is MARKED if the small inner square contains ANY handwritten
-   ink: a check, an X, a diagonal slash, a scribble, a fill, or even a
-   single line. Volunteers commonly draw a single diagonal slash through the
-   checkbox — that COUNTS as marked. Be liberal in detection: a clear pen
-   mark inside the square is a mark, even if it doesn't form a proper
-   checkmark shape.
+2. outcome: the appointment outcome, determined by the sheet contents.
+   The sheet has ONE outcome box in the header — a small SQUARE CHECKBOX
+   inside a red-bordered labeled panel that reads "RESCHEDULE".
+
+   IMPORTANT: The red border of the outer panel is PRINTED, not handwriting.
+   Do NOT confuse the printed border with a mark. Do NOT confuse the printed
+   inner checkbox border with a mark. A mark must be INSIDE the small inner
+   square — not on it, not near it, INSIDE it. Faint marks, shadows, print
+   artifacts, JPEG noise, or ambiguous pixels do NOT count.
+
+   COMPLETION SIGNALS (evidence the client was actually here):
+     - Any QTY cell in the items table contains a handwritten digit, OR
+     - Both the INITIALS box AND the CHECK-OUT TIME box at the bottom are
+       filled with handwriting.
+   (Reviewers may sign off with initials + checkout time even when the
+    client took no items — a valid "client came, took nothing" scenario
+    that is still Completed.)
+
+   DECISION LOGIC (apply in order):
+     1. If the RESCHEDULE inner checkbox contains a clear, unambiguous
+        handwritten mark (bold check, X, heavy fill, or deliberate slash)
+        → outcome is "Reschedule". In this case, IGNORE all QTY cells and
+        return 0 for every item — rescheduled appointments never disburse
+        items. Any QTY marks on a reschedule sheet are stale or mistaken
+        and must NOT be extracted.
+     2. Else if any completion signal above is present
+        → outcome is "Completed".
+     3. Else (sheet is essentially blank — no QTY digits, no initials,
+        no checkout time, no reschedule mark)
+        → outcome is "No Show".
+
    Return ONE of these EXACT strings:
-     - "No Show"     if the NO SHOW checkbox contains any ink
-     - "Cancelled"   if the CANCELLED checkbox contains any ink
-     - "Reschedule"  if the RESCHEDULE checkbox contains any ink
-     - "Completed"   if all three inner checkboxes are truly empty
-   Precedence if more than one is marked: Cancelled > No Show > Reschedule.
+     - "Reschedule"
+     - "Completed"
+     - "No Show"
+   The value "Cancelled" is NEVER returned by OCR — cancellations are
+   handled in Airtable directly by an admin, not on the sheet.
 
 3. client_first_name: the client's first name printed in large text in the
    upper-left of the client info box. The format on the sheet is "Last, First"
@@ -387,24 +402,33 @@ THE ONLY TWO RULES:
              marks from volunteers writing on the wrong sheet, scratched
              corrections, etc.) and cannot override QTY.
 
-  Rule 2 — Return 0 ONLY if the QTY cell is completely empty (no ink at
-           all) OR if the QTY cell contains something that is definitely
-           NOT a digit (a checkmark, an X, a slash mark with no digit shape).
+  Rule 2 — Return 0 if the QTY cell is empty or near-empty (no clear
+           handwritten digit visible), OR if the QTY cell contains something
+           that is definitely NOT a digit (a checkmark, an X, a slash mark
+           with no digit shape).
+
+           IMPORTANT: many rows will be legitimately empty because the
+           client did not receive that item. An empty QTY cell is the
+           NORMAL, EXPECTED state for most rows. Do NOT invent a digit
+           from faint marks, printed grid lines, scanner artifacts, paper
+           texture, shadows, or ambiguous smudges. If you cannot clearly
+           identify a specific handwritten digit (0-9) shape drawn by a
+           human pen, return 0. When in doubt between "empty" and "has a
+           digit", choose empty (0).
+
+           A CLEAR digit shape means: continuous ink strokes forming a
+           recognizable numeral, distinct from the printed grid and from
+           any faint scanner noise. Don't force a digit interpretation on
+           ambiguous ink.
 
 Do NOT interpret tally marks in the HASH column as a QTY value — QTY is
 the SOLE source of truth. HASH is working-memory scratchpad from a chaotic
 Saturday warehouse floor and often contains inaccurate marks (wrong sheet,
-scratched items, double-writes).
+scratched items, double-writes). HASH marks NEVER justify inventing a QTY
+digit that isn't actually written in the QTY cell.
 Do NOT infer quantity from context, from adjacent rows, or from anywhere else.
-If QTY has ANY handwritten ink shaped like a digit, return that digit.
-If QTY is truly blank, return 0.
-
-RE-CHECK BEFORE RETURNING 0 (mandatory):
-  Before finalizing 0 for any row, look one more time at the QTY cell.
-  Ask yourself: is there ANY ink shape in the QTY cell that could plausibly
-  be a handwritten digit? If yes — even if messy, stylized, or partially
-  scratched — return that digit instead of 0. Only return 0 if the QTY
-  cell is completely, unambiguously blank.
+If QTY has a clearly identifiable handwritten digit, return that digit.
+If QTY has no clear digit, return 0.
 
 This is intentional: the reviewer has already decided what the client received
 and written the number in QTY. Any ink outside the QTY column is working
@@ -428,10 +452,11 @@ reviewer decision to not disburse the item.
 
 MANDATORY SELF-CHECK BEFORE RETURNING (do this silently, do not include in output):
   1. Verify all 30 item keys are present in the items object.
-  2. For every row where you returned 0: look ONE more time at the QTY cell
-     specifically (ignore the HASH column). Ask: is there any ink shape in
-     QTY that could plausibly be a digit? If yes, return that digit instead
-     of 0. Only keep 0 if the QTY cell is completely, unambiguously blank.
+  2. For every row where you returned a non-zero digit: look one more time
+     at the QTY cell. Verify a clear handwritten digit is actually drawn
+     there — not a printed grid line, not a scanner artifact, not a mark
+     bleeding through from HASH, not a shadow. If you cannot confirm a
+     clear pen-drawn digit shape, change the value to 0.
   3. Verify no value is a string — all quantities must be integers.
 
 
