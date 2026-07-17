@@ -71,9 +71,38 @@ export default function ScansUploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [notes, setNotes] = useState('')
   const [isUploading, setIsUploading] = useState(false)
+  const [isDragging, setIsDragging] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<UploadResponse | null>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
+
+  function handleFileSelect(selected: File | null | undefined) {
+    if (!selected) return
+    if (selected.type !== 'application/pdf' && !selected.name.toLowerCase().endsWith('.pdf')) {
+      setError('Please select a PDF file.')
+      return
+    }
+    setError(null)
+    setFile(selected)
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault()
+    if (!isUploading) setIsDragging(true)
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDragging(false)
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setIsDragging(false)
+    if (isUploading) return
+    const dropped = e.dataTransfer.files?.[0]
+    handleFileSelect(dropped)
+  }
 
   async function handleUpload(e: React.FormEvent) {
     e.preventDefault()
@@ -157,31 +186,64 @@ export default function ScansUploadPage() {
                 marginBottom: 16,
               }}
             >
-              <label style={{ display: 'block', marginBottom: 16 }}>
+              <div style={{ marginBottom: 16 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>
                   Consolidated PDF
                 </div>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="application/pdf,.pdf"
-                  disabled={isUploading}
-                  onChange={(e) => setFile(e.target.files?.[0] || null)}
+                <div
+                  onClick={() => !isUploading && fileInputRef.current?.click()}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if ((e.key === 'Enter' || e.key === ' ') && !isUploading) {
+                      e.preventDefault()
+                      fileInputRef.current?.click()
+                    }
+                  }}
                   style={{
                     width: '100%',
-                    padding: 12,
-                    border: `1px dashed ${BORDER}`,
-                    borderRadius: 6,
-                    background: BG,
-                    fontSize: 14,
+                    padding: '32px 20px',
+                    border: `2px dashed ${isDragging ? EDIT_ACCENT : BORDER}`,
+                    borderRadius: 8,
+                    background: isDragging ? '#E8F1EF' : BG,
+                    textAlign: 'center',
+                    cursor: isUploading ? 'not-allowed' : 'pointer',
+                    transition: 'border-color 120ms ease, background 120ms ease',
+                    opacity: isUploading ? 0.6 : 1,
                   }}
-                />
-                {file && (
-                  <div style={{ marginTop: 8, fontSize: 13, color: TEXT_MUTED }}>
-                    {file.name} — {(file.size / (1024 * 1024)).toFixed(1)} MB
-                  </div>
-                )}
-              </label>
+                >
+                  {file ? (
+                    <div>
+                      <div style={{ fontSize: 14, fontWeight: 500, color: TEXT, marginBottom: 4 }}>
+                        {file.name}
+                      </div>
+                      <div style={{ fontSize: 13, color: TEXT_MUTED }}>
+                        {(file.size / (1024 * 1024)).toFixed(1)} MB &middot; click or drop to replace
+                      </div>
+                    </div>
+                  ) : (
+                    <div>
+                      <div style={{ fontSize: 15, fontWeight: 500, color: TEXT, marginBottom: 4 }}>
+                        Drag &amp; drop the scan PDF here
+                      </div>
+                      <div style={{ fontSize: 13, color: TEXT_MUTED }}>
+                        or click to browse
+                      </div>
+                    </div>
+                  )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf,.pdf"
+                    disabled={isUploading}
+                    onChange={(e) => handleFileSelect(e.target.files?.[0])}
+                    style={{ display: 'none' }}
+                  />
+                </div>
+              </div>
 
               <label style={{ display: 'block' }}>
                 <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 8 }}>
