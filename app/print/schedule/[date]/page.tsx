@@ -327,38 +327,32 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
     }}>
 
 
-      {/* TOP BANNER: Logo+title (wrapped) | [flex spacer] | Reschedule | [flex spacer] | Client# */}
+      {/* TOP BANNER: Logo + title (single line) | [flex spacer] | Reschedule | Client# */}
       <div style={{
-        display: 'flex', alignItems: 'stretch',
+        display: 'flex', alignItems: 'center',
         marginBottom: '18px', paddingBottom: '10px',
         borderBottom: '3px solid #1B2B4B',
         gap: '10px',
       }}>
 
 
-        {/* Logo + title (Furniture / Assist wrapped on 2 lines) */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px', flexShrink: 0 }}>
-          <img src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg" alt="Furniture Assist" style={{ width: '72px', height: '72px', objectFit: 'contain' }} />
-          <div>
-            <div style={{ fontSize: '26px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1 }}>Furniture</div>
-            <div style={{ fontSize: '26px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, marginTop: '2px' }}>Assist</div>
-            <div style={{ fontSize: '10.5px', color: '#7A8899', letterSpacing: '0.1em', textTransform: 'uppercase', marginTop: '5px', fontWeight: 700 }}>Client Pickup Sheet</div>
+        {/* Logo + title (Furniture Assist on one line, caption below) */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+          <img src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg" alt="Furniture Assist" style={{ width: '92px', height: '92px', objectFit: 'contain' }} />
+          <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+            <div style={{ fontSize: '34px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, whiteSpace: 'nowrap' }}>Furniture Assist</div>
+            <div style={{ fontSize: '11.5px', color: '#7A8899', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: '7px', fontWeight: 700, whiteSpace: 'nowrap' }}>Client Pickup Sheet</div>
           </div>
         </div>
 
 
-        {/* Flex spacer pushes outcome boxes toward center */}
+        {/* Flex spacer pushes reviewer boxes to the right */}
         <div style={{ flex: 1 }} />
 
 
-        {/* Outcome boxes — centered as a group */}
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'stretch', flexShrink: 0 }}>
+        {/* Reviewer action group: Reschedule + Client/Car # */}
+        <div style={{ display: 'flex', gap: '12px', alignItems: 'stretch', flexShrink: 0 }}>
           <OutcomeBox label="Reschedule" color="#C0392B" />
-        </div>
-
-
-        {/* Flex spacer pushes Client# to right */}
-        <div style={{ flex: 1 }} />
 
 
         {/* Client/Car # box — right-justified */}
@@ -371,6 +365,7 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
             Client / Car #
           </div>
           <div style={{ fontSize: '30px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, minHeight: '36px', minWidth: '65px' }}>&nbsp;</div>
+        </div>
         </div>
       </div>
 
