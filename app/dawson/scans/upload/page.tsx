@@ -112,14 +112,34 @@ export default function ScansUploadPage() {
     setError(null)
     setResult(null)
 
-    const form = new FormData()
-    form.append('file', file)
-    if (notes.trim()) form.append('notes', notes.trim())
-
     try {
+      // ============================================================
+      // Step 1: Upload the PDF directly to Vercel Blob.
+      //
+      // This bypasses Vercel's 4.5 MB serverless function payload limit.
+      // The @vercel/blob/client SDK calls /api/dawson/scans/blob-upload-url
+      // under the hood to obtain a scoped upload token, then PUTs the file
+      // straight to Blob storage. The API route below only receives the
+      // resulting blob URL (a few hundred bytes).
+      // ============================================================
+      const { upload } = await import('@vercel/blob/client')
+      const blob = await upload(file.name, file, {
+        access: 'public',
+        handleUploadUrl: '/api/dawson/scans/blob-upload-url',
+        contentType: 'application/pdf',
+      })
+
+      // ============================================================
+      // Step 2: Trigger OCR pipeline with the blob URL
+      // ============================================================
       const res = await fetch('/api/dawson/scans/upload', {
         method: 'POST',
-        body: form,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          blobUrl: blob.url,
+          filename: file.name,
+          notes: notes.trim() || undefined,
+        }),
       })
       const data = (await res.json()) as UploadResponse
       if (!res.ok || !data.success) {

@@ -25,6 +25,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { PDFDocument } from 'pdf-lib'
+import { del as delBlob } from '@vercel/blob'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import {
@@ -79,31 +80,72 @@ export async function POST(req: NextRequest) {
     }
   }
 
-  // Parse multipart form data
-  let file: File
+  // ============================================================
+  // Parse JSON body: expects { blobUrl, filename, notes? }
+  //
+  // The browser has ALREADY uploaded the PDF directly to Vercel Blob via
+  // /api/dawson/scans/blob-upload-url. This endpoint receives only the
+  // resulting blob URL (a few hundred bytes), sidestepping Vercel's 4.5 MB
+  // serverless function payload limit.
+  // ============================================================
+  let blobUrl: string
+  let filename: string
   let notes: string | undefined
   try {
-    const form = await req.formData()
-    const raw = form.get('file')
-    if (!(raw instanceof File)) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    const body = (await req.json()) as {
+      blobUrl?: string
+      filename?: string
+      notes?: string
     }
-    file = raw
-    const rawNotes = form.get('notes')
-    if (typeof rawNotes === 'string' && rawNotes.trim()) notes = rawNotes.trim()
+    if (!body.blobUrl || typeof body.blobUrl !== 'string') {
+      return NextResponse.json({ error: 'blobUrl is required' }, { status: 400 })
+    }
+    if (!body.filename || typeof body.filename !== 'string') {
+      return NextResponse.json({ error: 'filename is required' }, { status: 400 })
+    }
+    blobUrl = body.blobUrl
+    filename = body.filename
+    if (typeof body.notes === 'string' && body.notes.trim()) notes = body.notes.trim()
   } catch (e) {
     return NextResponse.json(
-      { error: `Failed to parse upload: ${e instanceof Error ? e.message : String(e)}` },
+      { error: `Failed to parse upload payload: ${e instanceof Error ? e.message : String(e)}` },
       { status: 400 },
     )
   }
 
-  if (file.type !== 'application/pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+  if (!filename.toLowerCase().endsWith('.pdf')) {
     return NextResponse.json({ error: 'File must be a PDF' }, { status: 400 })
   }
 
-  // Read PDF bytes
-  const pdfBytes = Buffer.from(await file.arrayBuffer())
+  // Basic safety check on blob URL host to prevent SSRF via arbitrary URLs
+  try {
+    const u = new URL(blobUrl)
+    if (!u.hostname.endsWith('.public.blob.vercel-storage.com') &&
+        !u.hostname.endsWith('.blob.vercel-storage.com')) {
+      return NextResponse.json({ error: 'blobUrl must be a Vercel Blob URL' }, { status: 400 })
+    }
+  } catch {
+    return NextResponse.json({ error: 'Invalid blobUrl' }, { status: 400 })
+  }
+
+  // ============================================================
+  // Download the PDF from Blob (server-side, no 4.5 MB limit)
+  // ============================================================
+  let pdfBytes: Buffer
+  try {
+    const blobResp = await fetch(blobUrl)
+    if (!blobResp.ok) {
+      throw new Error(`Blob fetch failed: HTTP ${blobResp.status}`)
+    }
+    pdfBytes = Buffer.from(await blobResp.arrayBuffer())
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e)
+    console.error('Failed to fetch PDF from Blob:', msg)
+    return NextResponse.json(
+      { error: `Failed to fetch uploaded PDF: ${msg}` },
+      { status: 502 },
+    )
+  }
   const sizeMb = pdfBytes.length / (1024 * 1024)
 
   // Guard against absurdly large PDFs (Vercel memory limit)
@@ -121,7 +163,7 @@ export async function POST(req: NextRequest) {
   try {
     batch = await createScanBatch({
       uploadedBy,
-      originalFilename: file.name,
+      originalFilename: filename,
       originalSizeMb: sizeMb,
       notes,
     })
@@ -141,7 +183,7 @@ export async function POST(req: NextRequest) {
     // 2. Attach original PDF to batch record (audit trail)
     // ============================================================
     try {
-      await attachOriginalPdf(batch.id, file.name, pdfBytes)
+      await attachOriginalPdf(batch.id, filename, pdfBytes)
     } catch (e) {
       // Non-fatal — batch record exists, OCR can still proceed. Log to Error Log.
       console.warn('attachOriginalPdf failed (non-fatal):', e)
@@ -161,7 +203,7 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       const msg = `Failed to parse PDF: ${e instanceof Error ? e.message : String(e)}`
       await updateScanBatch(batch.id, { status: 'Failed', errorLog: msg })
-      await sendFailureEmail(batch.batchId, file.name, msg)
+      await sendFailureEmail(batch.batchId, filename, msg)
       return NextResponse.json({ error: msg, batchId: batch.batchId }, { status: 400 })
     }
 
@@ -287,18 +329,31 @@ export async function POST(req: NextRequest) {
     if (finalStatus !== 'Complete') {
       const subject = `Scan Batch #${batch.batchId} — ${finalStatus}`
       const body =
-        `Batch: #${batch.batchId} (${file.name})\n` +
+        `Batch: #${batch.batchId} (${filename})\n` +
         `Uploaded by: ${uploadedBy}\n` +
         `Status: ${finalStatus}\n` +
         `Pages: ${pageCount} | OCR success: ${ocrSuccessCount} | OCR failed: ${ocrFailureCount}\n` +
         `Split success: ${splitSuccessCount} | Split failed: ${splitFailureCount}\n\n` +
         `Failed pages:\n${failedPagesLog || '(none)'}\n\n` +
         `Batch record: ${batchUrl}`
-      await sendFailureEmail(batch.batchId, file.name, body, subject)
+      await sendFailureEmail(batch.batchId, filename, body, subject)
     }
 
     // ============================================================
-    // 7. Return per-page results to browser
+    // 7. Delete the source PDF from Vercel Blob (best-effort)
+    //    The PDF is already attached to the batch record via
+    //    attachOriginalPdf, so the Blob copy is now redundant. Delete
+    //    to keep storage usage flat and remove any PII exposure window.
+    // ============================================================
+    try {
+      await delBlob(blobUrl)
+    } catch (delErr) {
+      // Non-fatal — batch already succeeded. Log for monthly cleanup sweep.
+      console.warn('Blob cleanup failed (non-fatal):', delErr)
+    }
+
+    // ============================================================
+    // 8. Return per-page results to browser
     // ============================================================
     return NextResponse.json({
       success: true,
@@ -336,7 +391,7 @@ export async function POST(req: NextRequest) {
     } catch (updateErr) {
       console.error('Failed to update batch to Failed:', updateErr)
     }
-    await sendFailureEmail(batch.batchId, file.name, `Pipeline crashed: ${msg}`)
+    await sendFailureEmail(batch.batchId, filename, `Pipeline crashed: ${msg}`)
     return NextResponse.json(
       { error: msg, batchId: batch.batchId },
       { status: 500 },
