@@ -1,7 +1,7 @@
 import { UserButton } from '@clerk/nextjs'
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
-import { getAgencyUserByClerkId, getAgencyById, getReferralsByStaffName, getReferralsByAgencyId } from '@/lib/airtable'
+import { getAgencyUserByClerkId, getAgencyById, getReferralsByStaffName, getReferralsByAgencyId, stampFirstLogin } from '@/lib/airtable'
 import ReferralTable from '@/components/ReferralTable'
 import { clerkClient } from '@clerk/nextjs/server'
 
@@ -27,6 +27,7 @@ if (!agencyUser) {
   )
 }
 if (agencyUser.status === 'Inactive') redirect('/inactive')
+   await stampFirstLogin(agencyUser)
 
   const agency = await getAgencyById(agencyUser.agencyId!)
 

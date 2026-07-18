@@ -39,9 +39,20 @@ const HEADERS = {
   'Content-Type': 'application/json',
 }
 
-async function airtableFetch(table: string, params: string = '') {
-  const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}${params}`
-  const res = await fetch(url, { headers: HEADERS })
+async function airtableFetch(
+  table: string,
+  pathOrParams: string = '',
+  options?: { method?: string; body?: unknown }
+) {
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(table)}${pathOrParams}`
+  const res = await fetch(url, {
+    method: options?.method ?? 'GET',
+    headers: {
+      ...HEADERS,
+      ...(options?.body ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: options?.body ? JSON.stringify(options.body) : undefined,
+  })
   if (!res.ok) {
     const err = await res.text()
     throw new Error(`Airtable error: ${err}`)
@@ -119,6 +130,50 @@ export async function getAgencyUserByClerkId(clerkUserId: string) {
     agencyId: (record.fields['Agency'] as string[])?.[0] ?? null,
     phone: (record.fields['Phone Number'] as string) ?? null,
     status: record.fields['Status'] as string,
+    claimedDate: (record.fields['Claimed Date'] as string) ?? null,
+  }
+}
+
+export async function stampFirstLogin(agencyUser: {
+  id: string
+  claimedDate?: string | null
+  role?: string
+  agencyId?: string | null
+}) {
+  // Already claimed — no-op
+  if (agencyUser.claimedDate) return
+
+  const now = new Date().toISOString()
+
+  // Update Agency User: Claimed Date + Portal Invite Status
+  await airtableFetch('Agency Users', `/${agencyUser.id}`, {
+    method: 'PATCH',
+    body: {
+      fields: {
+        'Claimed Date': now,
+        'Portal Invite Status': 'Claimed',
+      },
+    },
+  })
+
+  // Cascade to Agency if this user is Primary Admin
+  if (agencyUser.role === 'Admin' && agencyUser.agencyId) {
+    const agencyData = await airtableFetch('Agencies', `/${agencyUser.agencyId}`)
+    const primaryAdminLink = (agencyData.fields?.['Primary Admin'] as string[]) ?? []
+    const isPrimaryAdmin = primaryAdminLink.includes(agencyUser.id)
+    const agencyClaimedDate = agencyData.fields?.['Claimed Date']
+
+    if (isPrimaryAdmin && !agencyClaimedDate) {
+      await airtableFetch('Agencies', `/${agencyUser.agencyId}`, {
+        method: 'PATCH',
+        body: {
+          fields: {
+            'Claimed Date': now,
+            'Status': 'Approved',
+          },
+        },
+      })
+    }
   }
 }
 
