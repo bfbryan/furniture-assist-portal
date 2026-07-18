@@ -180,17 +180,7 @@ export default function ScansUploadPage() {
                 OCR, and update each client&apos;s record automatically.
               </p>
             </div>
-            <Link
-              href="/dawson/scans"
-              style={{
-                fontSize: 14,
-                color: READ_ACCENT,
-                textDecoration: 'none',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              ← Scan history
-            </Link>
+            {/* Scan history link removed — page not built yet */}
           </div>
         </div>
 
@@ -226,9 +216,15 @@ export default function ScansUploadPage() {
                   style={{
                     width: '100%',
                     padding: '32px 20px',
-                    border: `2px dashed ${isDragging ? EDIT_ACCENT : BORDER}`,
+                    border: `2px ${file ? 'solid' : 'dashed'} ${
+                      isDragging ? EDIT_ACCENT : file ? SUCCESS : BORDER
+                    }`,
                     borderRadius: 8,
-                    background: isDragging ? '#E8F1EF' : BG,
+                    background: isDragging
+                      ? '#E8F1EF'
+                      : file
+                        ? '#EEF7E7'
+                        : BG,
                     textAlign: 'center',
                     cursor: isUploading ? 'not-allowed' : 'pointer',
                     transition: 'border-color 120ms ease, background 120ms ease',
@@ -237,6 +233,37 @@ export default function ScansUploadPage() {
                 >
                   {file ? (
                     <div>
+                      <div
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          gap: 8,
+                          marginBottom: 6,
+                        }}
+                      >
+                        <span
+                          aria-hidden="true"
+                          style={{
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            width: 22,
+                            height: 22,
+                            borderRadius: '50%',
+                            background: SUCCESS,
+                            color: 'white',
+                            fontSize: 14,
+                            fontWeight: 700,
+                            lineHeight: 1,
+                          }}
+                        >
+                          ✓
+                        </span>
+                        <span style={{ fontSize: 15, fontWeight: 600, color: SUCCESS }}>
+                          File ready to upload
+                        </span>
+                      </div>
                       <div style={{ fontSize: 14, fontWeight: 500, color: TEXT, marginBottom: 4 }}>
                         {file.name}
                       </div>
@@ -312,12 +339,14 @@ export default function ScansUploadPage() {
                 background: EDIT_ACCENT,
                 color: 'white',
                 border: 'none',
-                padding: '12px 24px',
+                padding: '14px 28px',
                 borderRadius: 6,
-                fontSize: 14,
-                fontWeight: 500,
+                fontSize: 15,
+                fontWeight: 600,
                 cursor: isUploading || !file ? 'not-allowed' : 'pointer',
                 opacity: isUploading || !file ? 0.6 : 1,
+                boxShadow: file && !isUploading ? '0 2px 6px rgba(42, 127, 111, 0.25)' : 'none',
+                transition: 'box-shadow 120ms ease, transform 120ms ease',
               }}
             >
               {isUploading ? 'Processing… this can take 2-3 min for 60 pages' : 'Upload & Process'}
