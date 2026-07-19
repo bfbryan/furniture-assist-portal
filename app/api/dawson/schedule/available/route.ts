@@ -1,9 +1,17 @@
 // app/api/dawson/schedule/available/route.ts
+// Available-Saturday endpoint. Called by BOTH Dawson (internal portal) AND
+// agencies (agency portal reschedule modal).
+//
+// Auth: any signed-in Clerk user. Read-only, low-risk — agencies see the
+// same public-ish schedule Dawson does.
+//
+// Query params:
+//   weeks     — number of weeks ahead to consider (default 8, max 26)
+//   leadDays  — minimum days from today (default 7 for Dawson, agency
+//               callers pass 14 to enforce a 2-week floor)
 
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-
-const ALLOWED_USER_IDS = ['user_3BmTnGTVcPCuCJTpP8uKrQm4KXj']
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -15,8 +23,8 @@ const SCHEDULE_TABLE = 'Saturday Schedule'
 const REFERRALS_TABLE = 'Client Referrals'
 
 // Filter policy (form vs. auto-schedule):
-//   FORM (this endpoint, Dawson manually scheduling):
-//     - Date >= today + 7 days
+//   FORM (this endpoint, Dawson/agency manually scheduling):
+//     - Date >= today + leadDays (default 7 Dawson, 14 agency)
 //     - Status = 'Open'
 //     - Slots Remaining > 0
 //     - At least one time slot under cap
@@ -27,8 +35,8 @@ const REFERRALS_TABLE = 'Client Referrals'
 //     - Ready to Schedule = 1   <-- form does NOT enforce this
 //     - At least one time slot under cap
 // 'Ready to Schedule' is an ops-readiness gate for unattended scheduling.
-// Dawson can book a not-yet-ready date by hand; the script cannot.
-const MIN_LEAD_DAYS = 7
+// Dawson/agencies can book a not-yet-ready date by hand; the script cannot.
+const DEFAULT_LEAD_DAYS = 7
 
 // Time-slot capacity caps from the auto-schedule script's tryAssignTime():
 //   9:00 AM  -> < 5
@@ -53,22 +61,26 @@ function addDays(d: Date, days: number): string {
 
 export async function GET(request: Request) {
   const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
+  if (!userId) {
+    return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   }
 
   try {
     const { searchParams } = new URL(request.url)
     const weeksAhead = Math.min(parseInt(searchParams.get('weeks') || '8'), 26)
+    const leadDays = Math.max(
+      parseInt(searchParams.get('leadDays') || String(DEFAULT_LEAD_DAYS)),
+      DEFAULT_LEAD_DAYS
+    )
 
     const today = new Date()
-    const minDate = addDays(today, MIN_LEAD_DAYS) // inclusive lower bound
+    const minDate = addDays(today, leadDays) // inclusive lower bound
     const endDate = addDays(today, weeksAhead * 7) // exclusive upper bound
 
     // IS_SAME_OR_AFTER doesn't exist in Airtable formulas; use
     // NOT(IS_BEFORE(...)) for inclusive >=.
     // NOTE: 'Ready to Schedule' is intentionally NOT filtered here -- the
-    // form lets Dawson book a date even before ops marks it ready.
+    // form lets Dawson/agency book a date even before ops marks it ready.
     const formula = `AND(
       NOT(IS_BEFORE({Date}, '${minDate}')),
       IS_BEFORE({Date}, '${endDate}'),
