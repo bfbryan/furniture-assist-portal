@@ -1,4 +1,4 @@
-// app/admin/page.tsx
+// app/(agency)/team/page.tsx
 
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
@@ -49,7 +49,7 @@ export default async function AdminPage() {
 const activeCount = members.filter((m: any) => m.status === 'Active').length
 const adminCount = members.filter((m: any) => m.role === 'Admin').length
 
-console.log('agencyId:', agencyUser.agencyId)
+
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
 

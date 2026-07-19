@@ -50,7 +50,7 @@ const pending = referrals.filter((r: any) => r.referralReview === 'Pending').len
   </a>
   <div className="flex items-center gap-6">
     {agencyUser.role === 'Admin' && (
-      <a href="/admin" style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.65)', textDecoration: 'none' }}>
+      <a href="/team" style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.65)', textDecoration: 'none' }}>
         Team Management
       </a>
     )}
