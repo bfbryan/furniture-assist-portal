@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Referral = {
@@ -20,6 +20,11 @@ type Referral = {
   state: string | null
   zip: string | null
   phone: string | null
+}
+
+type AvailableDate = {
+  date: string           // 'YYYY-MM-DD'
+  slotsRemaining: number
 }
 
 function formatDate(dateStr: string | null) {
@@ -75,15 +80,16 @@ const COL_SUB: React.CSSProperties = {
   fontSize: '11px', color: '#7A8899',
 }
 
-type ModalState = {
+// ---------- CANCEL / WITHDRAW MODAL ----------
+type ConfirmModalState = {
   open: boolean
-  type: 'cancel' | 'reschedule' | 'withdraw' | null
+  type: 'cancel' | 'withdraw' | null
   id: string
   name: string
 }
 
 function ConfirmModal({ modal, onConfirm, onClose, loading }: {
-  modal: ModalState
+  modal: ConfirmModalState
   onConfirm: () => void
   onClose: () => void
   loading: boolean
@@ -99,21 +105,117 @@ function ConfirmModal({ modal, onConfirm, onClose, loading }: {
     >
       <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '440px', width: '90%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
         <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
-           {isWithdraw ? 'Withdraw Referral' : isCancel ? 'Cancel Appointment' : 'Request Reschedule'}
+          {isWithdraw ? 'Withdraw Referral' : 'Cancel Appointment'}
         </h3>
         <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '24px' }}>
           {isWithdraw
             ? `Are you sure you want to withdraw the referral for ${modal.name}? It will be removed from the review queue.`
-            : isCancel
-            ? `Are you sure you want to cancel the appointment for ${modal.name}? Furniture Assist will be notified.`
-            : `This will request a reschedule for ${modal.name}. They will be placed back in the scheduling queue.`}
+            : `Are you sure you want to cancel the appointment for ${modal.name}? Furniture Assist will be notified.`}
         </p>
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
             Back
           </button>
           <button onClick={onConfirm} disabled={loading} style={{ padding: '10px 20px', borderRadius: '7px', border: 'none', background: isCancel ? '#C0392B' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
-            {loading ? '...' : isWithdraw ? 'Withdraw Referral' : isCancel ? 'Yes, Cancel' : 'Request Reschedule'}
+            {loading ? '...' : isWithdraw ? 'Withdraw Referral' : 'Yes, Cancel'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ---------- RESCHEDULE MODAL (Flexible + Saturday picker) ----------
+type RescheduleModalState = {
+  open: boolean
+  id: string
+  name: string
+}
+
+function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading }: {
+  modal: RescheduleModalState
+  availableDates: AvailableDate[]
+  onConfirm: (preferredDate: string | null, flexible: boolean) => void
+  onClose: () => void
+  loading: boolean
+}) {
+  const [preferredDate, setPreferredDate] = useState('')
+  const [flexible, setFlexible] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (modal.open) { setPreferredDate(''); setFlexible(false); setError(null) }
+  }, [modal.open])
+
+  if (!modal.open) return null
+
+  const handleConfirm = () => {
+    setError(null)
+    if (!flexible && !preferredDate) {
+      setError('Pick a Saturday or check Flexible.'); return
+    }
+    onConfirm(flexible ? null : preferredDate, flexible)
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center"
+      style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
+        <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
+          Reschedule Appointment
+        </h3>
+        <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '20px' }}>
+          Reschedule for {modal.name}. Choose a Saturday. We'll check availability and confirm by email.
+        </p>
+
+        <label style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block' }}>
+          Preferred Saturday
+        </label>
+        <select
+          value={preferredDate}
+          onChange={e => setPreferredDate(e.target.value)}
+          disabled={flexible}
+          style={{ width: '100%', padding: '9px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '14px', color: '#2C3A4A', background: 'white', outline: 'none', opacity: flexible ? 0.5 : 1, cursor: flexible ? 'not-allowed' : 'pointer', marginBottom: '12px' }}
+        >
+          <option value="">Select a Saturday...</option>
+          {availableDates.map(d => {
+            const dateObj = new Date(d.date + 'T00:00:00')
+            const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+            return (
+              <option key={d.date} value={d.date}>
+  {label}
+</option>
+            )
+          })}
+        </select>
+
+        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '9px 14px', borderRadius: '7px', border: `1px solid ${flexible ? '#2A7F6F' : '#EDE9E1'}`, background: flexible ? '#EAF4F2' : 'white', marginBottom: '20px' }}>
+          <input type="checkbox" checked={flexible} onChange={e => { setFlexible(e.target.checked); if (e.target.checked) setPreferredDate('') }} style={{ display: 'none' }} />
+          <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: `2px solid ${flexible ? '#2A7F6F' : '#EDE9E1'}`, background: flexible ? '#2A7F6F' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+            {flexible && (
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+              </svg>
+            )}
+          </div>
+          <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: flexible ? 600 : 400 }}>
+            I'm flexible — Furniture Assist will pick the next available Saturday and email you the details.
+          </span>
+        </label>
+
+        {error && (
+          <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#C0392B' }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+          <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+            Back
+          </button>
+          <button onClick={handleConfirm} disabled={loading} style={{ padding: '10px 20px', borderRadius: '7px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
+            {loading ? '...' : 'Reschedule'}
           </button>
         </div>
       </div>
@@ -293,25 +395,61 @@ type StatusGroup = {
 
 export default function ReferralTable({ referrals, isAdmin = false }: { referrals: Referral[], isAdmin?: boolean }) {
   const router = useRouter()
-  const [modal, setModal] = useState<ModalState>({ open: false, type: null, id: '', name: '' })
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({ open: false, type: null, id: '', name: '' })
+  const [rescheduleModal, setRescheduleModal] = useState<RescheduleModalState>({ open: false, id: '', name: '' })
   const [loading, setLoading] = useState(false)
   const [staffFilter, setStaffFilter] = useState<string>('all')
+  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
+
+  // Load available Saturdays for the reschedule modal.
+  // 2-week lead time enforced via leadDays=14 (Dawson defaults to 7).
+  useEffect(() => {
+    fetch('/api/dawson/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => setAvailableDates(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [])
 
   // Extract unique staff names for filter dropdown
   const staffNames = Array.from(new Set(referrals.map(r => r.referredBy).filter(Boolean))) as string[]
-  
+
   // Apply staff filter
-  const filteredReferrals = staffFilter === 'all' 
-    ? referrals 
+  const filteredReferrals = staffFilter === 'all'
+    ? referrals
     : referrals.filter(r => r.referredBy === staffFilter)
-    
+
+  // Cancel / Withdraw — bare POST, no body
   const handleConfirm = async () => {
-  setLoading(true)
-  await fetch(`/api/referrals/${modal.id}/${modal.type}`, { method: 'POST' })
-  setLoading(false)
-  setModal({ open: false, type: null, id: '', name: '' })
-  router.refresh()
-}
+    setLoading(true)
+    try {
+      await fetch(`/api/referrals/${confirmModal.id}/${confirmModal.type}`, { method: 'POST' })
+    } finally {
+      setLoading(false)
+      setConfirmModal({ open: false, type: null, id: '', name: '' })
+      router.refresh()
+    }
+  }
+
+  // Reschedule — JSON body { preferredDate, flexible }
+  const handleRescheduleConfirm = async (preferredDate: string | null, flexible: boolean) => {
+    setLoading(true)
+    try {
+      await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferredDate, flexible }),
+      })
+      // Refresh availability — the previous slot is now open, the new one is taken.
+      fetch('/api/dawson/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
+        .then(r => r.json())
+        .then(data => setAvailableDates(Array.isArray(data) ? data : []))
+        .catch(() => {})
+    } finally {
+      setLoading(false)
+      setRescheduleModal({ open: false, id: '', name: '' })
+      router.refresh()
+    }
+  }
 
   const groups: StatusGroup[] = [
     { key: 'Submitted',  sectionTitle: 'Awaiting Approval',        referrals: sortReferrals(filteredReferrals.filter(r => getPortalStatus(r.referralReview, r.appointmentStatus) === 'Submitted'),  'Submitted') },
@@ -333,9 +471,16 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
   return (
     <>
       <ConfirmModal
-        modal={modal}
+        modal={confirmModal}
         onConfirm={handleConfirm}
-        onClose={() => setModal({ open: false, type: null, id: '', name: '' })}
+        onClose={() => setConfirmModal({ open: false, type: null, id: '', name: '' })}
+        loading={loading}
+      />
+      <RescheduleModal
+        modal={rescheduleModal}
+        availableDates={availableDates}
+        onConfirm={handleRescheduleConfirm}
+        onClose={() => setRescheduleModal({ open: false, id: '', name: '' })}
         loading={loading}
       />
       {/* Staff filter — admin only */}
@@ -370,9 +515,9 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
   <GroupSection
     key={group.key}
     group={group}
-    onCancel={(id, name) => setModal({ open: true, type: 'cancel', id, name })}
-    onReschedule={(id, name) => setModal({ open: true, type: 'reschedule', id, name })}
-    onWithdraw={(id, name) => setModal({ open: true, type: 'withdraw', id, name })}
+    onCancel={(id, name) => setConfirmModal({ open: true, type: 'cancel', id, name })}
+    onReschedule={(id, name) => setRescheduleModal({ open: true, id, name })}
+    onWithdraw={(id, name) => setConfirmModal({ open: true, type: 'withdraw', id, name })}
   />
 ))}
     </>
