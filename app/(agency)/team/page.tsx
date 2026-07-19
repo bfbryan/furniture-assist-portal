@@ -1,9 +1,9 @@
 // app/(agency)/team/page.tsx
 
-import { auth } from '@clerk/nextjs/server'
+
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById, getAgencyUsersByAgencyId } from '@/lib/airtable'
-import { UserButton } from '@clerk/nextjs'
+import { auth } from '@clerk/nextjs/server'
 import { clerkClient } from '@clerk/nextjs/server'
 import StaffList from '@/components/StaffList'
 import InviteStaffForm from '@/components/InviteStaffForm'
@@ -53,18 +53,7 @@ const adminCount = members.filter((m: any) => m.role === 'Admin').length
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
 
-      {/* Nav */}
-      <header className="bg-[#1B2B4B] h-16 flex items-center justify-between px-8 sticky top-0 z-50 shadow-lg">
-        <span className="font-montserrat font-extrabold text-sm text-white tracking-wide flex items-center gap-2">
-          Furniture Assist <span className="text-[#3AA08D]">| Agency Portal</span>
-        </span>
-        <div className="flex items-center gap-6">
-          <a href="/dashboard" style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.65)', textDecoration: 'none' }}>
-            Back to Portal
-          </a>
-          <UserButton />
-        </div>
-      </header>
+ 
 
       {/* Hero */}
       <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-9">

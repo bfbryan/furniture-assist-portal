@@ -1,4 +1,4 @@
-import { UserButton } from '@clerk/nextjs'
+
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById, getReferralsByStaffName, getReferralsByAgencyId, stampFirstLogin } from '@/lib/airtable'
@@ -43,20 +43,7 @@ const pending = referrals.filter((r: any) => r.referralReview === 'Pending').len
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
 
-      {/* Top nav bar */}
-     <header className="bg-[#1B2B4B] h-16 flex items-center justify-between px-8 sticky top-0 z-50 shadow-lg">
-  <a className="font-montserrat font-extrabold text-sm text-white tracking-wide flex items-center gap-2">
-    Furniture Assist <span className="text-[#3AA08D]">| Agency Portal</span>
-  </a>
-  <div className="flex items-center gap-6">
-    {agencyUser.role === 'Admin' && (
-      <a href="/team" style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.65)', textDecoration: 'none' }}>
-        Team Management
-      </a>
-    )}
-    <UserButton />
-  </div>
-</header>
+   
 
   {/* Hero */}
 <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-9">
