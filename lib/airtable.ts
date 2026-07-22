@@ -776,7 +776,9 @@ export async function getReferralById(referralId: string) {
       item('Toys / Books / School',  'BK Toys/Books/School'),
     ]),
     volunteerInitials: (f['Volunteer Initials'] as string) ?? null,
+        checkInTime: (f['Check-in Time'] as string) ?? null,
     checkoutTime: (f['Check-out Time'] as string) ?? null,
+    otherItems: (f['Other Items'] as string) ?? null,
     distributionNotes: (f['Distribution Notes'] as string) ?? null,
   }
 

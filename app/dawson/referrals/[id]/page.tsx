@@ -10,8 +10,10 @@ type ItemsDisbursed = {
   kitchen: { name: string; qty: string | number }[]
   linens: { name: string; qty: string | number }[]
   misc: { name: string; qty: string | number }[]
-  volunteerInitials: string | null
+  volunteerInitials: string | null   // legacy — removed from sheet redesign July 2026
+  checkInTime: string | null
   checkoutTime: string | null
+  otherItems: string | null
   distributionNotes: string | null
 }
 
@@ -362,7 +364,7 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
 
   const totalCount = groups.reduce((sum, g) => sum + g.items.length, 0)
 
-  if (totalCount === 0 && !d.distributionNotes && !d.volunteerInitials) {
+  if (totalCount === 0 && !d.distributionNotes && !d.otherItems && !d.checkInTime && !d.checkoutTime) {
     return (
       <Card accent={READ_ACCENT} title="Items Disbursed">
         <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '8px 0' }}>No items recorded yet.</div>
@@ -370,17 +372,26 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
     )
   }
 
+  // Volunteer initials no longer displayed — removed from July 2026 sheet
+  // redesign; legacy data still lives in Airtable but is not shown.
+
+  // Header right: Check-in / Check-out inline, right-justified, matched to
+  // the card title's typographic weight so it reads as a peer heading.
+  const headerRight = (d.checkInTime || d.checkoutTime) ? (
+    <div style={{ display: 'flex', gap: '18px', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B' }}>
+      <span>
+        <span style={{ color: '#7A8899', fontWeight: 700 }}>Check-in Time </span>
+        {d.checkInTime || '—'}
+      </span>
+      <span>
+        <span style={{ color: '#7A8899', fontWeight: 700 }}>Check-out Time </span>
+        {d.checkoutTime || '—'}
+      </span>
+    </div>
+  ) : null
+
   return (
-    <Card
-      accent={READ_ACCENT}
-      title="Items Disbursed"
-      headerRight={
-        <div style={{ display: 'flex', gap: '12px', fontSize: '11px', color: '#7A8899' }}>
-          {d.volunteerInitials && <span><strong style={{ color: '#1B2B4B' }}>{d.volunteerInitials}</strong> · vol</span>}
-          {d.checkoutTime && <span>{d.checkoutTime}</span>}
-        </div>
-      }
-    >
+    <Card accent={READ_ACCENT} title="Items Disbursed" headerRight={headerRight}>
       <div style={{ columnCount: 3, columnGap: '28px', padding: '6px 0' }}>
         {groups.map((g, gi) => (
           <div key={gi} style={{ breakInside: 'avoid', marginBottom: '14px' }}>
@@ -397,10 +408,21 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
         ))}
       </div>
 
+      {d.otherItems && (
+        <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #EDE9E1' }}>
+          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2A7F6F', marginBottom: '6px' }}>
+            Other Items
+          </div>
+          <div style={{ fontSize: '13px', color: '#2C3A4A', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
+            {d.otherItems}
+          </div>
+        </div>
+      )}
+
       {d.distributionNotes && (
         <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #EDE9E1' }}>
           <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#7A8899', marginBottom: '6px' }}>
-            Distribution Notes
+            Internal Notes
           </div>
           <div style={{ fontSize: '13px', color: '#2C3A4A', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>
             {d.distributionNotes}
@@ -1162,7 +1184,8 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       </div>
 
       {/* Items Disbursed spans the two left columns below when appointment
-          is Completed or Cancelled — mirrors the mockup we approved. */}
+          is Completed or Cancelled. Placed right under the 3-column grid so
+          it visually pushes up under Client Info + Internal Notes. */}
       {showItemsDisbursed && referral.itemsDisbursed && (
         <div style={{ padding: '0 32px 32px' }}>
           <div style={{ maxWidth: 'calc(66.67% - 10px)' }}>
