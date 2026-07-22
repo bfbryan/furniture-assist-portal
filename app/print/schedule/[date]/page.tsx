@@ -1,8 +1,10 @@
 'use client'
 
 
+
 import { useState, useEffect, useRef } from 'react'
 import QRCode from 'qrcode'
+
 
 
 type Client = {
@@ -27,6 +29,7 @@ type Client = {
   referringAgency: string | null
   externalNotes: string | null
 }
+
 
 
 const LEFT_CATEGORIES = [
@@ -64,6 +67,7 @@ const LEFT_CATEGORIES = [
 ]
 
 
+
 const RIGHT_CATEGORIES = [
   {
     name: 'Kitchen/Household',
@@ -97,6 +101,7 @@ const RIGHT_CATEGORIES = [
 ]
 
 
+
 function formatDateNoWeekday(dateStr: string | null) {
   if (!dateStr) return '—'
   const parts = dateStr.split('/')
@@ -107,6 +112,7 @@ function formatDateNoWeekday(dateStr: string | null) {
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })
 }
+
 
 
 function formatDate(dateStr: string | null) {
@@ -121,6 +127,7 @@ function formatDate(dateStr: string | null) {
 }
 
 
+
 function formatSaturdayDate(dateStr: string) {
   const [year, month, day] = dateStr.split('-')
   const d = new Date(`${year}-${month}-${day}T12:00:00`)
@@ -128,8 +135,10 @@ function formatSaturdayDate(dateStr: string) {
 }
 
 
+
 function QRCodeImage({ value, size = 64 }: { value: string; size?: number }) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
+
 
 
   useEffect(() => {
@@ -143,8 +152,10 @@ function QRCodeImage({ value, size = 64 }: { value: string; size?: number }) {
   }, [value, size])
 
 
+
   return <canvas ref={canvasRef} style={{ display: 'block' }} />
 }
+
 
 
 /* ============================================================
@@ -172,7 +183,7 @@ function CategoryBlock({ cat }: { cat: { name: string; items: string[] } }) {
           gridTemplateColumns: '1fr 65px 65px',
           borderBottom: i < cat.items.length - 1 ? '1px solid #555' : 'none',
           background: 'white',
-          minHeight: '24px',
+          minHeight: '22px',
           WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
         } as React.CSSProperties}>
           <div style={{ padding: '2px 5px', fontSize: '12px', color: '#1a1a1a', fontWeight: 400, display: 'flex', alignItems: 'center', whiteSpace: 'nowrap' }}>
@@ -187,6 +198,30 @@ function CategoryBlock({ cat }: { cat: { name: string; items: string[] } }) {
 }
 
 
+
+/* ============================================================
+   OtherFreeformBox — full-width freeform text box for items not
+   in the 30 predefined categories. OCR reads the text and dumps
+   into Airtable `Other Items` (long text). Placed under Baby/Kids
+   to use the whitespace at the bottom of the right column.
+   ============================================================ */
+function OtherFreeformBox() {
+  return (
+    <div style={{ border: '1.5px solid #333', borderRadius: '3px', overflow: 'hidden', marginBottom: '0' }}>
+      <div style={{
+        background: '#1B2B4B', color: '#ffffff', padding: '3px 7px',
+        fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.06em',
+        WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
+      } as React.CSSProperties}>
+        Other
+      </div>
+      <div style={{ background: 'white', minHeight: '56px', padding: '4px 6px' }} />
+    </div>
+  )
+}
+
+
+
 /* ============================================================
    ROSTER PAGE — alphabetical roster, prints as page 1
    ============================================================ */
@@ -194,6 +229,7 @@ function RosterPage({ clients, date }: { clients: Client[]; date: string }) {
   const half = Math.ceil(clients.length / 2)
   const col1 = clients.slice(0, half)
   const col2 = clients.slice(half)
+
 
 
   return (
@@ -234,6 +270,7 @@ function RosterPage({ clients, date }: { clients: Client[]; date: string }) {
       </div>
 
 
+
       {/* Two-column roster */}
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
         <RosterColumn clients={col1} />
@@ -242,6 +279,7 @@ function RosterPage({ clients, date }: { clients: Client[]; date: string }) {
     </div>
   )
 }
+
 
 
 function RosterColumn({ clients }: { clients: Client[] }) {
@@ -281,27 +319,28 @@ function RosterColumn({ clients }: { clients: Client[] }) {
 }
 
 
+
 /* ============================================================
-   Reusable outcome control box (No Show / Cancelled / Reschedule)
+   RescheduleBox — wider box; no inner checkbox. Handwritten date
+   inside is the trigger. OCR reads any date/text present here and
+   flags the sheet as a reschedule with that preferred date.
    ============================================================ */
-function OutcomeBox({ label, color }: { label: string; color: string }) {
+function RescheduleBox() {
   return (
     <div style={{
-      border: `3px solid ${color}`, borderRadius: '6px', padding: '6px 10px',
-      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '5px',
-      minWidth: '90px',
+      border: `3px solid #C0392B`, borderRadius: '6px', padding: '6px 10px',
+      display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', gap: '4px',
+      width: '120px', height: '82px', boxSizing: 'border-box',
       WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
     } as React.CSSProperties}>
-      <div style={{ fontSize: '10.5px', fontWeight: 900, color, textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center', lineHeight: 1.1 }}>
-        {label}
+      <div style={{ fontSize: '10.5px', fontWeight: 900, color: '#C0392B', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center', lineHeight: 1.1 }}>
+        Resch / Date
       </div>
-      <div style={{
-        width: '36px', height: '36px', border: `3px solid ${color}`, borderRadius: '4px',
-        WebkitPrintColorAdjust: 'exact', printColorAdjust: 'exact',
-      } as React.CSSProperties} />
+      <div style={{ flex: 1, width: '100%' }} />
     </div>
   )
 }
+
 
 
 function ClientSheet({ client, index, total }: { client: Client; index: number; total: number }) {
@@ -312,11 +351,12 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
   : []
 
 
+
   return (
     <div style={{
       pageBreakAfter: index < total - 1 ? 'always' : 'avoid',
       pageBreakInside: 'avoid',
-      padding: '12px 18px 10px',
+      padding: '10px 18px 6px',
       fontFamily: 'Arial, Helvetica, sans-serif',
       fontSize: '11px',
       color: '#1a1a1a',
@@ -327,13 +367,15 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
     }}>
 
 
-      {/* TOP BANNER: Logo + title (single line) | [flex spacer] | Reschedule | Client# */}
+
+      {/* TOP BANNER: Logo + title (single line) | [flex spacer] | Reschedule/Date | Client# */}
       <div style={{
         display: 'flex', alignItems: 'center',
-        marginBottom: '18px', paddingBottom: '10px',
+        marginBottom: '12px', paddingBottom: '8px',
         borderBottom: '3px solid #1B2B4B',
         gap: '10px',
       }}>
+
 
 
         {/* Logo + title (Furniture Assist on one line, caption below) */}
@@ -346,33 +388,39 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
         </div>
 
 
+
         {/* Flex spacer pushes reviewer boxes to the right */}
         <div style={{ flex: 1 }} />
 
 
-        {/* Reviewer action group: Reschedule + Client/Car # */}
+
+        {/* Reviewer action group: Reschedule/Date + Client/Car # (both 82px tall for consistent proportion) */}
         <div style={{ display: 'flex', gap: '12px', alignItems: 'stretch', flexShrink: 0 }}>
-          <OutcomeBox label="Reschedule" color="#C0392B" />
+          <RescheduleBox />
 
 
-        {/* Client/Car # box — right-justified */}
+
+        {/* Client/Car # box — right-justified. Label top-aligned + open area
+            below to match Resch/Date box exactly. */}
         <div style={{
           border: '3px solid #1B2B4B', borderRadius: '8px', padding: '6px 10px',
-          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '3px',
-          flexShrink: 0, minWidth: '105px',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start', gap: '4px',
+          flexShrink: 0, width: '120px', height: '82px', boxSizing: 'border-box',
         }}>
-          <div style={{ fontSize: '10px', fontWeight: 900, color: '#1B2B4B', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center', lineHeight: 1.1 }}>
+          <div style={{ fontSize: '10.5px', fontWeight: 900, color: '#1B2B4B', textTransform: 'uppercase', letterSpacing: '0.08em', textAlign: 'center', lineHeight: 1.1 }}>
             Client / Car #
           </div>
-          <div style={{ fontSize: '30px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, minHeight: '36px', minWidth: '65px' }}>&nbsp;</div>
+          <div style={{ flex: 1, width: '100%' }} />
         </div>
         </div>
       </div>
 
 
+
       {/* CLIENT INFO CARD — Notes removed (now lives in bottom Notes box) */}
-      <div style={{ border: '1.5px solid #333', borderRadius: '6px', padding: '12px 16px', background: 'white', marginBottom: '18px' }}>
+      <div style={{ border: '1.5px solid #333', borderRadius: '6px', padding: '10px 16px', background: 'white', marginBottom: '12px' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'center' }}>
+
 
 
           {/* LEFT: Name / Time · Date / Address / Phone / Language */}
@@ -391,6 +439,7 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
               <div>{client.language ?? '—'}</div>
             </div>
           </div>
+
 
 
           {/* RIGHT: ID / Agency / Household + Items (External notes removed from here) */}
@@ -424,12 +473,15 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
           </div>
 
 
+
         </div>
       </div>
 
 
+
       {/* ITEMS TABLE — maximum space (no Item/Hash/Qty subheader row; labels are in section header) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '20px' }}>
+      {/* Right column also includes universal freeform "Other" box under Baby/Kids */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '10px' }}>
         <div>
           {LEFT_CATEGORIES.map(cat => (
             <CategoryBlock key={cat.name} cat={cat} />
@@ -439,38 +491,44 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
           {RIGHT_CATEGORIES.map(cat => (
             <CategoryBlock key={cat.name} cat={cat} />
           ))}
+          <OtherFreeformBox />
         </div>
       </div>
 
 
-      {/* BOTTOM STRIP: Initials | Checkout Time | Notes (darker borders, label cue for reschedule date) */}
-      <div style={{ display: 'grid', gridTemplateColumns: '120px 130px 1fr', gap: '10px' }}>
+
+      {/* BOTTOM STRIP: Check-in Time | Check-out Time | Internal Notes
+          (Initials removed per Dawson; both time boxes same width; helper text dropped) */}
+      <div style={{ display: 'grid', gridTemplateColumns: '150px 150px 1fr', gap: '10px' }}>
 
 
-        <div style={{ border: '1.5px solid #333', borderRadius: '4px', padding: '6px 9px', background: 'white', height: '105px', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#333', letterSpacing: '0.06em', marginBottom: '4px' }}>Initials</div>
+
+        <div style={{ border: '1.5px solid #333', borderRadius: '4px', padding: '5px 9px', background: 'white', height: '92px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#333', letterSpacing: '0.06em', marginBottom: '4px' }}>Check-in Time</div>
           <div style={{ flex: 1 }} />
         </div>
 
 
-        <div style={{ border: '1.5px solid #333', borderRadius: '4px', padding: '6px 9px', background: 'white', height: '105px', display: 'flex', flexDirection: 'column' }}>
+
+        <div style={{ border: '1.5px solid #333', borderRadius: '4px', padding: '5px 9px', background: 'white', height: '92px', display: 'flex', flexDirection: 'column' }}>
           <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#333', letterSpacing: '0.06em', marginBottom: '4px' }}>Check-out Time</div>
           <div style={{ flex: 1 }} />
         </div>
 
 
-        <div style={{ border: '1.5px solid #333', borderRadius: '4px', padding: '6px 9px', background: 'white', height: '105px', display: 'flex', flexDirection: 'column' }}>
-          <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#333', letterSpacing: '0.06em', marginBottom: '4px' }}>
-            Notes <span style={{ color: '#888', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }}>(if reschedule, write new date here)</span>
-          </div>
+
+        <div style={{ border: '1.5px solid #333', borderRadius: '4px', padding: '5px 9px', background: 'white', height: '92px', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ fontSize: '9px', fontWeight: 700, textTransform: 'uppercase', color: '#333', letterSpacing: '0.06em', marginBottom: '4px' }}>Internal Notes</div>
           <div style={{ flex: 1 }} />
         </div>
       </div>
 
 
+
     </div>
   )
 }
+
 
 
 export default function PrintPage({ params }: { params: Promise<{ date: string }> }) {
@@ -480,6 +538,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
   const [date, setDate] = useState<string>('')
   const [merging, setMerging] = useState(false)
   const [generatingPdf, setGeneratingPdf] = useState(false)
+
 
 
   useEffect(() => {
@@ -506,6 +565,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
         })
     })
   }, [params])
+
 
 
   // Shared merge-flag call used by both Print and Save-as-PDF flows.
@@ -541,6 +601,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
   }
 
 
+
   async function handlePrint() {
     const proceed = await markMergeAndConfirm('Print')
     if (!proceed) return
@@ -548,11 +609,13 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
   }
 
 
+
   // Lazy-load html2canvas + jsPDF from CDN on first click.
   // Cached on window so subsequent clicks are instant.
   async function loadPdfLibs(): Promise<{ html2canvas: any; jsPDF: any }> {
     const w = window as any
     if (w.__pdfLibs) return w.__pdfLibs
+
 
     function loadScript(src: string): Promise<void> {
       return new Promise((resolve, reject) => {
@@ -564,6 +627,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
       })
     }
 
+
     if (!w.html2canvas) {
       await loadScript('https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js')
     }
@@ -571,9 +635,11 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
       await loadScript('https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js')
     }
 
+
     w.__pdfLibs = { html2canvas: w.html2canvas, jsPDF: w.jspdf.jsPDF }
     return w.__pdfLibs
   }
+
 
 
   // Fetch a cross-origin image and convert to a base64 data URL.
@@ -598,16 +664,20 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
     }
   }
 
+
   async function handleSavePdf() {
     const proceed = await markMergeAndConfirm('Save PDF')
     if (!proceed) return
 
+
     setGeneratingPdf(true)
+
 
     // Letter @ 96 DPI = 816 × 1056 px. Every page renders at this exact size
     // so all pages share identical aspect ratio and scale in the final PDF.
     const LETTER_W_PX = 816
     const LETTER_H_PX = 1056
+
 
     // Off-screen staging container. We clone each sheet into here at a
     // fixed letter size before rasterizing, so on-screen layout variations
@@ -623,23 +693,29 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
     stage.style.zIndex = '-1'
     document.body.appendChild(stage)
 
+
     // Pre-fetch the logo once so every cloned page can use the data URL.
     const LOGO_URL = 'https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg'
     const logoDataUrl = await fetchImageAsDataUrl(LOGO_URL)
 
+
     try {
       const { html2canvas, jsPDF } = await loadPdfLibs()
+
 
       const wrapper = document.querySelector('.print-sheet-wrapper') as HTMLElement | null
       if (!wrapper) throw new Error('Could not find sheet wrapper')
 
+
       const pages = Array.from(wrapper.children) as HTMLElement[]
       if (pages.length === 0) throw new Error('No pages to render')
+
 
       // Letter portrait, points (72 pt/in) — matches @page { size: letter portrait }.
       const pdf = new jsPDF({ unit: 'pt', format: 'letter', orientation: 'portrait' })
       const pageWidth = pdf.internal.pageSize.getWidth()   // 612
       const pageHeight = pdf.internal.pageSize.getHeight() // 792
+
 
       for (let i = 0; i < pages.length; i++) {
         // Deep clone the page into the fixed-size stage.
@@ -653,6 +729,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
         clone.style.breakAfter = 'auto'
         clone.style.transform = 'none'
 
+
         // Swap remote logo src → data URL so html2canvas can rasterize it.
         if (logoDataUrl) {
           const imgs = clone.querySelectorAll('img')
@@ -663,8 +740,10 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
           })
         }
 
+
         stage.innerHTML = ''
         stage.appendChild(clone)
+
 
         // Wait for any images inside the clone to actually finish decoding.
         // Without this, html2canvas can snapshot before the data URL image paints.
@@ -679,6 +758,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
           })
         }))
 
+
         // Render at 2x scale for crisper text.
         const canvas = await html2canvas(clone, {
           scale: 2,
@@ -691,11 +771,13 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
           logging: false,
         })
 
+
         // Canvas is now guaranteed to be LETTER_W_PX*2 × LETTER_H_PX*2 —
         // exact letter aspect ratio. Fill the page edge-to-edge.
         if (i > 0) pdf.addPage()
         pdf.addImage(canvas.toDataURL('image/jpeg', 0.92), 'JPEG', 0, 0, pageWidth, pageHeight)
       }
+
 
       const filename = `FurnitureAssist-${date}-sheets.pdf`
       pdf.save(filename)
@@ -710,6 +792,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
   }
 
 
+
   if (loading) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: '#7A8899', fontFamily: 'Arial' }}>
       Loading client sheets...
@@ -717,11 +800,13 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
   )
 
 
+
   if (error) return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', color: '#C0392B', fontFamily: 'Arial' }}>
       {error}
     </div>
   )
+
 
 
   return (
@@ -750,7 +835,9 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
       </div>
 
 
+
       <div className="no-print" style={{ height: '56px' }} />
+
 
 
       {clients.length === 0 ? (
@@ -765,6 +852,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
           ))}
         </div>
       )}
+
 
 
       <style>{`

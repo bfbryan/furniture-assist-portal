@@ -61,10 +61,11 @@ interface GeminiOcrResult {
   client_first_name: string
   client_last_name: string
   appointment_date: string
-  volunteer_initials: string
+  check_in_time: string
   checkout_time: string
   notes: string
   reschedule_date: string
+  other_items: string
   items: Record<string, number>
 }
 
@@ -320,40 +321,43 @@ Extract the following and return ONLY valid JSON (no markdown, no commentary):
    IGNORE THESE (they are NOT the record ID):
      - The "CLIENT / CAR #" box in the top-right header (separate labeled
        box, blank on printing, filled in at the warehouse).
-     - Any check-out time, initials, or notes at the bottom.
+     - The "RESCH / DATE" box in the top-right header (separate labeled
+       box with a red border, blank on printing, filled in only if the
+       client rescheduled).
+     - Any check-in / check-out time or internal notes at the bottom.
      - The address, phone, or household numbers in the client info box.
    If you cannot clearly read an ID matching the "rec" + 14 char format,
    return empty string "" — do NOT guess or fabricate a value.
 
 2. outcome: the appointment outcome, determined by the sheet contents.
-   The sheet has ONE outcome box in the header — a small SQUARE CHECKBOX
-   inside a red-bordered labeled panel that reads "RESCHEDULE".
+   The sheet has ONE outcome indicator in the header — a red-bordered
+   labeled box that reads "RESCH / DATE". If the volunteer wrote a
+   handwritten DATE inside this box, the client rescheduled. If the box
+   is empty, the client did NOT reschedule.
 
-   IMPORTANT: The red border of the outer panel is PRINTED, not handwriting.
-   Do NOT confuse the printed border with a mark. Do NOT confuse the printed
-   inner checkbox border with a mark. A mark must be INSIDE the small inner
-   square — not on it, not near it, INSIDE it. Faint marks, shadows, print
-   artifacts, JPEG noise, or ambiguous pixels do NOT count.
+   IMPORTANT: The red border of the box is PRINTED, not handwriting. Do
+   NOT interpret the printed border as a mark. The label "RESCH / DATE"
+   is also printed. A reschedule requires a clearly handwritten DATE (in
+   any date format — "7/28", "7/28/26", "July 28", etc.) INSIDE the box.
+   Faint marks, shadows, print artifacts, JPEG noise, printed grid lines,
+   or single stray strokes do NOT count.
 
    COMPLETION SIGNALS (evidence the client was actually here):
+     - The CHECK-IN TIME box at the bottom is filled with handwriting, OR
+     - The CHECK-OUT TIME box at the bottom is filled with handwriting, OR
      - Any QTY cell in the items table contains a handwritten digit, OR
-     - Both the INITIALS box AND the CHECK-OUT TIME box at the bottom are
-       filled with handwriting.
-   (Reviewers may sign off with initials + checkout time even when the
-    client took no items — a valid "client came, took nothing" scenario
-    that is still Completed.)
+     - The OTHER box (right column, under BABY/KIDS) has handwritten items.
 
    DECISION LOGIC (apply in order):
-     1. If the RESCHEDULE inner checkbox contains a clear, unambiguous
-        handwritten mark (bold check, X, heavy fill, or deliberate slash)
+     1. If the RESCH / DATE box contains a clearly handwritten date
         → outcome is "Reschedule". In this case, IGNORE all QTY cells and
         return 0 for every item — rescheduled appointments never disburse
         items. Any QTY marks on a reschedule sheet are stale or mistaken
         and must NOT be extracted.
      2. Else if any completion signal above is present
         → outcome is "Completed".
-     3. Else (sheet is essentially blank — no QTY digits, no initials,
-        no checkout time, no reschedule mark)
+     3. Else (sheet is essentially blank — no check-in, no check-out, no
+        QTY digits, no Other items, no reschedule date)
         → outcome is "No Show".
 
    Return ONE of these EXACT strings:
@@ -377,22 +381,30 @@ Extract the following and return ONLY valid JSON (no markdown, no commentary):
    Example: "11am · July 11, 2026" → "2026-07-11".
    If you cannot confidently parse a date, return empty string "".
 
-6. volunteer_initials: handwritten initials in the "INITIALS" box at the bottom-left
-   (string). Only capture if outcome is "Completed", otherwise return empty string.
+6. check_in_time: handwritten check-in time in the "CHECK-IN TIME" box at the bottom-left
+   (string, as written — e.g. "10:15", "10:15am", "10:15 AM"). Only capture if outcome
+   is "Completed", otherwise return empty string.
 
 7. checkout_time: handwritten check-out time in the "CHECK-OUT TIME" box at the bottom
-   (string, as written). Only capture if outcome is "Completed", otherwise return empty string.
+   (string, as written — e.g. "10:45", "10:45am", "10:45 AM"). Only capture if outcome
+   is "Completed", otherwise return empty string.
 
-8. notes: any handwritten text in the "ADDITIONAL NOTES" box at the bottom (string).
-   Always capture this — the volunteer may write a reschedule date here.
+8. notes: any handwritten text in the "INTERNAL NOTES" box at the bottom-right (string).
+   Always capture this — volunteers may write any context here.
 
 9. reschedule_date: ONLY populate if outcome is "Reschedule". Parse the date the
-   volunteer wrote inside (or above/below) the "ADDITIONAL NOTES" box. Return as
+   volunteer wrote inside the "RESCH / DATE" box in the top-right header. Return as
    ISO date "YYYY-MM-DD". The current year is ${currentYear} — if the
    year is omitted assume current year. If outcome is not "Reschedule", or you
    cannot confidently parse a date, return empty string "".
 
-10. items: object with the 30 EXACT keys below (integers, use 0 if blank).
+10. other_items: any handwritten text in the "OTHER" box in the right column,
+    directly below the BABY/KIDS section (string, verbatim as written, may be a
+    comma-separated list or a description). Only capture if outcome is
+    "Completed", otherwise return empty string. The label "OTHER" and the box
+    border are printed — only handwritten text counts.
+
+11. items: object with the 30 EXACT keys below (integers, use 0 if blank).
     ONLY fill in real quantities if outcome is "Completed". If outcome is
     "No Show", "Cancelled", or "Reschedule", set every item to 0.
 
@@ -552,10 +564,11 @@ Example output (completed):
   "client_first_name": "Jenane",
   "client_last_name": "Debone",
   "appointment_date": "2026-07-11",
-  "volunteer_initials": "JD",
+  "check_in_time": "10:15",
   "checkout_time": "10:45",
   "notes": "",
   "reschedule_date": "",
+  "other_items": "microwave, small side table",
   "items": {
     "LR Bookcase/Storage": 0,
     "LR Chair": 2,
@@ -597,10 +610,11 @@ Example output (reschedule):
   "client_first_name": "Mahie",
   "client_last_name": "Past",
   "appointment_date": "2026-07-11",
-  "volunteer_initials": "",
+  "check_in_time": "",
   "checkout_time": "",
-  "notes": "Resched to 7/12",
+  "notes": "",
   "reschedule_date": "2026-07-12",
+  "other_items": "",
   "items": { "LR Bookcase/Storage": 0, "LR Chair": 0, ... all 30 keys, all 0 ... }
 }`
 
@@ -722,8 +736,12 @@ async function writeToAirtable(
   if (result.notes) fields['Distribution Notes'] = result.notes
 
   if (outcome === 'Completed') {
-    if (result.volunteer_initials) fields['Volunteer Initials'] = result.volunteer_initials
+    if (result.check_in_time) fields['Check-in Time'] = result.check_in_time
     if (result.checkout_time) fields['Check-out Time'] = result.checkout_time
+    if (result.other_items) fields['Other Items'] = result.other_items
+    // Volunteer Initials removed from the July 2026 sheet redesign — always
+    // clear defensively in case a stale prior scan set it.
+    fields['Volunteer Initials'] = null
 
     // Always write every item field. Missing/zero quantities are set to null
     // to CLEAR any prior values from an earlier scan of this record.
@@ -743,12 +761,14 @@ async function writeToAirtable(
   } else if (outcome === 'Reschedule') {
     // Hand off to the existing Airtable "Reschedule" automation.
     // Reschedule means no items were disbursed — clear all item fields
-    // and any stale initials/checkout data from prior scans.
+    // and any stale check-in/check-out/other/initials data from prior scans.
     for (const fieldName of ITEM_FIELDS) {
       fields[fieldName] = null
     }
     fields['Volunteer Initials'] = null
+    fields['Check-in Time'] = null
     fields['Check-out Time'] = null
+    fields['Other Items'] = null
 
     const newDate = parseRescheduleDate(result.reschedule_date)
     if (newDate) {
@@ -759,16 +779,18 @@ async function writeToAirtable(
       fields['Scheduling Flexibility'] = 'Flexible'
       fields['Preferred Date'] = null
       fields['Manual Review Needed'] = false
-      fields['OCR Notes'] = 'Reschedule marked — no date in notes, using next available'
+      fields['OCR Notes'] = 'Reschedule marked — no date read from RESCH/DATE box, using next available'
     }
   } else {
-    // No Show: status-only update, but clear items/initials/checkout defensively
+    // No Show: status-only update, but clear items/times/other/initials defensively
     // so a stale prior scan does not leave phantom data behind.
     for (const fieldName of ITEM_FIELDS) {
       fields[fieldName] = null
     }
     fields['Volunteer Initials'] = null
+    fields['Check-in Time'] = null
     fields['Check-out Time'] = null
+    fields['Other Items'] = null
   }
 
   const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}/${recordId}`
