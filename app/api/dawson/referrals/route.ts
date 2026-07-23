@@ -12,13 +12,16 @@ export async function GET(req: NextRequest) {
   const { searchParams } = new URL(req.url)
   const review = searchParams.get('review') ?? undefined
   const statuses = searchParams.getAll('status')
-  const dateFrom = searchParams.get('dateFrom') ?? undefined
+  const appointmentDateFrom =
+  searchParams.get('appointmentDateFrom')
+  ?? searchParams.get('dateFrom')
+  ?? undefined
 
   const referrals = await getAllReferrals({
-    review,
-    statuses: statuses.length > 0 ? statuses : undefined,
-    dateFrom,
-  })
+  review,
+  statuses: statuses.length > 0 ? statuses : undefined,
+  appointmentDateFrom,
+})
 
   return NextResponse.json(referrals)
 }

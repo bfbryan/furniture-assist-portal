@@ -306,6 +306,11 @@ export async function getAllAgencies(status?: string) {
 export async function getAllReferrals(filters?: {
   review?: string
   statuses?: string[]
+  // July 2026: renamed from `dateFrom` (Referral Date) to `appointmentDateFrom`
+  // so history-style views filter on when the appointment actually happened,
+  // not when the referral was submitted. Legacy `dateFrom` is still accepted
+  // for backwards compat and treated as appointmentDateFrom.
+  appointmentDateFrom?: string
   dateFrom?: string
   search?: string
 }) {
@@ -322,8 +327,13 @@ export async function getAllReferrals(filters?: {
     conditions.push(`OR(${statusOr})`)
   }
 
-  if (filters?.dateFrom) {
-    conditions.push(`{Referral Date} >= "${filters.dateFrom}"`)
+  const apptDateFrom = filters?.appointmentDateFrom ?? filters?.dateFrom
+  if (apptDateFrom) {
+    // Filter by Appointment Date, not Referral Date. Inclusive of boundary:
+    // returns appointments ON or AFTER apptDateFrom.
+    conditions.push(
+      `OR(IS_AFTER({Appointment Date}, "${apptDateFrom}"), IS_SAME({Appointment Date}, "${apptDateFrom}", 'day'))`
+    )
   }
 
   const formula = conditions.length > 0
