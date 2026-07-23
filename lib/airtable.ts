@@ -349,7 +349,7 @@ export async function getAllReferrals(filters?: {
   // other list view) without requiring a linked-record migration on Client
   // Referrals. Stays in sync because we rebuild on every list fetch.
   const [data, agencyIndex] = await Promise.all([
-    airtableFetch('Client Referrals', params),
+    airtableFetchAll('Client Referrals', params),
     // Paginated — without this, agencies past record 100 don't appear in
     // the name→id map and their referrals render as plain text instead of
     // teal-linked. Table currently has 131 agencies and grows over time.
