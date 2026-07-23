@@ -41,6 +41,14 @@ function lastNameOf(clientName: string): string {
   return parts[parts.length - 1].toLowerCase()
 }
 
+function displayLastFirst(clientName: string): string {
+  const parts = clientName.trim().split(/\s+/)
+  if (parts.length < 2) return clientName
+  const last = parts[parts.length - 1]
+  const first = parts.slice(0, -1).join(' ')
+  return `${last}, ${first}`
+}
+
 function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
   const [show, setShow] = useState(false)
   return (
@@ -200,7 +208,7 @@ function ReferralRow({ r, onCancel, onReschedule }: {
       {/* Client — indented 16px */}
       <a href={`/dawson/referrals/${r.id}`} style={{ textDecoration: 'none', display: 'block', paddingLeft: '16px' }}>
         <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '14px', color: '#2A7F6F', lineHeight: 1.3 }}>
-          {r.clientName}
+                    {displayLastFirst(r.clientName)}
         </div>
         {r.phone && (
           <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '2px' }}>{r.phone}</div>
