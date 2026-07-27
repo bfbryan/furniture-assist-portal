@@ -17,7 +17,7 @@ export const DAWSON_PORTAL_USER_IDS = [
   'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben
   'user_3BodwTW4I7Vamt4t7wD3qeA7boM', // Ray
   'user_3BtKn01OMXSmi7eSsWvzvnEroCg', // Dawson
-  'user_3DE1gUnIeNmWZpQyd7LjdZb9vnN', // Chase
+  'user_3H6FGzH6riZZ3W4JCFe5UXBAEc1', // Chase
 ] as const
 
 export type DawsonUserId = typeof DAWSON_PORTAL_USER_IDS[number]
