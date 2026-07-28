@@ -1,0 +1,158 @@
+// app/(agency)/referrals/history/page.tsx
+// History — terminal referrals grouped by appointment week (newest first),
+// plus a Rejected section (no appointment date). Includes search + filter chips.
+//
+// Admin: all agency referrals. Staff: only their own.
+
+import { auth, clerkClient } from '@clerk/nextjs/server'
+import { redirect } from 'next/navigation'
+import {
+  getAgencyUserByClerkId,
+  getAgencyById,
+  getReferralsByStaffName,
+  getReferralsByAgencyId,
+} from '@/lib/airtable'
+import HistoryClient from './HistoryClient'
+
+// Terminal statuses only.
+function isTerminal(r: {
+  referralReview: string
+  appointmentStatus: string
+}): boolean {``
+  if (r.referralReview === 'Rejected') return true
+  if (r.appointmentStatus === 'Completed') return true
+  if (r.appointmentStatus === 'Cancelled') return true
+  if (r.appointmentStatus === 'No Show') return true
+  return false
+}
+
+export default async function HistoryPage() {
+  const { userId, orgId } = await auth()
+  if (!userId) redirect('/sign-in')
+
+  if (orgId) {
+    const client = await clerkClient()
+    const org = await client.organizations.getOrganization({
+      organizationId: orgId,
+    })
+    if (org.publicMetadata?.status === 'Inactive') {
+      redirect('/inactive')
+    }
+  }
+
+  const agencyUser = await getAgencyUserByClerkId(userId)
+  if (!agencyUser) {
+    return (
+      <main className="p-8">
+        <p className="text-red-600">
+          Your account is not linked to an agency yet. Please contact Furniture Assist.
+        </p>
+      </main>
+    )
+  }
+  if (agencyUser.status === 'Inactive') redirect('/inactive')
+
+  const agency = await getAgencyById(agencyUser.agencyId!)
+
+  const allReferrals =
+    agencyUser.role === 'Admin'
+      ? await getReferralsByAgencyId(agency.name)
+      : await getReferralsByStaffName(agency.name, agencyUser.name)
+
+  const historyReferrals = allReferrals.filter(isTerminal)
+
+  // Counts for hero KPI tiles.
+  const completedCount = historyReferrals.filter(
+    (r: any) => r.appointmentStatus === 'Completed'
+  ).length
+  const missedCount = historyReferrals.filter(
+    (r: any) => r.appointmentStatus === 'No Show'
+  ).length
+  const cancelledCount = historyReferrals.filter(
+    (r: any) => r.appointmentStatus === 'Cancelled'
+  ).length
+
+  return (
+    <div className="min-h-screen bg-[#F7F5F1]">
+      {/* Hero — same layout as Active/Dashboard */}
+      <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-9">
+        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-6">
+          {/* Left — Agency + Staff info blocks */}
+          <div className="flex gap-10 flex-wrap">
+            <div>
+              <span className="text-xs font-bold tracking-widest uppercase text-[#3AA08D] mb-2 block">
+                Agency Partner
+              </span>
+              <h1 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
+                {agency.name}
+              </h1>
+              <p className="text-sm text-white/50 font-light">
+                {agency.address}
+                {agency.address2 ? `, ${agency.address2}` : ''}, {agency.city},{' '}
+                {agency.state} {agency.zip}
+              </p>
+              <p className="text-sm text-white/50 font-light">{agency.phone}</p>
+            </div>
+
+            <div
+              style={{
+                width: '1px',
+                background: 'rgba(255,255,255,0.12)',
+                alignSelf: 'stretch',
+              }}
+            />
+
+            <div>
+              <span className="text-xs font-bold tracking-widest uppercase text-[#3AA08D] mb-2 block">
+                Logged In As
+              </span>
+              <h2 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
+                {agencyUser.name}
+              </h2>
+              <p className="text-sm text-white/50 font-light">
+                {agencyUser.phone ?? 'No phone on file'}
+              </p>
+              <p className="text-sm text-white/50 font-light">{agencyUser.role}</p>
+            </div>
+          </div>
+
+          {/* Right — KPI tiles */}
+          <div className="flex items-center gap-4 flex-wrap">
+            <div className="bg-white/8 border border-[rgba(58,160,141,0.4)] rounded-xl px-5 py-3 text-center min-w-[80px]">
+              <div className="font-montserrat font-extrabold text-2xl text-[#3AA08D] leading-none mb-1">
+                {completedCount}
+              </div>
+              <div className="text-xs font-bold uppercase tracking-wider text-white/45">
+                Completed
+              </div>
+            </div>
+            <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
+              <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
+                {missedCount}
+              </div>
+              <div className="text-xs font-bold uppercase tracking-wider text-white/45">
+                Missed
+              </div>
+            </div>
+            <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
+              <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
+                {cancelledCount}
+              </div>
+              <div className="text-xs font-bold uppercase tracking-wider text-white/45">
+                Cancelled
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Body — search + chips + week buckets */}
+      <main className="max-w-6xl mx-auto px-8 py-9">
+        <HistoryClient
+          referrals={historyReferrals}
+          isAdmin={agencyUser.role === 'Admin'}
+        />
+      </main>
+    </div>
+  )
+}

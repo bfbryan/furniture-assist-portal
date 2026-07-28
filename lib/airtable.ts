@@ -131,9 +131,67 @@ export async function getAgencyUserByClerkId(clerkUserId: string) {
     phone: (record.fields['Phone Number'] as string) ?? null,
     status: record.fields['Status'] as string,
     claimedDate: (record.fields['Claimed Date'] as string) ?? null,
+        firstName: (record.fields['First Name'] as string) ?? '',
+    lastName:  (record.fields['Last Name'] as string) ?? '',
+    clerkUserId: (record.fields['Clerk User ID'] as string) ?? null,
+    portalInviteStatus: (record.fields['Portal Invite Status'] as string) ?? 'Not Invited',
   }
 }
+/**
+ * Fetch a single Agency Users row by its Airtable record ID.
+ * Used by the admin staff endpoints (invite, cancel-invite, status).
+ */
+export async function getAgencyUserById(recordId: string) {
+  const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent('Agency Users')}/${recordId}`
+  const res = await fetch(url, {
+    headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` },
+    cache: 'no-store',
+  })
 
+  if (res.status === 404) return null
+  if (!res.ok) {
+    throw new Error(`Airtable getAgencyUserById failed: ${await res.text()}`)
+  }
+
+  const record = await res.json()
+  const f = record.fields ?? {}
+
+  // Resolve agency name from the linked-record field, if present
+  let agencyName: string | null = null
+  const agencyLink = f['Agency'] as string[] | undefined
+  if (agencyLink && agencyLink[0]) {
+    try {
+      const aRes = await fetch(
+        `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent('Agencies')}/${agencyLink[0]}`,
+        { headers: { Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}` }, cache: 'no-store' }
+      )
+      if (aRes.ok) {
+        const a = await aRes.json()
+        agencyName = (a.fields?.['Agency Name'] as string) ?? null
+      }
+    } catch {
+      // ignore — agencyName stays null
+    }
+  }
+
+  return {
+    id: record.id,
+    name: `${f['First Name'] ?? ''} ${f['Last Name'] ?? ''}`.trim(),
+    firstName: (f['First Name'] as string) ?? '',
+    lastName: (f['Last Name'] as string) ?? '',
+    email: f['Email'] as string,
+    phone: (f['Phone Number'] as string) ?? null,
+    role: f['Role'] as string,
+    status: f['Status'] as string,
+    portalInviteStatus: (f['Portal Invite Status'] as string) ?? 'Not Invited',
+    invitedDate: (f['Invited Date'] as string) ?? null,
+    invitedBy: (f['Invited By'] as string) ?? null,
+    claimedDate: (f['Claimed Date'] as string) ?? null,
+    clerkUserId: (f['Clerk User ID'] as string) ?? null,
+    agencyId: agencyLink?.[0] ?? null,
+    agencyName,
+  }
+}
 export async function stampFirstLogin(agencyUser: {
   id: string
   claimedDate?: string | null
@@ -188,13 +246,18 @@ export async function getAgencyById(agencyId: string) {
   return {
     id: data.id,
     name: f['Agency Name'] as string,
+    officeName: (f['Office Name'] as string) ?? null,
+    ein: (f['EIN#'] as string) ?? null,
     address: f['Address'] as string,
     address2: (f['Address 2'] as string) ?? null,
     city: f['City'] as string,
     state: f['State'] as string,
     zip: f['Zip'] as string,
     phone: f['Main Phone Number'] as string,
+    website: (f['Website'] as string) ?? null,
     contactName: `${adminFirst} ${adminLast}`.trim(),
+    adminEmail: safeLookupString(f['Admin Email']) ?? null,
+    adminPhone: safeLookupString(f['Admin Phone']) ?? null,
     status: f['Status'] as string,
     clerkOrgId: (f['Clerk Org ID'] as string) ?? null,
   }
@@ -926,6 +989,9 @@ export async function getAgencyUsersByAgencyId(agencyId: string) {
     // badge users that came from name-only Excel imports (Option B).
     needsReview: (r.fields['Needs Review'] as boolean) ?? false,
     recordCreationDate: (r.fields['Record Creation Date'] as string) ?? null,
+    portalInviteStatus: (r.fields['Portal Invite Status'] as string) ?? 'Not Invited',
+    invitedBy:          (r.fields['Invited By'] as string) ?? null,
+    claimedDate:        (r.fields['Claimed Date'] as string) ?? null,
   }))
 }
 
@@ -973,6 +1039,54 @@ export async function updateAgencyUserStatus(
 // names drift, we log the error to console and return null so the caller's
 // import result is still returned to the user. Audit logging must never
 // block the actual work.
+
+/**
+ * Update the portal-invite state on an Agency User row.
+ *
+ * Used by:
+ *   - POST /api/admin/staff/[id]/invite       → mark row as invited
+ *   - POST /api/admin/staff/[id]/cancel-invite → revert to unclaimed
+ *   - PATCH /api/admin/staff/[id]/status with body {portalInviteStatus:'Wrong Agency'}
+ *
+ * Any field can be omitted. Undefined fields are left unchanged; explicit
+ * null clears the field.
+ */
+export async function updateAgencyUserPortalInvite(
+  recordId: string,
+  update: {
+    status?: 'Unclaimed' | 'Invited' | 'Active' | 'Inactive'
+    portalInviteStatus?: 'Not Invited' | 'Invite Sent' | 'Claimed' | 'Wrong Agency'
+    invitedDate?: string | null   // ISO date "YYYY-MM-DD" or null to clear
+    invitedBy?: string | null      // admin's display name or null to clear
+    claimedDate?: string | null    // ISO date or null to clear
+    clerkUserId?: string | null    // Clerk user id or null to clear
+  }
+) {
+  const fields: Record<string, unknown> = {}
+  if (update.status !== undefined)             fields['Status']                = update.status
+  if (update.portalInviteStatus !== undefined) fields['Portal Invite Status']  = update.portalInviteStatus
+  if (update.invitedDate !== undefined)        fields['Invited Date']          = update.invitedDate
+  if (update.invitedBy !== undefined)          fields['Invited By']            = update.invitedBy
+  if (update.claimedDate !== undefined)        fields['Claimed Date']          = update.claimedDate
+  if (update.clerkUserId !== undefined)        fields['Clerk User ID']         = update.clerkUserId
+
+  const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent('Agency Users')}/${recordId}`
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: {
+      Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ fields }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Airtable updateAgencyUserPortalInvite failed: ${err}`)
+  }
+
+  return res.json()
+}
 
 export type ImportLogInput = {
   importType: 'Referrals' | 'Agencies' | 'Agency Users'
@@ -1025,4 +1139,67 @@ export async function writeImportLog(input: ImportLogInput): Promise<string | nu
     console.error('[writeImportLog] Threw:', err)
     return null
   }
+}
+
+export async function updateAgencyProfile(
+  recordId: string,
+  update: {
+    agencyName?: string
+    officeName?: string | null
+    ein?: string | null
+    address?: string
+    address2?: string | null
+    city?: string
+    state?: string
+    zip?: string
+    phone?: string
+    website?: string | null
+  }
+) {
+  const fields: Record<string, unknown> = {}
+  if (update.agencyName !== undefined) fields['Agency Name']       = update.agencyName
+  if (update.officeName !== undefined) fields['Office Name']       = update.officeName
+  if (update.ein !== undefined)        fields['EIN#']              = update.ein
+  if (update.address !== undefined)    fields['Address']           = update.address
+  if (update.address2 !== undefined)   fields['Address 2']         = update.address2
+  if (update.city !== undefined)       fields['City']              = update.city
+  if (update.state !== undefined)      fields['State']             = update.state
+  if (update.zip !== undefined)        fields['Zip']               = update.zip
+  if (update.phone !== undefined)      fields['Main Phone Number'] = update.phone
+  if (update.website !== undefined)    fields['Website']           = update.website
+
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Agencies')}/${recordId}`
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: HEADERS,
+    body: JSON.stringify({ fields }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+/**
+ * Update self-service fields on an Agency User's own row.
+ * Used by PATCH /api/agency/me.
+ */
+export async function updateAgencyUserProfile(
+  recordId: string,
+  update: {
+    firstName?: string
+    lastName?: string
+    phone?: string | null
+  }
+) {
+  const fields: Record<string, unknown> = {}
+  if (update.firstName !== undefined) fields['First Name']   = update.firstName
+  if (update.lastName !== undefined)  fields['Last Name']    = update.lastName
+  if (update.phone !== undefined)     fields['Phone Number'] = update.phone
+
+  const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Agency Users')}/${recordId}`
+  const res = await fetch(url, {
+    method: 'PATCH',
+    headers: HEADERS,
+    body: JSON.stringify({ fields }),
+  })
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
 }

@@ -1,12 +1,20 @@
 // app/(agency)/team/page.tsx
+// Agency admin team page — 4-section layout
+// - Ready to Invite to Portal (Unclaimed + Not Invited)
+// - Awaiting Claim  (Invited + Invite Sent)
+// - Active Staff    (Active + Claimed, admins excluded — admin lives in header)
+// - Inactive        (collapsed)
+// Hidden entirely: Portal Invite Status = Wrong Agency (server-side filter)
+//
+// Uses universal AgencyPageHeader (no stat tiles) and delegates invite form
+// to StaffList's modal-driven "+ Invite Staff Member" button.
 
 
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById, getAgencyUsersByAgencyId } from '@/lib/airtable'
-import { auth } from '@clerk/nextjs/server'
-import { clerkClient } from '@clerk/nextjs/server'
+import { auth, clerkClient } from '@clerk/nextjs/server'
+import AgencyPageHeader from '@/components/AgencyPageHeader'
 import StaffList from '@/components/StaffList'
-import InviteStaffForm from '@/components/InviteStaffForm'
 
 
 export default async function AdminPage() {
@@ -14,120 +22,82 @@ export default async function AdminPage() {
   if (!userId) redirect('/sign-in')
   if (orgRole !== 'org:admin') redirect('/dashboard')
 
+
   const agencyUser = await getAgencyUserByClerkId(userId)
   if (!agencyUser) redirect('/dashboard')
 
+
   const agency = await getAgencyById(agencyUser.agencyId!)
 
-  // Fetch Clerk memberships for last sign in data
+
+  // Clerk memberships → last-sign-in for claimed users
   const client = await clerkClient()
   const memberships = await client.organizations.getOrganizationMembershipList({
     organizationId: orgId!,
   })
 
-  const clerkMembers = await Promise.all(memberships.data.map(async (m) => {
-    const user = await client.users.getUser(m.publicUserData?.userId ?? '')
-    return {
-      clerkUserId: m.publicUserData?.userId ?? '',
-      role: m.role,
-      lastSignInAt: user.lastSignInAt,
-    }
-  }))
 
-  // Fetch AT staff for real status, name, email, phone
-  // Fetch AT staff for real status, name, email, phone
+  const clerkMembers = await Promise.all(
+    memberships.data.map(async (m) => {
+      const user = await client.users.getUser(m.publicUserData?.userId ?? '')
+      return {
+        clerkUserId: m.publicUserData?.userId ?? '',
+        role: m.role,
+        lastSignInAt: user.lastSignInAt,
+      }
+    })
+  )
+
+
+  // AT staff → source of truth for status, invite state, and identity
   const atStaff = await getAgencyUsersByAgencyId(agency.name)
-  const members = atStaff.map((staff: any) => {
-  const clerkMember = clerkMembers.find((c: any) => c.clerkUserId === staff.clerkUserId)
-  return {
-    ...staff,
-    clerkRole: clerkMember?.role ?? 'org:member',
-    lastSignInAt: clerkMember?.lastSignInAt ?? null,
-  }
-})
 
-const activeCount = members.filter((m: any) => m.status === 'Active').length
-const adminCount = members.filter((m: any) => m.role === 'Admin').length
+
+  // Hide Wrong Agency rows entirely — Dawson handles them from his backend
+  const visibleStaff = atStaff.filter(
+    (s: any) => s.portalInviteStatus !== 'Wrong Agency'
+  )
+
+
+  const members = visibleStaff.map((staff: any) => {
+    const clerkMember = clerkMembers.find(
+      (c: any) => c.clerkUserId === staff.clerkUserId
+    )
+    return {
+      ...staff,
+      clerkRole: clerkMember?.role ?? 'org:member',
+      lastSignInAt: clerkMember?.lastSignInAt ?? null,
+    }
+  })
 
 
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
+      <AgencyPageHeader
+        agencyName={agency.name}
+        agencyAddress={agency.address}
+        agencyAddress2={agency.address2}
+        agencyCity={agency.city}
+        agencyState={agency.state}
+        agencyZip={agency.zip}
+        agencyPhone={agency.phone}
+        userName={agencyUser.name}
+        userPhone={agencyUser.phone ?? 'No phone on file'}
+        userRole={agencyUser.role}
+        stats={null}
+      />
 
- 
 
-      {/* Hero */}
-      <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-9">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-6">
-          <div>
-            <span className="text-xs font-bold tracking-widest uppercase text-[#3AA08D] mb-2 block">
-              Team Management
-            </span>
-            <h1 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
-              {agency.name}
-            </h1>
-            <p className="text-sm text-white/50 font-light">
-              Manage your agency&apos;s portal staff and access
-            </p>
-          </div>
-          <div className="flex items-center gap-4 flex-wrap">
-            <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
-              <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
-                {members.length}
-              </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-white/45">Total</div>
-            </div>
-            <div className="bg-white/8 border border-[rgba(58,160,141,0.4)] rounded-xl px-5 py-3 text-center min-w-[80px]">
-              <div className="font-montserrat font-extrabold text-2xl text-[#3AA08D] leading-none mb-1">
-                {activeCount}
-              </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-white/45">Active</div>
-            </div>
-            <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
-              <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
-                {adminCount}
-              </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-white/45">Admins</div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Main content */}
-      <main className="max-w-6xl mx-auto px-8 py-9 grid gap-7" style={{ gridTemplateColumns: '1fr 320px', alignItems: 'start' }}>
+      {/* Main content — full width, no sidebar */}
+      <main className="max-w-6xl mx-auto px-8 py-9">
         <StaffList
           members={members}
           currentUserId={userId}
           orgId={orgId!}
+          agencyId={agencyUser.agencyId!}
+          agencyName={agency.name}
+          invitedByName={agencyUser.name}
         />
-        <div className="flex flex-col gap-6">
-          <InviteStaffForm
-            orgId={orgId!}
-            agencyId={agencyUser.agencyId!}
-            agencyName={agency.name}
-            invitedByName={agencyUser.name}
-          />
-          <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '15px', color: '#1B2B4B', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2A7F6F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
-              </svg>
-              About Portal Access
-            </h2>
-            <ul style={{ listStyle: 'none', padding: 0, display: 'flex', flexDirection: 'column', gap: '10px' }}>
-              {[
-                'Invited staff receive a secure email link to activate their account — no password required.',
-                'Staff members can only see referrals they personally submitted.',
-                'Admins can manage team members and view all agency referrals.',
-                'Deactivating a staff member immediately blocks their portal access.',
-              ].map((item, i) => (
-                <li key={i} style={{ fontSize: '13px', color: '#2C3A4A', lineHeight: 1.6, paddingLeft: '16px', position: 'relative' }}>
-                  <span style={{ position: 'absolute', left: 0, color: '#2A7F6F', fontWeight: 700 }}>•</span>
-                  {item}
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
       </main>
     </div>
   )
