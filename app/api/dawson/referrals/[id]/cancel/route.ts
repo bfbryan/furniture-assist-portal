@@ -1,37 +1,111 @@
-import { auth } from '@clerk/nextjs/server'
-import { NextRequest, NextResponse } from 'next/server'
+// app/api/dawson/referrals/[id]/cancel/route.ts
+//
+// POST /api/dawson/referrals/:id/cancel
+//
+// Cancels a referral. Handles what the "Cancellation" Airtable automation
+// previously did, now inline:
+//
+//   1. Read current Saturday Schedule + Appointment Time from the referral
+//   2. Look up the linked Saturday Schedule's Date (for the Original snapshot)
+//   3. Single PATCH:
+//        - Appointment Status  = 'Cancelled'
+//        - Original Appointment Date = previous Appointment Date (if scheduled)
+//        - Original Appointment Time = previous Appointment Time (if scheduled)
+//        - Saturday Schedule = [] (clear link)
+//        - Appointment Time  = null (clear time)
+//
+// The AT "Cancellation" automation is now redundant for Dawson's flow.
+// Leave it on as a safety net for agency-portal cancellations until we
+// port that path too.
 
-const ALLOWED_USER_IDS = ['user_3BmTnGTVcPCuCJTpP8uKrQm4KXj']
+
+
+import { NextRequest, NextResponse } from 'next/server'
+import { requireDawsonAccess } from '@/lib/auth/dawson-access'
+
+
+
+const BASE_ID = process.env.AIRTABLE_BASE_ID!
+const API_KEY = process.env.AIRTABLE_API_KEY!
+const HEADERS = {
+  Authorization: `Bearer ${API_KEY}`,
+  'Content-Type': 'application/json',
+}
+
+
 
 export async function POST(
-  request: NextRequest,
+  _request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const denied = await requireDawsonAccess()
+  if (denied) return denied
+
+
 
   const { id } = await params
 
-  const res = await fetch(
-    `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/Client%20Referrals/${id}`,
-    {
-      method: 'PATCH',
-      headers: {
-        Authorization: `Bearer ${process.env.AIRTABLE_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        fields: { 'Appointment Status': 'Cancelled' },
-      }),
-    }
-  )
 
-  if (!res.ok) {
-    const err = await res.text()
+
+  // ---- Read current referral to snapshot originals.
+  const refUrl = `https://api.airtable.com/v0/${BASE_ID}/Client%20Referrals/${id}`
+  const refRes = await fetch(refUrl, { headers: { Authorization: `Bearer ${API_KEY}` } })
+  if (!refRes.ok) {
+    return NextResponse.json({ error: 'Referral not found' }, { status: 404 })
+  }
+  const ref = await refRes.json()
+
+
+
+  const currentScheduleLinks: string[] = ref?.fields?.['Saturday Schedule'] ?? []
+  const currentTime: string | undefined = ref?.fields?.['Appointment Time']
+
+
+
+  // Appointment Date is a lookup (array of ISO date strings). Use the
+  // first entry as the snapshot value.
+  const currentApptDateLookup = ref?.fields?.['Appointment Date']
+  const currentApptDate: string | null = Array.isArray(currentApptDateLookup)
+    ? (currentApptDateLookup[0] as string) ?? null
+    : (currentApptDateLookup as string) ?? null
+
+
+
+  const wasScheduled =
+    currentScheduleLinks.length > 0 && !!currentTime && !!currentApptDate
+
+
+
+  // ---- Build the cancel PATCH.
+  const fields: Record<string, any> = {
+    'Appointment Status': 'Cancelled',
+    'Saturday Schedule': [],
+    'Appointment Time': null,
+  }
+  if (wasScheduled) {
+    fields['Original Appointment Date'] = currentApptDate
+    fields['Original Appointment Time'] = currentTime
+  }
+
+
+
+  const patchRes = await fetch(refUrl, {
+    method: 'PATCH',
+    headers: HEADERS,
+    body: JSON.stringify({ fields, typecast: true }),
+  })
+
+
+
+  if (!patchRes.ok) {
+    const err = await patchRes.text()
     return NextResponse.json({ error: err }, { status: 500 })
   }
 
-  return NextResponse.json({ success: true })
+
+
+  return NextResponse.json({
+    success: true,
+    snapshottedOriginal: wasScheduled,
+  })
 }

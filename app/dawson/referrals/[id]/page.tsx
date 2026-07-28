@@ -1,7 +1,11 @@
 'use client'
 
+
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import CancelModal from '@/components/dawson/modals/CancelModal'
+import RescheduleModal, { type AvailableDate } from '@/components/dawson/modals/RescheduleModal'
+
 
 type ItemsDisbursed = {
   livingRoom: { name: string; qty: string | number }[]
@@ -16,6 +20,7 @@ type ItemsDisbursed = {
   otherItems: string | null
   distributionNotes: string | null
 }
+
 
 type Referral = {
   id: string
@@ -57,9 +62,11 @@ type Referral = {
   itemsDisbursed: ItemsDisbursed | null
 }
 
+
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
+
 
 // The 6 canonical Items Requested categories. MUST stay in sync with
 // dawson-import-referrals-page.tsx CATEGORIES constant AND the agency
@@ -73,6 +80,7 @@ const ITEM_CATEGORIES = [
   'Baby Items',
 ]
 
+
 // NJ counties. Dawson works exclusively in NJ; if the org expands out-of-
 // state, add "Other" or convert this to a free-text field.
 const NJ_COUNTIES = [
@@ -82,19 +90,24 @@ const NJ_COUNTIES = [
   'Sussex', 'Union', 'Warren',
 ]
 
+
 const LANGUAGES = ['English', 'Spanish', 'Haitian Creole', 'French', 'Arabic', 'Portuguese', 'Other']
 
+
 const STATES = ['NJ', 'NY', 'PA', 'CT', 'DE']
+
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return '—'
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
+
 
 // DOB comes from AT in "M/D/YYYY" format (created by our toMDY helper).
 // The native <input type="date"> needs YYYY-MM-DD. These two convert both ways.
@@ -118,12 +131,14 @@ function inputValueToMDY(input: string): string {
   return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`
 }
 
+
 // Format phone as (XXX) XXX-XXXX on blur. Strips non-digits.
 function formatPhone(raw: string): string {
   const digits = raw.replace(/\D/g, '')
   if (digits.length !== 10) return raw // leave as-typed if not exactly 10
   return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
 }
+
 
 function getPortalStatus(review: string, status: string) {
   if (review === 'Rejected') return 'Rejected'
@@ -136,6 +151,7 @@ function getPortalStatus(review: string, status: string) {
   return status
 }
 
+
 const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText: string }> = {
   Submitted:  { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)',   badgeText: '#C9A84C' },
   Scheduling: { accent: '#5B8DB8', badgeBg: 'rgba(91,141,184,0.12)',   badgeText: '#5B8DB8' },
@@ -145,14 +161,17 @@ const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText
   Rejected:   { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',     badgeText: '#C0392B' },
 }
 
+
 // Card accent colors. Teal = editable surfaces (guides Dawson's eye to
 // "safe to touch" zones). Muted grey = read-only. See mockup for rationale.
 const EDIT_ACCENT = '#2A7F6F'  // teal — editable card
 const READ_ACCENT = '#7A8899'  // muted grey — read-only card
 
+
 // ---------------------------------------------------------------------------
 // Shared UI atoms
 // ---------------------------------------------------------------------------
+
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -166,6 +185,7 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
     </div>
   )
 }
+
 
 function Card({
   accent,
@@ -192,6 +212,7 @@ function Card({
   )
 }
 
+
 function EditButton({ onClick, label = 'Edit' }: { onClick: () => void; label?: string }) {
   return (
     <button onClick={onClick}
@@ -201,11 +222,13 @@ function EditButton({ onClick, label = 'Edit' }: { onClick: () => void; label?: 
   )
 }
 
+
 // Reusable input style — keeps all inputs visually consistent
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #EDE9E1',
   fontSize: '13px', color: '#1B2B4B', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', background: 'white',
 }
+
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -216,142 +239,16 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
   )
 }
 
-// ---------------------------------------------------------------------------
-// Cancel + Reschedule modals — same UX as the Scheduled page action widgets.
-// Kept in sync with dawson-referrals-scheduled-page.tsx (lines 26-191). If
-// you change one, change the other.
-// ---------------------------------------------------------------------------
-
-type AvailableDate = {
-  date: string
-  slotsRemaining: number
-}
-
-function CancelModal({ open, name, onConfirm, onClose, loading }: {
-  open: boolean; name: string; onConfirm: () => void; onClose: () => void; loading: boolean
-}) {
-  if (!open) return null
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '440px', width: '90%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
-        <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
-          Cancel Appointment
-        </h3>
-        <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '24px' }}>
-          Cancel the appointment for {name}? The slot will be freed up and all referral data is preserved.
-        </p>
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
-            Back
-          </button>
-          <button onClick={onConfirm} disabled={loading} style={{ padding: '10px 20px', borderRadius: '7px', border: 'none', background: '#C0392B', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
-            {loading ? '...' : 'Yes, Cancel'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function RescheduleModal({ open, name, availableDates, onConfirm, onClose, loading }: {
-  open: boolean
-  name: string
-  availableDates: AvailableDate[]
-  onConfirm: (preferredDate: string | null, flexible: boolean) => void
-  onClose: () => void
-  loading: boolean
-}) {
-  const [preferredDate, setPreferredDate] = useState('')
-  const [flexible, setFlexible] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (open) { setPreferredDate(''); setFlexible(false); setError(null) }
-  }, [open])
-
-  if (!open) return null
-
-  const handleConfirm = () => {
-    setError(null)
-    if (!flexible && !preferredDate) {
-      setError('Pick a Saturday or check Flexible.'); return
-    }
-    onConfirm(flexible ? null : preferredDate, flexible)
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
-      style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
-      onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
-        <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
-          Reschedule Appointment
-        </h3>
-        <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '20px' }}>
-          Reschedule for {name}. Pick a specific Saturday or let the scheduler find the next available.
-        </p>
-
-        <label style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block' }}>
-          Preferred Saturday
-        </label>
-        <select
-          value={preferredDate}
-          onChange={e => setPreferredDate(e.target.value)}
-          disabled={flexible}
-          style={{ width: '100%', padding: '9px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '14px', color: '#2C3A4A', background: 'white', outline: 'none', opacity: flexible ? 0.5 : 1, cursor: flexible ? 'not-allowed' : 'pointer', marginBottom: '12px' }}
-        >
-          <option value="">Select a Saturday...</option>
-          {availableDates.map(d => {
-            const dateObj = new Date(d.date + 'T00:00:00')
-            const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-            return (
-              <option key={d.date} value={d.date}>
-                {label} — {d.slotsRemaining} slot{d.slotsRemaining === 1 ? '' : 's'}
-              </option>
-            )
-          })}
-        </select>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '9px 14px', borderRadius: '7px', border: `1px solid ${flexible ? '#2A7F6F' : '#EDE9E1'}`, background: flexible ? '#EAF4F2' : 'white', marginBottom: '20px' }}>
-          <input type="checkbox" checked={flexible} onChange={e => { setFlexible(e.target.checked); if (e.target.checked) setPreferredDate('') }} style={{ display: 'none' }} />
-          <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: `2px solid ${flexible ? '#2A7F6F' : '#EDE9E1'}`, background: flexible ? '#2A7F6F' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            {flexible && (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            )}
-          </div>
-          <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: flexible ? 600 : 400 }}>Flexible — next available</span>
-        </label>
-
-        {error && (
-          <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#C0392B' }}>
-            {error}
-          </div>
-        )}
-
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-          <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
-            Back
-          </button>
-          <button onClick={handleConfirm} disabled={loading} style={{ padding: '10px 20px', borderRadius: '7px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
-            {loading ? '...' : 'Reschedule'}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // Items Disbursed (unchanged from previous version)
 // ---------------------------------------------------------------------------
 
+
 function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
   const sortAlpha = (items: { name: string; qty: string | number }[]) =>
     [...items].sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }))
+
 
   const groups = [
     { title: 'Living Room', items: sortAlpha(d.livingRoom) },
@@ -362,7 +259,9 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
     { title: 'Baby / Kids', items: sortAlpha(d.misc) },
   ].filter(g => g.items.length > 0)
 
+
   const totalCount = groups.reduce((sum, g) => sum + g.items.length, 0)
+
 
   if (totalCount === 0 && !d.distributionNotes && !d.otherItems && !d.checkInTime && !d.checkoutTime) {
     return (
@@ -372,8 +271,10 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
     )
   }
 
+
   // Volunteer initials no longer displayed — removed from July 2026 sheet
   // redesign; legacy data still lives in Airtable but is not shown.
+
 
   // Header right: Check-in / Check-out inline, right-justified, matched to
   // the card title's typographic weight so it reads as a peer heading.
@@ -389,6 +290,7 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
       </span>
     </div>
   ) : null
+
 
   return (
     <Card accent={READ_ACCENT} title="Items Disbursed" headerRight={headerRight}>
@@ -408,6 +310,7 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
         ))}
       </div>
 
+
       {d.otherItems && (
         <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #EDE9E1' }}>
           <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#2A7F6F', marginBottom: '6px' }}>
@@ -418,6 +321,7 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
           </div>
         </div>
       )}
+
 
       {d.distributionNotes && (
         <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #EDE9E1' }}>
@@ -433,9 +337,11 @@ function ItemsDisbursedCard({ d }: { d: ItemsDisbursed }) {
   )
 }
 
+
 // ---------------------------------------------------------------------------
 // Client Info — display + inline edit
 // ---------------------------------------------------------------------------
+
 
 type ClientEditState = {
   firstName: string
@@ -452,6 +358,7 @@ type ClientEditState = {
   hhSize: string
   children: string
 }
+
 
 function referralToClientEditState(r: Referral): ClientEditState {
   return {
@@ -471,6 +378,7 @@ function referralToClientEditState(r: Referral): ClientEditState {
   }
 }
 
+
 function ClientInfoCard({
   referral,
   onSaved,
@@ -483,6 +391,7 @@ function ClientInfoCard({
   const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState<ClientEditState>(referralToClientEditState(referral))
 
+
   function startEdit() {
     setForm(referralToClientEditState(referral))
     setError(null)
@@ -492,6 +401,7 @@ function ClientInfoCard({
     setEditing(false)
     setError(null)
   }
+
 
   async function save() {
     if (!referral.clientId) {
@@ -522,6 +432,7 @@ function ClientInfoCard({
       const referralPayload: Record<string, string> = {}
       if (form.hhSize !== (referral.hhSize ?? '')) referralPayload.hhSize = form.hhSize
       if (form.children !== (referral.children ?? '')) referralPayload.children = form.children
+
 
       // Fire both PATCHes in parallel. If either fails we surface the error.
       const requests: Promise<Response>[] = [
@@ -577,6 +488,7 @@ function ClientInfoCard({
     }
   }
 
+
   if (!editing) {
     return (
       <Card
@@ -600,6 +512,7 @@ function ClientInfoCard({
       </Card>
     )
   }
+
 
   // Edit mode
   return (
@@ -682,9 +595,11 @@ function ClientInfoCard({
   )
 }
 
+
 // ---------------------------------------------------------------------------
 // Items Requested — display + inline edit (6-category checkbox multi-select)
 // ---------------------------------------------------------------------------
+
 
 function parseItemsToSet(items: unknown): Set<string> {
   // Defensive: `items` should be string | null, but if the Airtable field
@@ -699,6 +614,7 @@ function parseItemsToSet(items: unknown): Set<string> {
   return new Set(str.split(',').map(s => s.trim()).filter(Boolean))
 }
 
+
 function ItemsRequestedCard({
   referral,
   onSaved,
@@ -710,6 +626,7 @@ function ItemsRequestedCard({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selected, setSelected] = useState<Set<string>>(parseItemsToSet(referral.items))
+
 
   function startEdit() {
     setSelected(parseItemsToSet(referral.items))
@@ -756,6 +673,7 @@ function ItemsRequestedCard({
     }
   }
 
+
   if (!editing) {
     const current = Array.from(parseItemsToSet(referral.items))
     return (
@@ -777,6 +695,7 @@ function ItemsRequestedCard({
       </Card>
     )
   }
+
 
   return (
     <Card
@@ -809,9 +728,11 @@ function ItemsRequestedCard({
   )
 }
 
+
 // ---------------------------------------------------------------------------
 // Internal Notes — display + inline edit (replaces the old modal)
 // ---------------------------------------------------------------------------
+
 
 function InternalNotesCard({
   referral,
@@ -824,6 +745,7 @@ function InternalNotesCard({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [value, setValue] = useState(referral.internalNotes ?? '')
+
 
   function startEdit() {
     setValue(referral.internalNotes ?? '')
@@ -856,6 +778,7 @@ function InternalNotesCard({
     }
   }
 
+
   if (!editing) {
     return (
       <Card
@@ -871,6 +794,7 @@ function InternalNotesCard({
       </Card>
     )
   }
+
 
   return (
     <Card
@@ -899,9 +823,11 @@ function InternalNotesCard({
   )
 }
 
+
 // ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
+
 
 export default function ReferralDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
@@ -913,6 +839,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const [cancelModal, setCancelModal] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' })
   const [rescheduleModal, setRescheduleModal] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' })
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
+
 
   useEffect(() => {
     params.then(({ id }) => {
@@ -928,6 +855,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       .catch(() => {})
   }, [params])
 
+
   // Refetch the referral after a successful mutation (cancel/reschedule) so
   // the header status badge, appointment date/time, and action buttons all
   // reflect the new state without a full page reload.
@@ -938,6 +866,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       .then(data => setReferral(data))
       .catch(() => {})
   }
+
 
   async function handleCancelConfirm() {
     setActionLoading(true)
@@ -950,25 +879,20 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  async function handleRescheduleConfirm(preferredDate: string | null, flexible: boolean) {
-    setActionLoading(true)
-    try {
-      await fetch(`/api/dawson/referrals/${rescheduleModal.id}/reschedule`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferredDate, flexible }),
-      })
-      setRescheduleModal({ open: false, id: '', name: '' })
-      refetchReferral()
-      // Reload availability — the previous slot is now open, the new one is taken.
-      fetch('/api/dawson/schedule/available?weeks=8', { cache: 'no-store' })
-        .then(r => r.json())
-        .then(data => setAvailableDates(Array.isArray(data) ? data : []))
-        .catch(() => {})
-    } finally {
-      setActionLoading(false)
-    }
-  }
+
+ async function handleRescheduleConfirm(
+  preferredDate: string,
+  appointmentTime: string | null,
+) {
+  // ...
+  await fetch(`/api/dawson/referrals/${rescheduleModal.id}/reschedule`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ preferredDate, appointmentTime }),
+  })
+  // ...
+}
+
 
   async function handleReview(review: string) {
     if (confirm !== review) { setConfirm(review); return }
@@ -982,11 +906,13 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     } finally { setActionLoading(false) }
   }
 
+
   // Local mutator — components pass partial updates back up so the UI stays
   // in sync without a full refetch.
   function applyUpdate(u: Partial<Referral>) {
     setReferral(prev => prev ? { ...prev, ...u } : prev)
   }
+
 
   if (loading) return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#7A8899' }}>Loading referral...</div>
@@ -995,11 +921,13 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     <div style={{ background: '#F7F5F1', minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#C0392B' }}>Referral not found.</div>
   )
 
+
   const status = getPortalStatus(referral.referralReview, referral.appointmentStatus)
   const colors = STATUS_COLORS[status] ?? { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' }
   // Items Disbursed card is Completed-only. Cancelled + No Show mean
   // nothing was ever handed out, so the empty card was just visual noise.
   const showItemsDisbursed = status === 'Completed'
+
 
   // Days-since counter for No Show. Uses appointmentDate as the anchor
   // (that's the date the client didn't show up on). Falls back to null
@@ -1012,6 +940,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
   })()
 
+
   // Agency link: only render as link if we have an ID; otherwise plain text.
   // Staff link: only render as link if we have a link ID; otherwise plain
   // text (or the "No staff linked" callout if the referral was imported
@@ -1022,6 +951,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         : referral.referringAgency)
     : null
 
+
   const staffDisplay = referral.referredBy
     ? (referral.referringStaffLinkId
         ? <a href={`/dawson/staff/${referral.referringStaffLinkId}`} style={{ color: '#2A7F6F', textDecoration: 'none', fontWeight: 600 }}>{referral.referredBy}</a>
@@ -1030,8 +960,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         ? <span style={{ color: '#C9A84C', fontStyle: 'italic' }}>No staff linked — fix at agency claim</span>
         : null)
 
+
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
+
 
       {/* Top bar */}
       <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
@@ -1054,8 +986,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           )}
         </div>
 
+
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>{status}</span>
+
 
           {status === 'Submitted' && (
             <>
@@ -1070,6 +1004,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             </>
           )}
 
+
           {referral.appointmentSlipUrl && (
             <a href={referral.appointmentSlipUrl} target="_blank" rel="noreferrer"
               style={{ padding: '8px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
@@ -1078,12 +1013,14 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             </a>
           )}
 
+
           {referral.dataPageUrl && (
             <a href={referral.dataPageUrl} target="_blank" rel="noreferrer"
               style={{ padding: '8px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#5B8DB8', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', textDecoration: 'none' }}>
               Data Page
             </a>
           )}
+
 
           {confirm && (
             <button onClick={() => setConfirm(null)}
@@ -1092,13 +1029,16 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         </div>
       </header>
 
+
       {/* 3-column body */}
       <div style={{ padding: '28px 32px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '20px', alignItems: 'start' }}>
+
 
         {/* LEFT: Client Info */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <ClientInfoCard referral={referral} onSaved={applyUpdate} />
         </div>
+
 
         {/* MIDDLE: Items Requested + Internal Notes */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
@@ -1106,8 +1046,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           <InternalNotesCard referral={referral} onSaved={applyUpdate} />
         </div>
 
+
         {/* RIGHT: Appointment + Referral Details + Agency Notes */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
 
           <Card accent={READ_ACCENT} title="Appointment">
             <InfoRow label="Status" value={<span style={{ fontWeight: 700, color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>} />
@@ -1153,6 +1095,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             )}
           </Card>
 
+
           <Card accent={READ_ACCENT} title="Referral Details">
             <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
             <InfoRow label="Agency" value={agencyDisplay} />
@@ -1166,6 +1109,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             } />
           </Card>
 
+
           <Card accent={READ_ACCENT} title="Agency Notes">
             {referral.externalNotes ? (
               <div style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.7, whiteSpace: 'pre-wrap', padding: '4px 0' }}>{referral.externalNotes}</div>
@@ -1173,6 +1117,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '4px 0' }}>No notes submitted by agency.</div>
             )}
           </Card>
+
 
           {referral.possibleDuplicate && (
             <div style={{ background: 'rgba(192,57,43,0.06)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '12px', padding: '16px 20px' }}>
@@ -1182,6 +1127,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           )}
         </div>
       </div>
+
 
       {/* Items Disbursed spans the two left columns below when appointment
           is Completed or Cancelled. Placed right under the 3-column grid so
@@ -1193,6 +1139,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           </div>
         </div>
       )}
+
 
       <CancelModal
         open={cancelModal.open}
@@ -1209,6 +1156,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         onClose={() => setRescheduleModal({ open: false, id: '', name: '' })}
         onConfirm={handleRescheduleConfirm}
       />
+
 
     </div>
   )

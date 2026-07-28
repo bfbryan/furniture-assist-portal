@@ -1,15 +1,20 @@
 // app/api/dawson/schedule/route.ts
-import { auth } from '@clerk/nextjs/server'
+//
+// GET /api/dawson/schedule
+//
+// Returns the Saturday Schedule table for the Dawson internal admin views.
+
+
 import { NextResponse } from 'next/server'
 import { getSaturdaySchedule } from '@/lib/airtable'
+import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 
-const ALLOWED_USER_IDS = ['user_3BmTnGTVcPCuCJTpP8uKrQm4KXj']
 
 export async function GET() {
-  const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const denied = await requireDawsonAccess()
+  if (denied) return denied
+
+
   const schedule = await getSaturdaySchedule()
   return NextResponse.json(schedule)
 }

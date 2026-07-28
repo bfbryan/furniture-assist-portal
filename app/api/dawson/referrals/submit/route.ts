@@ -5,10 +5,17 @@
 // Used by:
 //   - app/dawson/referrals/new/page.tsx (Dawson's internal "Add Referral" form)
 //
-// Scheduling behavior (June 30, 2026):
-//   Creates the referral with Appointment Status = 'Unscheduled'. The
-//   Airtable auto-schedule automation handles both Specific Date and
-//   Flexible branches; see prior notes.
+// Scheduling behavior (Flexible removed from Dawson's UI):
+//   - Date + Time  -> bypass automation. Direct write to 'Scheduled'.
+//                     Dawson has AT-level override authority so we do NOT
+//                     enforce per-slot caps here.
+//   - Date only    -> backend allocator. Reads per-slot booked counts off
+//                     the Saturday Schedule row, picks the first slot
+//                     under cap (fill order 9am -> 10am -> 11am -> 12pm ->
+//                     1pm), and writes 'Scheduled' directly. If all 5
+//                     slots are at cap, falls back to 'Unscheduled' +
+//                     Preferred Date so the auto-schedule automation can
+//                     take a second pass (or ops can intervene).
 //
 // July 2026 schema migration — CLIENTS TABLE FORK (COMPLETE):
 //   Client identity moved off Client Referrals onto the Clients table.
@@ -23,34 +30,17 @@
 //     3. Resolve Staff  (existing or create Unclaimed)
 //     4. Resolve Client (find by Unique ID / create with identity fields)
 //     5. Duplicate check against Client's prior referrals
-//     6. Create referral — writes per-visit fields + Client link only
+//     6. Allocate time slot if not provided
+//     7. Create referral — writes per-visit fields + Client link only
 //
 // Duplicate detection:
 //   Flags when the same Client already has a referral for the same
 //   Preferred Date. Query strategy: find Client by Unique ID, then look
-//   for any linked referral whose Preferred Date matches. Flexible
-//   submissions skip the check (no target date).
+//   for any linked referral whose Preferred Date matches.
 
 
-
-
-
-import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-
-
-
-
-
-const ALLOWED_USER_IDS = [
-  'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben
-  'user_3BodwTW4I7Vamt4t7wD3qeA7boM', // Ray
-  'user_3BtKn01OMXSmi7eSsWvzvnEroCg', // Dawson
-  'user_3DE1gUnIeNmWZpQyd7LjdZb9vnN', // Chase
-]
-
-
-
+import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
@@ -61,7 +51,29 @@ const HEADERS = {
 }
 
 
+const VALID_TIMES = new Set(['9am', '10am', '11am', '12pm', '1pm'])
 
+
+// Per-slot capacities -- MUST match at-auto-schedule-script.js TIME_CAPS,
+// components/dawson/modals/RescheduleModal.tsx SLOT_CAP, the
+// SLOT_MAX constant on app/dawson/schedule/page.tsx, and the reschedule
+// route's TIME_CAPS. Consolidation into lib/schedule/allocator.ts is
+// deferred (see session notes).
+type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'
+const TIME_CAPS: Record<TimeSlot, number> = {
+  '9am': 5,
+  '10am': 14,
+  '11am': 14,
+  '12pm': 14,
+  '1pm': 3,
+}
+const TIME_ORDER: TimeSlot[] = ['9am', '10am', '11am', '12pm', '1pm']
+
+
+function toInt(v: any): number {
+  const n = typeof v === 'number' ? v : parseInt(v, 10)
+  return Number.isFinite(n) ? n : 0
+}
 
 
 function formatDOB(dob: string) {
@@ -70,17 +82,11 @@ function formatDOB(dob: string) {
 }
 
 
-
-
-
 function isSaturday(isoDate: string): boolean {
   const [y, m, d] = isoDate.split('-').map(Number)
   const dt = new Date(y, m - 1, d, 12, 0, 0)
   return !isNaN(dt.getTime()) && dt.getDay() === 6
 }
-
-
-
 
 
 /**
@@ -92,20 +98,15 @@ function buildClientUniqueId(firstName: string, lastName: string, dobFormatted: 
 }
 
 
-
-
-
 // Duplicate detection (post-fork):
 //   Flags when the given Client (by record ID) already has a referral
 //   for the same Preferred Date. Returns false when clientId is null
-//   (new client) or when preferredDate is absent (Flexible submission).
+//   (new client) or when preferredDate is absent.
 async function checkDuplicate(
   clientId: string | null,
   preferredDate: string | null | undefined,
 ): Promise<boolean> {
   if (!clientId || !preferredDate) return false
-  // FIND on the {Client} lookup/link stringified via ARRAYJOIN — the
-  // referral's Client link is a single-record array containing this id.
   const formula = encodeURIComponent(
     `AND(FIND("${clientId}", ARRAYJOIN({Client})) > 0, IS_SAME({Preferred Date}, "${preferredDate}", 'day'))`
   )
@@ -114,9 +115,6 @@ async function checkDuplicate(
   const data = await res.json()
   return data.records && data.records.length > 0
 }
-
-
-
 
 
 // Look up Client by Unique ID (Last-First-DOB). Returns record ID or null.
@@ -130,9 +128,6 @@ async function findClientByUniqueId(clientUniqueId: string): Promise<string | nu
   if (!data.records || data.records.length === 0) return null
   return data.records[0].id as string
 }
-
-
-
 
 
 // Create a Client record. Called only when findClientByUniqueId returned null.
@@ -167,9 +162,6 @@ async function createClient(params: {
   if (params.preferredLanguage) fields['Preferred Language'] = params.preferredLanguage
 
 
-
-
-
   const url = `https://api.airtable.com/v0/${BASE_ID}/Clients`
   const res = await fetch(url, {
     method: 'POST',
@@ -182,7 +174,42 @@ async function createClient(params: {
 }
 
 
+// Look up a Saturday Schedule record by ISO date. Returns the record id
+// plus per-slot booked counts, or null if not found. Uses DATETIME_FORMAT
+// to compare on YYYY-MM-DD regardless of AT's stored datetime precision.
+async function findScheduleRecordByDate(isoDate: string): Promise<{
+  id: string
+  bookedByTime: Record<TimeSlot, number>
+} | null> {
+  const formula = `DATETIME_FORMAT({Date}, 'YYYY-MM-DD') = '${isoDate}'`
+  const url =
+    `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Saturday Schedule')}?` +
+    `filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
+  const res = await fetch(url, { headers: { Authorization: `Bearer ${API_KEY}` } })
+  if (!res.ok) throw new Error(`Saturday Schedule lookup failed: ${await res.text()}`)
+  const data = await res.json()
+  if (!data.records || data.records.length === 0) return null
+  const rec = data.records[0]
+  return {
+    id: rec.id as string,
+    bookedByTime: {
+      '9am':  toInt(rec.fields['9am']  ?? rec.fields['9am Booked']),
+      '10am': toInt(rec.fields['10am'] ?? rec.fields['10am Booked']),
+      '11am': toInt(rec.fields['11am'] ?? rec.fields['11am Booked']),
+      '12pm': toInt(rec.fields['12pm'] ?? rec.fields['12pm Booked']),
+      '1pm':  toInt(rec.fields['1pm']  ?? rec.fields['1pm Booked']),
+    },
+  }
+}
 
+
+// First slot under cap using TIME_ORDER. Null if all 5 are at cap.
+function pickFirstOpenSlot(bookedByTime: Record<TimeSlot, number>): TimeSlot | null {
+  for (const slot of TIME_ORDER) {
+    if (bookedByTime[slot] < TIME_CAPS[slot]) return slot
+  }
+  return null
+}
 
 
 async function createUnclaimedAgency(name: string): Promise<{ id: string; name: string }> {
@@ -205,9 +232,6 @@ async function createUnclaimedAgency(name: string): Promise<{ id: string; name: 
 }
 
 
-
-
-
 async function createUnclaimedAgencyUser(params: {
   agencyId: string
   firstName: string
@@ -227,9 +251,6 @@ async function createUnclaimedAgencyUser(params: {
   if (params.phone) fields['Phone Number'] = params.phone
 
 
-
-
-
   const res = await fetch(url, {
     method: 'POST',
     headers: HEADERS,
@@ -241,23 +262,12 @@ async function createUnclaimedAgencyUser(params: {
 }
 
 
-
-
-
 export async function POST(req: Request) {
-  const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
-
-
-
+  const denied = await requireDawsonAccess()
+  if (denied) return denied
 
 
   const body = await req.json()
-
-
-
 
 
   const {
@@ -265,7 +275,7 @@ export async function POST(req: Request) {
     firstName, lastName, address, address2, city, state, zip,
     phone, county, hhSize, children, dob, language, items, notes,
     // scheduling
-    preferredDate, flexible,
+    preferredDate, appointmentTime,
     // case 1 (both exist)
     agencyId, staffId,
     // case 2 + 3
@@ -275,30 +285,38 @@ export async function POST(req: Request) {
   } = body
 
 
-
-
-
   // ---- Scheduling validation ----
-  const isFlexible = flexible === true
-  if (!isFlexible) {
-    if (!preferredDate) {
-      return NextResponse.json({ error: 'Preferred date is required when not flexible.' }, { status: 400 })
-    }
-    if (!isSaturday(preferredDate)) {
-      return NextResponse.json({ error: 'Preferred date must be a Saturday.' }, { status: 400 })
-    }
+  // Dawson's form always requires a preferred Saturday now (Flexible was
+  // removed from his UI). Time is optional; if omitted we allocate.
+  if (!preferredDate) {
+    return NextResponse.json({ error: 'Preferred date is required.' }, { status: 400 })
+  }
+  if (!isSaturday(preferredDate)) {
+    return NextResponse.json({ error: 'Preferred date must be a Saturday.' }, { status: 400 })
   }
 
 
+  const hasTime =
+    typeof appointmentTime === 'string' &&
+    VALID_TIMES.has(appointmentTime)
 
+
+  if (
+    appointmentTime !== undefined &&
+    appointmentTime !== null &&
+    appointmentTime !== '' &&
+    !hasTime
+  ) {
+    return NextResponse.json(
+      { error: `Invalid appointment time: ${appointmentTime}` },
+      { status: 400 }
+    )
+  }
 
 
   // ---- Resolve agency (existing or new) ----
   let resolvedAgencyId: string
   let wasNewAgency = false
-
-
-
 
 
   try {
@@ -320,14 +338,8 @@ export async function POST(req: Request) {
   }
 
 
-
-
-
   // ---- Resolve staff (existing or new) ----
   let resolvedStaffId: string
-
-
-
 
 
   try {
@@ -353,20 +365,11 @@ export async function POST(req: Request) {
   }
 
 
-
-
-
   // ---- Resolve client (existing or new) ----
-  // Client identity is looked up by Unique ID (Last-First-DOB). If a
-  // returning client already exists, we link to that record and do NOT
-  // overwrite their contact/address info.
   const dobFormatted = formatDOB(dob)
   const clientUniqueId = buildClientUniqueId(firstName, lastName, dobFormatted)
   let resolvedClientId: string
   let clientCreated = false
-
-
-
 
 
   try {
@@ -394,31 +397,37 @@ export async function POST(req: Request) {
   }
 
 
-
-
-
   // ---- Duplicate flag ----
-  // Checks whether this Client already has a referral on the same
-  // Preferred Date. Skipped for Flexible submissions (no target date).
-  const isDuplicate = await checkDuplicate(
-    resolvedClientId,
-    isFlexible ? null : preferredDate,
-  )
+  const isDuplicate = await checkDuplicate(resolvedClientId, preferredDate)
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 
 
+  // ---- Look up Saturday Schedule row (needed for both time-picked and
+  //      allocator paths). Fail fast if the row doesn't exist.
+  const scheduleRow = await findScheduleRecordByDate(preferredDate)
+  if (!scheduleRow) {
+    return NextResponse.json(
+      { error: `No Saturday Schedule row found for ${preferredDate}.` },
+      { status: 400 }
+    )
+  }
 
+
+  // ---- Resolve time slot: Dawson-picked wins; otherwise allocate.
+  //   - Dawson-picked: override allowed, no cap check.
+  //   - Allocator:     first slot under cap in fill order. If all 5 are
+  //                    full we fall through to Unscheduled + Preferred
+  //                    Date and let auto-schedule take another pass.
+  let resolvedTime: TimeSlot | null
+  if (hasTime) {
+    resolvedTime = appointmentTime as TimeSlot
+  } else {
+    resolvedTime = pickFirstOpenSlot(scheduleRow.bookedByTime)
+  }
 
 
   // ---- Build referral fields ----
-  // Client identity fields (First Name, Last Name, DOB, Phone, Address,
-  // Address 2, City, State, Zip, County, Preferred Language) are now
-  // LOOKUPS on Client Referrals sourced from the {Client} link. They
-  // are NOT writable — Airtable returns 422 on any write to a lookup.
-  // Identity data lives on the Clients table (written above) and flows
-  // through to the referral via lookups.
   const fields: Record<string, any> = {
-    // Per-visit fields only
     '# in HH': parseInt(hhSize),
     '# Children': parseInt(children),
     'Items Requested': items,
@@ -426,23 +435,26 @@ export async function POST(req: Request) {
     'Referring Staff Link': [resolvedStaffId],
     'Client': [resolvedClientId],
     'Referral Review': 'Approved',
-    'Appointment Status': 'Unscheduled',
     'Possible Duplicate': isDuplicate,
-    'Scheduling Flexibility': isFlexible ? 'Flexible' : 'Specific Date',
+    'Scheduling Flexibility': 'Specific Date',
+    'Preferred Date': preferredDate,
     'Was New Agency': wasNewAgency,
   }
 
 
+  if (notes) fields['Internal Notes'] = notes
 
 
-
-  // Notes submitted by the agency belong on External Notes (agency-visible).
-  // Internal Notes are staff-only and populated via the detail page.
-  if (notes) fields['External Notes'] = notes
-  if (!isFlexible && preferredDate) fields['Preferred Date'] = preferredDate
-
-
-
+  if (resolvedTime) {
+    fields['Saturday Schedule'] = [scheduleRow.id]
+    fields['Appointment Time'] = resolvedTime
+    fields['Appointment Status'] = 'Scheduled'
+  } else {
+    // All 5 slots at cap on the requested date. Leave Unscheduled with
+    // Preferred Date set so ops (or the auto-schedule automation, if
+    // still on) can retry. Dawson can also re-open and override.
+    fields['Appointment Status'] = 'Unscheduled'
+  }
 
 
   const url = `https://api.airtable.com/v0/${BASE_ID}/Client%20Referrals`
@@ -453,16 +465,10 @@ export async function POST(req: Request) {
   })
 
 
-
-
-
   if (!res.ok) {
     const err = await res.text()
     return NextResponse.json({ error: err }, { status: 500 })
   }
-
-
-
 
 
   return NextResponse.json({
@@ -470,5 +476,8 @@ export async function POST(req: Request) {
     duplicate: isDuplicate,
     wasNewAgency,
     clientCreated,
+    appointmentTime: resolvedTime,
+    allocated: !hasTime && resolvedTime !== null,
+    allSlotsFull: !hasTime && resolvedTime === null,
   })
 }

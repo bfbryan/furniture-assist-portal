@@ -1,8 +1,10 @@
 'use client'
 
 
+
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+
 
 
 // LOCKED to the post–June 2026 schema. Client Referrals.Items Requested
@@ -19,6 +21,22 @@ const ITEMS = [
 ]
 
 
+
+// Per-slot capacities — MUST match at-auto-schedule-script.js TIME_CAPS,
+// components/dawson/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
+// constant on app/dawson/schedule/page.tsx.
+type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'
+const SLOT_CAP: Record<TimeSlot, number> = {
+  '9am': 5,
+  '10am': 14,
+  '11am': 14,
+  '12pm': 14,
+  '1pm': 3,
+}
+const TIME_SLOTS: TimeSlot[] = ['9am', '10am', '11am', '12pm', '1pm']
+
+
+
 function formatPhone(raw: string): string {
   const d = raw.replace(/\D/g, '').slice(0, 10)
   if (d.length >= 7) return `(${d.slice(0,3)}) ${d.slice(3,6)}-${d.slice(6)}`
@@ -28,10 +46,12 @@ function formatPhone(raw: string): string {
 }
 
 
+
 const LABEL: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
   letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block',
 }
+
 
 
 const INPUT: React.CSSProperties = {
@@ -41,6 +61,7 @@ const INPUT: React.CSSProperties = {
 }
 
 
+
 const SECTION: React.CSSProperties = {
   fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px',
   color: '#2A7F6F', textTransform: 'uppercase', letterSpacing: '0.08em',
@@ -48,10 +69,12 @@ const SECTION: React.CSSProperties = {
 }
 
 
+
 const SUBPANEL: React.CSSProperties = {
   background: '#FAF8F4', border: '1px solid #EDE9E1', borderRadius: '8px',
   padding: '16px', marginBottom: '24px',
 }
+
 
 
 // Agency type — post-migration `email` comes from the Primary Admin lookup
@@ -67,6 +90,7 @@ type Agency = {
 }
 
 
+
 type StaffMember = {
   id: string
   firstName: string
@@ -79,10 +103,30 @@ type StaffMember = {
 }
 
 
+
 type AvailableDate = {
   date: string
   slotsRemaining: number
+  slots9am?: number
+  slots10am?: number
+  slots11am?: number
+  slots12pm?: number
+  slots1pm?: number
 }
+
+
+
+function bookedForSlot(d: AvailableDate | undefined, slot: TimeSlot): number {
+  if (!d) return 0
+  switch (slot) {
+    case '9am':  return d.slots9am  ?? 0
+    case '10am': return d.slots10am ?? 0
+    case '11am': return d.slots11am ?? 0
+    case '12pm': return d.slots12pm ?? 0
+    case '1pm':  return d.slots1pm  ?? 0
+  }
+}
+
 
 
 export default function DawsonAddReferralPage() {
@@ -93,6 +137,7 @@ export default function DawsonAddReferralPage() {
   const [error, setError] = useState<string | null>(null)
 
 
+
   const [agencies, setAgencies] = useState<Agency[]>([])
   const [staffMembers, setStaffMembers] = useState<StaffMember[]>([])
   const [selectedAgency, setSelectedAgency] = useState<Agency | null>(null)
@@ -101,10 +146,12 @@ export default function DawsonAddReferralPage() {
   const [staffLoading, setStaffLoading] = useState(false)
 
 
+
   // Agency combobox state
   const [agencyQuery, setAgencyQuery] = useState('')
   const [agencyDropdownOpen, setAgencyDropdownOpen] = useState(false)
   const agencyComboRef = useRef<HTMLDivElement>(null)
+
 
 
   // New agency inline panel
@@ -112,13 +159,16 @@ export default function DawsonAddReferralPage() {
   const [newAgency, setNewAgency] = useState({ name: '', email: '' })
 
 
+
   // New staff inline panel (for existing agency)
   const [newStaffMode, setNewStaffMode] = useState(false)
   const [newStaff, setNewStaff] = useState({ firstName: '', lastName: '', email: '', phone: '' })
 
 
+
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
+
 
 
   const [form, setForm] = useState({
@@ -131,8 +181,9 @@ export default function DawsonAddReferralPage() {
     items: [] as string[],
     notes: '',
     preferredDate: '',
-    flexible: false,
+    appointmentTime: null as TimeSlot | null,
   })
+
 
 
   // Load Approved + Unclaimed agencies
@@ -142,6 +193,7 @@ export default function DawsonAddReferralPage() {
       .then(data => { setAgencies(Array.isArray(data) ? data : []); setAgenciesLoading(false) })
       .catch(() => setAgenciesLoading(false))
   }, [])
+
 
 
   // Load staff when an existing agency is selected
@@ -158,6 +210,7 @@ export default function DawsonAddReferralPage() {
   }, [selectedAgency])
 
 
+
   // Load available Saturdays
 const loadAvailability = () => {
   setAvailabilityLoading(true)
@@ -171,9 +224,11 @@ const loadAvailability = () => {
 }
 
 
+
 useEffect(() => {
   loadAvailability()
 }, [])
+
 
 
   // Close agency dropdown on outside click
@@ -188,7 +243,9 @@ useEffect(() => {
   }, [])
 
 
+
   const set = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }))
+
 
 
   const toggleItem = (item: string) => {
@@ -201,12 +258,15 @@ useEffect(() => {
   }
 
 
+
   const filteredAgencies = agencyQuery.trim()
     ? agencies.filter(a => a.name.toLowerCase().includes(agencyQuery.toLowerCase()))
     : agencies
 
 
+
   const exactMatch = agencies.some(a => a.name.toLowerCase() === agencyQuery.trim().toLowerCase())
+
 
 
   const pickAgency = (agency: Agency) => {
@@ -216,6 +276,7 @@ useEffect(() => {
     setNewAgencyMode(false)
     setNewAgency({ name: '', email: '' })
   }
+
 
 
   const startNewAgency = () => {
@@ -229,6 +290,7 @@ useEffect(() => {
   }
 
 
+
   const clearAgency = () => {
     setSelectedAgency(null)
     setSelectedStaff(null)
@@ -238,6 +300,7 @@ useEffect(() => {
     setNewAgency({ name: '', email: '' })
     setNewStaff({ firstName: '', lastName: '', email: '', phone: '' })
   }
+
 
 
   const pickStaff = (id: string) => {
@@ -252,8 +315,18 @@ useEffect(() => {
   }
 
 
+
+  const selectedDate = availableDates.find(d => d.date === form.preferredDate)
+  const isOverride =
+    form.appointmentTime !== null &&
+    selectedDate !== undefined &&
+    bookedForSlot(selectedDate, form.appointmentTime) >= SLOT_CAP[form.appointmentTime]
+
+
+
   const handleSubmit = async () => {
     setError(null)
+
 
 
     // Agency validation
@@ -263,6 +336,7 @@ useEffect(() => {
     } else if (!selectedAgency) {
       setError('Please select an agency.'); return
     }
+
 
 
     // Staff validation
@@ -278,6 +352,7 @@ useEffect(() => {
     }
 
 
+
     const required = ['firstName', 'lastName', 'address', 'city', 'state', 'zip', 'hhSize', 'children', 'dob']
     for (const f of required) {
       if (!form[f as keyof typeof form]) {
@@ -289,10 +364,11 @@ useEffect(() => {
       setError('Please select at least one item.')
       return
     }
-    if (!form.flexible && !form.preferredDate) {
-      setError('Please select a preferred Saturday or check "Flexible".')
+    if (!form.preferredDate) {
+      setError('Please select a preferred Saturday.')
       return
     }
+
 
 
     // Build payload — three cases.
@@ -307,9 +383,10 @@ useEffect(() => {
     // find-or-create logic and for setting Referring Staff Link.
     const payload: any = {
       ...form,
-      preferredDate: form.flexible ? null : form.preferredDate,
-      flexible: form.flexible,
+      preferredDate: form.preferredDate,
+      appointmentTime: form.appointmentTime,
     }
+
 
 
     if (newAgencyMode) {
@@ -341,6 +418,7 @@ useEffect(() => {
     }
 
 
+
     setLoading(true)
     try {
       const res = await fetch('/api/dawson/referrals/submit', {
@@ -359,6 +437,7 @@ useEffect(() => {
       setLoading(false)
     }
   }
+
 
 
   if (submitted) {
@@ -385,7 +464,7 @@ useEffect(() => {
             <button onClick={() => {
   setSubmitted(false)
   clearAgency()
-  setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '', preferredDate: '', flexible: false })
+  setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '', preferredDate: '', appointmentTime: null })
   loadAvailability()
 }}
               style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
@@ -402,6 +481,7 @@ useEffect(() => {
   }
 
 
+
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
       <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 50 }}>
@@ -411,12 +491,15 @@ useEffect(() => {
       </header>
 
 
+
       <div style={{ maxWidth: '780px', margin: '0 auto', padding: '32px' }}>
         <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
 
 
+
           {/* Agency + Staff Selection */}
           <div style={SECTION}>Agency & Staff</div>
+
 
 
           {/* Agency combobox */}
@@ -482,6 +565,7 @@ useEffect(() => {
           </div>
 
 
+
           {/* New agency inline panel */}
           {newAgencyMode && (
             <div style={SUBPANEL}>
@@ -525,6 +609,7 @@ useEffect(() => {
           )}
 
 
+
           {/* Staff selection (only if existing agency is picked) */}
           {selectedAgency && !newAgencyMode && (
             <div style={{ marginBottom: '16px' }}>
@@ -543,6 +628,7 @@ useEffect(() => {
               </select>
             </div>
           )}
+
 
 
           {/* New staff inline panel (for existing agency) */}
@@ -575,7 +661,9 @@ useEffect(() => {
           )}
 
 
+
           <div style={{ marginBottom: '12px' }} />
+
 
 
           {/* Client Info */}
@@ -610,6 +698,7 @@ useEffect(() => {
           </div>
 
 
+
           {/* Address */}
           <div style={{ ...SECTION, marginTop: '24px' }}>Address</div>
           <div style={{ marginBottom: '16px' }}>
@@ -636,6 +725,7 @@ useEffect(() => {
           </div>
 
 
+
           {/* Household */}
           <div style={{ ...SECTION, marginTop: '24px' }}>Household</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
@@ -648,6 +738,7 @@ useEffect(() => {
               <input style={INPUT} type="number" min="0" value={form.children} onChange={e => set('children', e.target.value)} placeholder="Children under 18" />
             </div>
           </div>
+
 
 
           {/* Items */}
@@ -669,53 +760,138 @@ useEffect(() => {
           </div>
 
 
+
           {/* Preferred Appointment */}
           <div style={{ ...SECTION, marginTop: '8px' }}>Preferred Appointment</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '24px' }}>
-            <div>
-              <label style={LABEL}>Preferred Saturday *</label>
-              <select
-                style={{ ...INPUT, opacity: form.flexible ? 0.5 : 1, cursor: form.flexible ? 'not-allowed' : 'pointer' }}
-                value={form.preferredDate}
-                onChange={e => set('preferredDate', e.target.value)}
-                disabled={form.flexible || availabilityLoading}
+          <div style={{ marginBottom: '16px' }}>
+            <label style={LABEL}>Preferred Saturday *</label>
+            <select
+              style={{ ...INPUT, cursor: 'pointer' }}
+              value={form.preferredDate}
+              onChange={e => {
+                set('preferredDate', e.target.value)
+                set('appointmentTime', null)
+              }}
+              disabled={availabilityLoading}
+            >
+              <option value="">
+                {availabilityLoading ? 'Loading dates...' : 'Select a Saturday...'}
+              </option>
+              {availableDates.map(d => {
+                const dateObj = new Date(d.date + 'T00:00:00')
+                const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                return (
+                  <option key={d.date} value={d.date}>
+                    {label} — {d.slotsRemaining} slot{d.slotsRemaining === 1 ? '' : 's'}
+                  </option>
+                )
+              })}
+            </select>
+          </div>
+
+
+
+          {/* Time-slot pills — visible whenever a Saturday is picked */}
+          {form.preferredDate && (
+            <div style={{ marginBottom: '16px' }}>
+              <label style={LABEL}>
+                Time (optional — leave blank to auto-schedule)
+              </label>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(5, 1fr)',
+                  gap: '8px',
+                }}
               >
-                <option value="">
-                  {availabilityLoading ? 'Loading dates...' : 'Select a Saturday...'}
-                </option>
-                {availableDates.map(d => {
-                  const dateObj = new Date(d.date + 'T00:00:00')
-                  const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                {TIME_SLOTS.map(slot => {
+                  const booked = bookedForSlot(selectedDate, slot)
+                  const cap = SLOT_CAP[slot]
+                  const full = booked >= cap
+                  const selected = form.appointmentTime === slot
                   return (
-                    <option key={d.date} value={d.date}>
-                      {label} — {d.slotsRemaining} slot{d.slotsRemaining === 1 ? '' : 's'}
-                    </option>
+                    <button
+                      key={slot}
+                      type="button"
+                      onClick={() =>
+                        set('appointmentTime', selected ? null : slot)
+                      }
+                      style={{
+                        padding: '10px 6px',
+                        borderRadius: '8px',
+                        border: selected
+                          ? '2px solid #2A7F6F'
+                          : full
+                            ? '1px solid #F0C4BE'
+                            : '1px solid #EDE9E1',
+                        background: selected
+                          ? '#2A7F6F'
+                          : full
+                            ? '#FDEDEC'
+                            : 'white',
+                        color: selected ? 'white' : full ? '#C0392B' : '#2C3A4A',
+                        cursor: 'pointer',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '3px',
+                        fontFamily: 'var(--font-montserrat)',
+                      }}
+                    >
+                      <span style={{ fontSize: '13px', fontWeight: 800, lineHeight: 1 }}>
+                        {slot}
+                      </span>
+                      <span
+                        style={{
+                          fontSize: '11px',
+                          fontWeight: 600,
+                          opacity: selected ? 0.85 : 1,
+                          lineHeight: 1,
+                        }}
+                      >
+                        {booked}/{cap}
+                      </span>
+                    </button>
                   )
                 })}
-              </select>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'flex-end' }}>
-              <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '9px 14px', borderRadius: '7px', border: `1px solid ${form.flexible ? '#2A7F6F' : '#EDE9E1'}`, background: form.flexible ? '#EAF4F2' : 'white', width: '100%', boxSizing: 'border-box' }}>
-                <input
-                  type="checkbox"
-                  checked={form.flexible}
-                  onChange={e => {
-                    set('flexible', e.target.checked)
-                    if (e.target.checked) set('preferredDate', '')
+              </div>
+              {isOverride && form.appointmentTime && (
+                <div
+                  style={{
+                    fontSize: '12px',
+                    color: '#8A6A00',
+                    marginTop: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
                   }}
-                  style={{ display: 'none' }}
-                />
-                <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: `2px solid ${form.flexible ? '#2A7F6F' : '#EDE9E1'}`, background: form.flexible ? '#2A7F6F' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                  {form.flexible && (
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12"/>
-                    </svg>
-                  )}
+                >
+                  <svg
+                    width="13"
+                    height="13"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                    stroke="#C9A84C"
+                    strokeWidth="2.4"
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                  >
+                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                    <line x1="12" y1="9" x2="12" y2="13" />
+                    <line x1="12" y1="17" x2="12.01" y2="17" />
+                  </svg>
+                  Override — {form.appointmentTime} is at capacity (
+                  {bookedForSlot(selectedDate, form.appointmentTime)}/
+                  {SLOT_CAP[form.appointmentTime]} booked)
                 </div>
-                <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: form.flexible ? 600 : 400 }}>Flexible — next available</span>
-              </label>
+              )}
             </div>
-          </div>
+          )}
+
+
+
+          <div style={{ marginBottom: '8px' }} />
+
 
 
           {/* Notes */}
@@ -728,6 +904,7 @@ useEffect(() => {
           />
 
 
+
           {error && (
             <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: '#C0392B' }}>
               {error}
@@ -735,10 +912,12 @@ useEffect(() => {
           )}
 
 
+
           <button onClick={handleSubmit} disabled={loading}
             style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: loading ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', cursor: loading ? 'not-allowed' : 'pointer', letterSpacing: '0.02em' }}>
             {loading ? 'Submitting...' : 'Submit Referral'}
           </button>
+
 
 
         </div>
