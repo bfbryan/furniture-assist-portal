@@ -353,12 +353,29 @@ useEffect(() => {
 
 
 
-    const required = ['firstName', 'lastName', 'address', 'city', 'state', 'zip', 'hhSize', 'children', 'dob']
-    for (const f of required) {
-      if (!form[f as keyof typeof form]) {
-        setError('Please fill in all required fields.')
-        return
-      }
+    // Name the missing fields explicitly -- a generic "fill in all required
+    // fields" message sends you hunting, especially when a date input looks
+    // filled but holds an empty value.
+    const REQUIRED_LABELS: Record<string, string> = {
+      firstName: 'First Name',
+      lastName: 'Last Name',
+      address: 'Address',
+      city: 'City',
+      state: 'State',
+      zip: 'Zip',
+      hhSize: '# in Household',
+      children: '# of Children',
+      dob: 'Date of Birth',
+    }
+    const missing = Object.keys(REQUIRED_LABELS).filter(
+      f => !String(form[f as keyof typeof form] ?? '').trim()
+    )
+    if (missing.length > 0) {
+      setError(
+        `Missing required ${missing.length === 1 ? 'field' : 'fields'}: ` +
+        missing.map(f => REQUIRED_LABELS[f]).join(', ')
+      )
+      return
     }
     if (form.items.length === 0) {
       setError('Please select at least one item.')
@@ -684,7 +701,7 @@ useEffect(() => {
               <input style={INPUT} type="date" value={form.dob} onChange={e => set('dob', e.target.value)} />
             </div>
             <div>
-                            <label style={LABEL}>Cell Phone</label>
+              <label style={LABEL}>Cell Phone</label>
               <input style={INPUT} value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} placeholder="(000) 000-0000 (optional)" />
             </div>
             <div>

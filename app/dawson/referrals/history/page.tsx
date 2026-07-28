@@ -344,18 +344,28 @@ export default function HistoryPage() {
   }
 
 
-async function handleRescheduleConfirm(
-  preferredDate: string,
-  appointmentTime: string | null,
-) {
-  // ...
-  await fetch(`/api/dawson/referrals/${rescheduleModal.id}/reschedule`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ preferredDate, appointmentTime }),
-  })
-  // ...
-}
+     async function handleRescheduleConfirm(
+    preferredDate: string,
+    appointmentTime: string | null,
+  ) {
+    setModalLoading(true)
+    try {
+      const res = await fetch(`/api/dawson/referrals/${rescheduleModal.id}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferredDate, appointmentTime }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(`Reschedule failed: ${err.error || res.statusText}`)
+        return
+      }
+      setRescheduleModal({ open: false, id: '', name: '' })
+      setRefreshTick(t => t + 1)
+    } finally {
+      setModalLoading(false)
+    }
+  }
 
 
   async function handleCancelConfirm() {

@@ -880,18 +880,28 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   }
 
 
- async function handleRescheduleConfirm(
-  preferredDate: string,
-  appointmentTime: string | null,
-) {
-  // ...
-  await fetch(`/api/dawson/referrals/${rescheduleModal.id}/reschedule`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ preferredDate, appointmentTime }),
-  })
-  // ...
-}
+  async function handleRescheduleConfirm(
+    preferredDate: string,
+    appointmentTime: string | null,
+  ) {
+    setActionLoading(true)
+    try {
+      const res = await fetch(`/api/dawson/referrals/${rescheduleModal.id}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferredDate, appointmentTime }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        alert(err.error || 'Reschedule failed')
+        return
+      }
+      setRescheduleModal({ open: false, id: '', name: '' })
+      refetchReferral()
+    } finally {
+      setActionLoading(false)
+    }
+  }
 
 
   async function handleReview(review: string) {
