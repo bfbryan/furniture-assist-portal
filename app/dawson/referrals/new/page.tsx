@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import AddAgencyStaffModal, { type AddStaffResult } from '@/components/dawson/modals/AddAgencyStaffModal'
 
 
 
@@ -104,6 +105,17 @@ type StaffMember = {
 
 
 
+// A staff hit from the cross-agency search. Same shape as StaffMember
+// plus the agency the person belongs to, so picking one result fills
+// in BOTH sides of the referral in a single click.
+type StaffSearchResult = StaffMember & {
+  agencyId: string | null
+  agencyName: string
+  agencyStatus: string
+}
+
+
+
 type AvailableDate = {
   date: string
   slotsRemaining: number
@@ -147,10 +159,30 @@ export default function DawsonAddReferralPage() {
 
 
 
-  // Agency combobox state
+  // Combobox state. One box searches BOTH people and agencies — Dawson
+  // usually remembers the caseworker's name, not which agency they sit in.
   const [agencyQuery, setAgencyQuery] = useState('')
   const [agencyDropdownOpen, setAgencyDropdownOpen] = useState(false)
   const agencyComboRef = useRef<HTMLDivElement>(null)
+
+
+
+  // Cross-agency staff search (debounced, server-side)
+  const [staffResults, setStaffResults] = useState<StaffSearchResult[]>([])
+  const [staffSearching, setStaffSearching] = useState(false)
+
+
+
+  // "Add staff member" modal, opened when a search comes up empty
+  const [showAddStaffModal, setShowAddStaffModal] = useState(false)
+
+
+
+  // Picking a staff result sets the agency AND the staff member in the
+  // same tick. The [selectedAgency] effect below would normally wipe the
+  // staff selection on any agency change, so this ref tells it to stand
+  // down for that one render.
+  const skipStaffResetRef = useRef(false)
 
 
 
@@ -196,13 +228,54 @@ export default function DawsonAddReferralPage() {
 
 
 
+  // Debounced cross-agency staff search.
+  //
+  // Runs off the same query box as the agency filter. Skipped once an
+  // agency is locked in — at that point the per-agency staff dropdown
+  // takes over and a global search would just be noise.
+  useEffect(() => {
+    const q = agencyQuery.trim()
+    if (q.length < 2 || selectedAgency || newAgencyMode) {
+      setStaffResults([])
+      setStaffSearching(false)
+      return
+    }
+
+    let cancelled = false
+    setStaffSearching(true)
+
+    const timer = setTimeout(() => {
+      fetch(`/api/dawson/staff/search?q=${encodeURIComponent(q)}`)
+        .then(r => (r.ok ? r.json() : []))
+        .then(data => {
+          if (cancelled) return
+          setStaffResults(Array.isArray(data) ? data : [])
+          setStaffSearching(false)
+        })
+        .catch(() => {
+          if (!cancelled) { setStaffResults([]); setStaffSearching(false) }
+        })
+    }, 250)
+
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [agencyQuery, selectedAgency, newAgencyMode])
+
+
+
   // Load staff when an existing agency is selected
   useEffect(() => {
     if (!selectedAgency) { setStaffMembers([]); setSelectedStaff(null); return }
+
+    // Honour a staff pick that arrived together with the agency.
+    const skipReset = skipStaffResetRef.current
+    skipStaffResetRef.current = false
+
     setStaffLoading(true)
-    setSelectedStaff(null)
-    setNewStaffMode(false)
-    setNewStaff({ firstName: '', lastName: '', email: '', phone: '' })
+    if (!skipReset) {
+      setSelectedStaff(null)
+      setNewStaffMode(false)
+      setNewStaff({ firstName: '', lastName: '', email: '', phone: '' })
+    }
     fetch(`/api/dawson/agencies/${selectedAgency.id}/staff`)
       .then(r => r.json())
       .then(data => { setStaffMembers(Array.isArray(data) ? data : []); setStaffLoading(false) })
@@ -279,14 +352,69 @@ useEffect(() => {
 
 
 
-  const startNewAgency = () => {
-    setSelectedAgency(null)
-    setStaffMembers([])
-    setSelectedStaff(null)
-    setNewStaffMode(false)
-    setNewAgencyMode(true)
-    setNewAgency({ name: agencyQuery.trim(), email: '' })
+  // Picking a person fills in the agency and the staff member together.
+  const pickStaffResult = (r: StaffSearchResult) => {
+    if (!r.agencyId) return
+
+    // Prefer the fully-loaded agency record; fall back to what the
+    // search returned if the agency is outside the loaded set (e.g. a
+    // status other than Approved/Unclaimed).
+    const agency: Agency =
+      agencies.find(a => a.id === r.agencyId) ?? {
+        id: r.agencyId,
+        name: r.agencyName,
+        email: null,
+        contactName: '',
+        status: r.agencyStatus,
+      }
+
+    skipStaffResetRef.current = true
+    setSelectedAgency(agency)
+    setSelectedStaff(r)
+    setAgencyQuery(agency.name)
     setAgencyDropdownOpen(false)
+    setNewAgencyMode(false)
+    setNewAgency({ name: '', email: '' })
+    setNewStaffMode(false)
+    setStaffResults([])
+  }
+
+
+
+  const openAddStaffModal = () => {
+    setAgencyDropdownOpen(false)
+    setShowAddStaffModal(true)
+  }
+
+
+
+  // The modal does not write to Airtable. It just puts the form into the
+  // right "new agency" / "new staff" mode with the fields prefilled, so
+  // the existing submit payload and the inline confirmation panels keep
+  // working untouched.
+  const handleAddStaffSave = (result: AddStaffResult) => {
+    if (result.mode === 'existingAgency') {
+      skipStaffResetRef.current = true
+      setSelectedAgency(result.agency)
+      setAgencyQuery(result.agency.name)
+      setNewAgencyMode(false)
+      setNewAgency({ name: '', email: '' })
+      setSelectedStaff(null)
+      setNewStaffMode(true)
+      setNewStaff(result.staff)
+    } else {
+      setSelectedAgency(null)
+      setStaffMembers([])
+      setSelectedStaff(null)
+      setNewStaffMode(false)
+      setNewAgencyMode(true)
+      setNewAgency(result.newAgency)
+      setNewStaff(result.staff)
+      setAgencyQuery(result.newAgency.name)
+    }
+    setStaffResults([])
+    setAgencyDropdownOpen(false)
+    setShowAddStaffModal(false)
   }
 
 
@@ -297,6 +425,7 @@ useEffect(() => {
     setNewAgencyMode(false)
     setNewStaffMode(false)
     setAgencyQuery('')
+    setStaffResults([])
     setNewAgency({ name: '', email: '' })
     setNewStaff({ firstName: '', lastName: '', email: '', phone: '' })
   }
@@ -521,7 +650,7 @@ useEffect(() => {
 
           {/* Agency combobox */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={LABEL}>Agency *</label>
+            <label style={LABEL}>Agency or Staff Member *</label>
             <div ref={agencyComboRef} style={{ position: 'relative' }}>
               <input
                 style={INPUT}
@@ -537,7 +666,7 @@ useEffect(() => {
                   }
                 }}
                 onFocus={() => setAgencyDropdownOpen(true)}
-                placeholder={agenciesLoading ? 'Loading agencies...' : 'Type to search or add new agency...'}
+                placeholder={agenciesLoading ? 'Loading agencies...' : 'Type a staff name, email, or agency...'}
                 disabled={agenciesLoading}
               />
               {(selectedAgency || newAgencyMode || agencyQuery) && (
@@ -549,6 +678,46 @@ useEffect(() => {
               )}
               {agencyDropdownOpen && !agenciesLoading && (
                 <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, background: 'white', border: '1px solid #EDE9E1', borderRadius: '7px', marginTop: '4px', maxHeight: '280px', overflowY: 'auto', zIndex: 100, boxShadow: '0 4px 12px rgba(27,43,75,0.08)' }}>
+                  {/* Staff matches first — this is the path Dawson uses most */}
+                  {staffSearching && staffResults.length === 0 && agencyQuery.trim().length >= 2 && (
+                    <div style={{ padding: '12px 14px', fontSize: '13px', color: '#7A8899' }}>
+                      Searching staff...
+                    </div>
+                  )}
+
+                  {staffResults.length > 0 && (
+                    <div style={{ padding: '7px 14px 5px', fontSize: '10px', fontWeight: 800, color: '#7A8899', textTransform: 'uppercase', letterSpacing: '0.08em', background: '#FCFBF9' }}>
+                      Staff Members
+                    </div>
+                  )}
+                  {staffResults.map(s => (
+                    <div
+                      key={s.id}
+                      onClick={() => pickStaffResult(s)}
+                      style={{ padding: '9px 14px', cursor: 'pointer', borderBottom: '1px solid #F7F5F1' }}
+                      onMouseEnter={e => (e.currentTarget.style.background = '#FAF8F4')}
+                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+                    >
+                      <div style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: 600 }}>
+                        {s.name || s.email}
+                        {s.status === 'Unclaimed' && (
+                          <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', background: 'rgba(122,136,153,0.15)', color: '#7A8899', letterSpacing: '0.04em' }}>
+                            UNCLAIMED
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: '11.5px', color: '#7A8899', marginTop: '2px' }}>
+                        {s.name && s.email ? `${s.email} · ` : ''}
+                        {s.agencyName || 'No agency on file'}
+                      </div>
+                    </div>
+                  ))}
+
+                  {filteredAgencies.length > 0 && staffResults.length > 0 && (
+                    <div style={{ padding: '7px 14px 5px', fontSize: '10px', fontWeight: 800, color: '#7A8899', textTransform: 'uppercase', letterSpacing: '0.08em', background: '#FCFBF9', borderTop: '1px solid #EDE9E1' }}>
+                      Agencies
+                    </div>
+                  )}
                   {filteredAgencies.length === 0 && !agencyQuery.trim() && (
                     <div style={{ padding: '12px 14px', fontSize: '13px', color: '#7A8899' }}>No agencies</div>
                   )}
@@ -568,12 +737,22 @@ useEffect(() => {
                       )}
                     </div>
                   ))}
+                  {/* Nothing matched at all */}
+                  {agencyQuery.trim().length >= 2 &&
+                    !staffSearching &&
+                    staffResults.length === 0 &&
+                    filteredAgencies.length === 0 && (
+                      <div style={{ padding: '12px 14px', fontSize: '13px', color: '#7A8899' }}>
+                        No staff or agency matches "{agencyQuery.trim()}"
+                      </div>
+                    )}
+
                   {agencyQuery.trim() && !exactMatch && (
                     <div
-                      onClick={startNewAgency}
-                      style={{ padding: '10px 14px', fontSize: '13px', color: '#2A7F6F', cursor: 'pointer', fontWeight: 600, background: '#EAF4F2', borderTop: filteredAgencies.length > 0 ? '1px solid #EDE9E1' : 'none' }}
+                      onClick={openAddStaffModal}
+                      style={{ padding: '10px 14px', fontSize: '13px', color: '#2A7F6F', cursor: 'pointer', fontWeight: 600, background: '#EAF4F2', borderTop: (filteredAgencies.length > 0 || staffResults.length > 0) ? '1px solid #EDE9E1' : 'none' }}
                     >
-                      + Add new agency: "{agencyQuery.trim()}"
+                      + Add new staff member or agency
                     </div>
                   )}
                 </div>
@@ -638,6 +817,11 @@ useEffect(() => {
                 disabled={staffLoading}
               >
                 <option value="">{staffLoading ? 'Loading...' : 'Select staff member...'}</option>
+                {/* Keep a picked-from-search person visible while the
+                    per-agency list is still loading in behind them. */}
+                {selectedStaff && !staffMembers.some(m => m.id === selectedStaff.id) && (
+                  <option value={selectedStaff.id}>{selectedStaff.displayName}</option>
+                )}
                 {staffMembers.map(s => (
   <option key={s.id} value={s.id}>{s.displayName}</option>
 ))}
@@ -939,6 +1123,18 @@ useEffect(() => {
 
         </div>
       </div>
+
+
+
+      {showAddStaffModal && (
+        <AddAgencyStaffModal
+          agencies={agencies}
+          initialQuery={agencyQuery}
+          initialAgency={selectedAgency}
+          onClose={() => setShowAddStaffModal(false)}
+          onSave={handleAddStaffSave}
+        />
+      )}
     </div>
   )
 }
