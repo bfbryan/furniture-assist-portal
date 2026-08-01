@@ -32,6 +32,8 @@
 // via the Primary Admin link. Every staff/agency-facing field on a
 // Client Referral comes through Agency Users via the Referring Staff Link.
 
+import { CATALOG } from '@/lib/items-disbursed' 
+
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
 const HEADERS = {
@@ -805,51 +807,15 @@ export async function getReferralById(referralId: string) {
   }
   const compact = <T,>(arr: (T | null)[]) => arr.filter((x): x is T => x !== null)
 
+    // Built from the shared catalog in lib/items-disbursed.ts so the read shape,
+  // the PATCH allowlist, and the edit UI can never drift apart. Adding an item
+  // to the pickup sheet is now a one-line change there.
   const itemsDisbursed = {
-    livingRoom: compact([
-      item('Bookcase / Storage',    'LR Bookcase/Storage'),
-      item('Chair',                  'LR Chair'),
-      item('Coffee Table',           'LR Coffee Table'),
-      item('Couch / Loveseat / Futon', 'LR Couch/Loveseat/Futon'),
-      item('End Table / TV Stand',   'LR End Table/TV Stand'),
-      item('Lamp',                   'LR Lamp'),
-      item('Picture / Decor',        'LR Picture/Other Decor'),
-      item('Rug',                    'LR Rug'),
-      item('Student Desk',           'LR Student Desk'),
-      item('TV / Electronics',       'LR TV/Electronics'),
-    ]),
-    bedroom: compact([
-      item('Bedframe',               'BR Bedframe'),
-      item('Dresser',                'BR Dresser'),
-      item('Mattress / Boxspring',   'BR Mattress/Boxspring'),
-      item('Nightstand',             'BR Nightstand'),
-    ]),
-    diningRoom: compact([
-      item('Dining Table',           'DR Dining Table'),
-      item('Chair',                  'DR Chair'),
-    ]),
-    kitchen: compact([
-      item('Dishes',                 'KH Dishes'),
-      item('Pots / Pans / Utensils', 'KH Pots/Pans/Utensils'),
-      item('Small Appliance',        'KH Small Appliance'),
-      item('Linen',                  'KH Linen'),
-      item('Bathroom',               'KH Bathroom'),
-      item('General Household',      'KH General Household'),
-      item('Home Office',            'KH Home Office'),
-      item('Cookbook',               'KH Cookbook'),
-    ]),
-    linens: compact([
-      item('Clothes',                'CL Clothes'),
-      item('Shoes',                  'CL Shoes'),
-    ]),
-    misc: compact([
-      item('Crib / Bassinet',        'BK Crib/Bassinet'),
-      item('Baby Clothes',           'BK Baby Clothes'),
-      item('General Baby',           'BK General Baby'),
-      item('Toys / Books / School',  'BK Toys/Books/School'),
-    ]),
+    ...Object.fromEntries(
+      CATALOG.map(g => [g.key, compact(g.items.map(i => item(i.label, i.field)))]),
+    ),
     volunteerInitials: (f['Volunteer Initials'] as string) ?? null,
-        checkInTime: (f['Check-in Time'] as string) ?? null,
+    checkInTime: (f['Check-in Time'] as string) ?? null,
     checkoutTime: (f['Check-out Time'] as string) ?? null,
     otherItems: (f['Other Items'] as string) ?? null,
     distributionNotes: (f['Distribution Notes'] as string) ?? null,

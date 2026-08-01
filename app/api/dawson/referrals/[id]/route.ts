@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getReferralById } from '@/lib/airtable'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
+import { QUANTITY_FIELDS, DISBURSED_TEXT_FIELDS, type DisbursedTextKey } from '@/lib/items-disbursed'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -24,6 +25,7 @@ export async function GET(
 //     that we split for you)
 //   • # in HH
 //   • # Children
+//   • Items Disbursed quantities + the four free-text companions
 //
 // Client identity fields (name / DOB / address / etc.) live on the Clients
 // table and are lookups here, so those edits go through /api/dawson/clients/[id].
@@ -84,6 +86,46 @@ export async function PATCH(
     if (v !== undefined) fields['# Children'] = v
   }
 
+  // ---------------------------------------------------------------------
+  // Items Disbursed
+  //
+  // Payload shape:
+  //   itemsDisbursed: {
+  //     quantities: { 'LR Lamp': 2, 'BR Dresser': 0, ... },
+  //     checkInTime?: string, checkoutTime?: string,
+  //     otherItems?: string, distributionNotes?: string,
+  //   }
+  //
+  // Only the 30 field names in QUANTITY_FIELDS are accepted. Anything else
+  // is dropped silently rather than forwarded — an unknown key would 422 the
+  // entire PATCH and take the valid edits down with it.
+  //
+  // A quantity of 0 is written as null, not 0. getReferralById() already
+  // treats 0 and null identically (both mean "not given"), and null keeps the
+  // Airtable grid readable — a wall of zeros is unusable for the volunteers
+  // who still work in the base directly.
+  // ---------------------------------------------------------------------
+  if (body.itemsDisbursed && typeof body.itemsDisbursed === 'object') {
+    const d = body.itemsDisbursed as Record<string, unknown>
+
+    const quantities = d.quantities
+    if (quantities && typeof quantities === 'object') {
+      for (const [fieldName, raw] of Object.entries(quantities as Record<string, unknown>)) {
+        if (!QUANTITY_FIELDS.has(fieldName)) continue
+        const n = coerceCount(raw)
+        if (n === undefined) continue
+        fields[fieldName] = n === null || n <= 0 ? null : n
+      }
+    }
+
+    for (const key of Object.keys(DISBURSED_TEXT_FIELDS) as DisbursedTextKey[]) {
+      if (!(key in d)) continue
+      const raw = d[key]
+      const value = typeof raw === 'string' ? raw.trim() : ''
+      fields[DISBURSED_TEXT_FIELDS[key]] = value === '' ? null : value
+    }
+  }
+
   if (Object.keys(fields).length === 0) {
     return NextResponse.json(
       { error: 'No editable fields in payload' },
@@ -108,23 +150,29 @@ export async function PATCH(
 
   // Fallback: if AT rejects the numeric HH/Children values with
   // INVALID_VALUE_FOR_COLUMN, the field is almost certainly configured
-  // as a Single Line Text (or similar) on this base. Retry once with
-  // string values so the edit still lands.
+  // as text (rating/count widget on a text field) rather than a true
+  // Number column. Retry once with string values so Ben's edits still
+  // land while the schema question is resolved.
   if (!res.ok) {
-    const errText = await res.clone().text()
+    const errText = await res.text()
     const isHhOrChildrenType =
       errText.includes('INVALID_VALUE_FOR_COLUMN') &&
       (errText.includes('# in HH') || errText.includes('# Children'))
     if (isHhOrChildrenType) {
-      const retry: Record<string, unknown> = { ...fields }
+      const retry = { ...fields }
       if (typeof retry['# in HH'] === 'number')
         retry['# in HH'] = String(retry['# in HH'])
       if (typeof retry['# Children'] === 'number')
         retry['# Children'] = String(retry['# Children'])
       res = await doPatch(retry)
-    }
-    if (!res.ok) {
-      return NextResponse.json({ error: await res.text() }, { status: 500 })
+      if (!res.ok) {
+        return NextResponse.json(
+          { error: await res.text() },
+          { status: 500 },
+        )
+      }
+    } else {
+      return NextResponse.json({ error: errText }, { status: 500 })
     }
   }
 
