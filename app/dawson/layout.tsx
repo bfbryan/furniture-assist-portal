@@ -1,20 +1,23 @@
-import { auth } from '@clerk/nextjs/server'
+import { auth, currentUser } from '@clerk/nextjs/server'
+import { SignOutButton } from '@clerk/nextjs'
 import { redirect } from 'next/navigation'
-
-const ALLOWED_USER_IDS = [
-  'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', //Ben
-  'user_3BodwTW4I7Vamt4t7wD3qeA7boM', //Ray
-  'user_3BtKn01OMXSmi7eSsWvzvnEroCg',  //Dawson
-  'user_3DE1gUnIeNmWZpQyd7LjdZb9vnN', //Chase
-]
+import { isDawsonPortalUser } from '@/lib/auth/dawson-access'
 
 export default async function DawsonLayout({
   children,
 }: {
   children: React.ReactNode
 }) {
-  const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) redirect('/sign-in')
+    const { userId } = await auth()
+  if (!isDawsonPortalUser(userId)) redirect('/sign-in')
+
+  const user = await currentUser()
+  const email = user?.emailAddresses?.[0]?.emailAddress ?? ''
+  const fullName =
+    [user?.firstName, user?.lastName].filter(Boolean).join(' ') || email || 'User'
+  const initials =
+    ((user?.firstName?.[0] ?? '') + (user?.lastName?.[0] ?? '')).toUpperCase() ||
+    (email[0] ?? 'U').toUpperCase()
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
@@ -122,17 +125,44 @@ export default async function DawsonLayout({
 
         </nav>
 
-        {/* Footer */}
-        <div style={{ padding: '16px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px' }}>
-            <div style={{ width: '32px', height: '32px', background: '#2A7F6F', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '12px', color: 'white', flexShrink: 0 }}>
-              DY
-            </div>
-            <div>
-              <div style={{ fontSize: '13px', fontWeight: 600, color: 'white' }}>Dawson Yeomans</div>
-              <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)' }}>Administrator</div>
-            </div>
-          </div>
+                        {/* Footer — signed-in user; the whole row is the sign-out control */}
+        <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
+          <SignOutButton redirectUrl="/sign-in">
+            <button
+              title="Sign out"
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                padding: '8px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'rgba(255,255,255,0.06)',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <div style={{ width: '32px', height: '32px', background: '#2A7F6F', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '12px', color: 'white', flexShrink: 0 }}>
+                {initials}
+              </div>
+
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontSize: '13px', fontWeight: 600, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {fullName}
+                </div>
+                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {email}
+                </div>
+              </div>
+
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+            </button>
+          </SignOutButton>
         </div>
 
       </aside>

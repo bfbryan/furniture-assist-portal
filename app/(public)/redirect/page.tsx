@@ -3,19 +3,14 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, updateAgencyUserStatus } from '@/lib/airtable'
-
-const DAWSON_USER_IDS = [
-  'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben
-  'user_3BodwTW4I7Vamt4t7wD3qeA7boM',  // Ray
-  'user_3BtKn01OMXSmi7eSsWvzvnEroCg',  // Dawson
-]
+import { isDawsonPortalUser } from '@/lib/auth/dawson-access'
 
 export default async function RedirectPage() {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
   // Dawson users go straight to /dawson
-  if (DAWSON_USER_IDS.includes(userId)) {
+   if (isDawsonPortalUser(userId)) {
     redirect('/dawson')
   }
 

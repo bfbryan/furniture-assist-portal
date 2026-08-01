@@ -1,4 +1,4 @@
-import { UserButton } from '@clerk/nextjs'
+
 import { currentUser } from '@clerk/nextjs/server'
 
 // PHASED ROLLOUT (2026-07-06): Simplified dashboard for Dawson's day-1 view.
@@ -39,7 +39,7 @@ export default async function DawsonDashboard() {
     },
     {
       label: 'Saturday Schedule',
-      description: 'Manage pickups & print sheets',
+      description: 'Appointments by time slot, print pickup sheets',
       href: '/dawson/schedule',
       color: '#5B8DB8',
       bg: 'rgba(91,141,184,0.12)',
@@ -97,7 +97,7 @@ export default async function DawsonDashboard() {
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
           <span style={{ fontSize: '12px', color: '#7A8899' }}>{dateStr}</span>
-          <UserButton />
+          
         </div>
       </header>
 
