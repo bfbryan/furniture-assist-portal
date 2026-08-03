@@ -50,28 +50,30 @@ function inMonth(dateStr: string, year: number, month: number) {
   return d.getFullYear() === year && d.getMonth() === month
 }
 
-function SlotBar({ filled, max, label }: { filled: number; max: number; label: string }) {
-  const pct = Math.min(filled / max, 1)
-  const color = pct >= 1 ? '#C0392B' : pct >= 0.8 ? '#C9A84C' : '#2A7F6F'
-  return (
-    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-      <div style={{ width: '32px', fontSize: '11px', fontWeight: 700, color: '#7A8899', textAlign: 'right', flexShrink: 0 }}>
-        {label}
-      </div>
-      <div style={{ flex: 1, height: '8px', background: '#EDE9E1', borderRadius: '4px', overflow: 'hidden' }}>
-        <div style={{ width: `${pct * 100}%`, height: '100%', background: color, borderRadius: '4px' }} />
-      </div>
-      <div style={{ width: '40px', fontSize: '11px', color: '#7A8899', flexShrink: 0 }}>
-        {filled}/{max}
-      </div>
-    </div>
-  )
-}
-
 const STATUS_STYLE: Record<string, { bg: string; color: string }> = {
   Open:     { bg: 'rgba(42,127,111,0.12)',  color: '#2A7F6F' },
   Full:     { bg: 'rgba(192,57,43,0.1)',    color: '#C0392B' },
   Blackout: { bg: '#F0F0F0',                color: '#7A8899' },
+}
+
+// Shared style for the two per-row print links. `primary` is the full sheet
+// packet (the everyday action); the roster is the lighter secondary option.
+// Text labels rather than an icon — the 28px icon-only control was not
+// discoverable for the primary user of this page.
+function printBtn(primary: boolean): React.CSSProperties {
+  return {
+    padding: '6px 12px',
+    borderRadius: '6px',
+    border: primary ? 'none' : '1px solid #EDE9E1',
+    background: primary ? '#2A7F6F' : 'white',
+    color: primary ? 'white' : '#2A7F6F',
+    fontFamily: 'var(--font-montserrat)',
+    fontWeight: 700,
+    fontSize: '12px',
+    textDecoration: 'none',
+    whiteSpace: 'nowrap',
+    lineHeight: 1.4,
+  }
 }
 
 function SaturdayCard({ sat }: { sat: Saturday }) {
@@ -100,8 +102,25 @@ function SaturdayCard({ sat }: { sat: Saturday }) {
       <div style={{ padding: '14px 20px' }}>
         <div style={{
           display: 'grid',
-          gridTemplateColumns: '100px 90px 1fr 60px 60px 60px 40px',
-          alignItems: 'center', gap: '16px',
+          // Stats tightened 60px -> 52px and the row gap 16px -> 12px to fund a
+          // 236px action column for two text buttons. Ten columns for the ten
+          // children below:
+          //   Date, Status, [gap A], Slots, [gap B], Total, Open, Cap, [gap C], Print
+          //
+          // Positioning is done with the three flexible gaps rather than by
+          // centering inside a wide column, because centering couples the slot
+          // strip's position to space taken elsewhere in the row -- shrinking
+          // the column to make room for the stats also dragged the slots left.
+          // With the strip content-sized ('auto') the gaps place each group
+          // independently:
+          //   A = 2fr  keeps the slots where they sat originally (they had half
+          //            the row's slack to their left back when nothing followed
+          //            the stats)
+          //   B = C = 1fr  equal space either side of the stat trio, so it sits
+          //            centered between the slots and the buttons
+          // The ratio holds at any window width.
+          gridTemplateColumns: '96px 84px 2fr auto 1fr 52px 52px 52px 1fr 236px',
+          alignItems: 'center', gap: '12px',
         }}>
 
           {/* Date */}
@@ -123,9 +142,12 @@ function SaturdayCard({ sat }: { sat: Saturday }) {
             </span>
           </div>
 
-          {/* Time slots */}
+          {/* Gap A — see the grid comment above. */}
+          <div />
+
+          {/* Time slots — content-sized; the surrounding gaps do the placing. */}
           {!isBlackout ? (
-            <div style={{ display: 'flex', gap: '24px', justifyContent: 'center', padding: '0 20px' }}>
+            <div style={{ display: 'flex', gap: '18px' }}>
               {slots.map(s => {
                 const pct = s.max > 0 ? s.filled / s.max : 0
                 const color = pct >= 1 ? '#C0392B' : pct >= 0.8 ? '#C9A84C' : '#2A7F6F'
@@ -140,6 +162,9 @@ function SaturdayCard({ sat }: { sat: Saturday }) {
           ) : (
             <div style={{ fontSize: '13px', color: '#7A8899' }}>Blackout — no appointments</div>
           )}
+
+          {/* Gap B */}
+          <div />
 
           {/* Scheduled */}
           <div style={{ textAlign: 'center' }}>
@@ -159,17 +184,20 @@ function SaturdayCard({ sat }: { sat: Saturday }) {
             <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B' }}>{sat.totalCapacity}</div>
           </div>
 
+          {/* Gap C */}
+          <div />
+
           {/* Print */}
-          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '6px' }}>
             {!past && !isBlackout && (
-              <a href={`/print/schedule/${sat.date}`} title="Print Forms"
-                style={{ width: '28px', height: '28px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2A7F6F', textDecoration: 'none' }}>
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="6 9 6 2 18 2 18 9"/>
-                  <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/>
-                  <rect x="6" y="14" width="12" height="8"/>
-                </svg>
-              </a>
+              <>
+                <a href={`/print/roster/${sat.date}`} style={printBtn(false)}>
+                  Print Roster
+                </a>
+                <a href={`/print/schedule/${sat.date}`} style={printBtn(true)}>
+                  Print Sat Sheets
+                </a>
+              </>
             )}
           </div>
 
