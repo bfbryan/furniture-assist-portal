@@ -27,6 +27,15 @@ const AUTOMATION_NAME = "Reschedule Notice"; // must match the row's primary fie
 const FROM_ADDRESS =
   process.env.REMINDER_FROM_ADDRESS || "onboarding@resend.dev";
 
+// Aug 2026: replies from agencies should land in the real shared mailbox,
+// not the mail.furnitureassist.com sending address (not a monitored inbox).
+// Same "env var with a sane fallback" pattern as FROM_ADDRESS above — this
+// one and its four siblings (appointment-slip-notice, client-receipt,
+// appointment-reminders crons + cancellation-notice) all need the identical
+// addition since none of them set Reply-To today.
+const REPLY_TO_ADDRESS =
+  process.env.REMINDER_REPLY_TO_ADDRESS || "agencies@furnitureassist.com";
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!;
@@ -108,8 +117,9 @@ export async function sendRescheduleNotice(
     }
 
     // Regenerate the slip for the new date/time; overwrites the same Blob
-    // path and the same Airtable attachment (allowOverwrite: true).
-    const { buffer } = await generateAndStoreSlip(recordId, f);
+    // path and the same Airtable attachment (allowOverwrite: true). filename
+    // is the shared builder's output, same name as the Airtable attachment.
+    const { buffer, filename } = await generateAndStoreSlip(recordId, f);
 
     const rawNewApptDate = f["Appointment Date"];
     const newApptDateStr = Array.isArray(rawNewApptDate) ? rawNewApptDate[0] : rawNewApptDate;
@@ -130,17 +140,17 @@ export async function sendRescheduleNotice(
       ItemsRequested: toTokenValue(f["Items Requested"]),
     });
 
-    const clientLastName = toTokenValue(f["Last Name"]) || recordId;
     const to = toList.join(", ");
 
     const { data, error } = await resend.emails.send({
       from: FROM_ADDRESS,
       to: toList,
+      replyTo: REPLY_TO_ADDRESS,
       subject,
       html,
       attachments: [
         {
-          filename: `appointment-slip-${clientLastName}.pdf`,
+          filename,
           content: buffer,
         },
       ],

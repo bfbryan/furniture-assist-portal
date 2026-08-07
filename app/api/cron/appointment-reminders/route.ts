@@ -21,7 +21,13 @@ import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/reminder-templ
 const AUTOMATION_NAME = "Appointment Reminder"; // must match the row's primary field value
 const TIMEZONE = process.env.REMINDER_TIMEZONE || "America/New_York";
 const FROM_ADDRESS =
-  process.env.REMINDER_FROM_ADDRESS || "onboarding@resend.dev"; // swap once mail.furnitureassist.com is verified
+  process.env.REMINDER_FROM_ADDRESS || "onboarding@resend.dev"; // set in Vercel now that mail.furnitureassist.com is verified
+
+// Aug 2026: same Reply-To addition as reschedule-notice.ts / cancellation-notice.ts
+// — replies from agencies should land in the real shared mailbox, not the
+// sending domain (mail.furnitureassist.com isn't a monitored inbox).
+const REPLY_TO_ADDRESS =
+  process.env.REMINDER_REPLY_TO_ADDRESS || "agencies@furnitureassist.com";
 
 const resend = new Resend(process.env.RESEND_API_KEY);
 
@@ -138,6 +144,7 @@ export async function GET(req: NextRequest) {
       const { data, error } = await resend.emails.send({
         from: FROM_ADDRESS,
         to: toList,
+        replyTo: REPLY_TO_ADDRESS,
         subject,
         html,
       });

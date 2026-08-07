@@ -29,6 +29,11 @@ const AUTOMATION_NAME = "Cancellation Notice"; // must match the row's primary f
 const FROM_ADDRESS =
   process.env.REMINDER_FROM_ADDRESS || "onboarding@resend.dev";
 
+// Aug 2026: same Reply-To addition as reschedule-notice.ts — replies from
+// agencies should land in the real shared mailbox, not the sending domain.
+const REPLY_TO_ADDRESS =
+  process.env.REMINDER_REPLY_TO_ADDRESS || "agencies@furnitureassist.com";
+
 const resend = new Resend(process.env.RESEND_API_KEY);
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!;
@@ -131,6 +136,7 @@ export async function sendCancellationNotice(
     const { data, error } = await resend.emails.send({
       from: FROM_ADDRESS,
       to: toList,
+      replyTo: REPLY_TO_ADDRESS,
       subject,
       html,
     });
