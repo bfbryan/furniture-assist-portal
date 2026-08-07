@@ -13,6 +13,13 @@
 //        - Original Appointment Time = previous Appointment Time (if scheduled)
 //        - Saturday Schedule = [] (clear link)
 //        - Appointment Time  = null (clear time)
+//   4. If the referral was actually Scheduled (not just Unscheduled being
+//      cancelled outright), fire the Cancellation Notice — emails the
+//      referring agency confirming the cancellation with the original
+//      appointment details. Email-only, no PDF work (see
+//      lib/cancellation-notice.ts). A failure here doesn't fail this
+//      request — the Airtable write above already committed and is the
+//      part that matters operationally.
 //
 // The AT "Cancellation" automation is now redundant for Dawson's flow.
 // Leave it on as a safety net for agency-portal cancellations until we
@@ -22,6 +29,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
+import { sendCancellationNotice } from '@/lib/cancellation-notice'
 
 
 
@@ -104,8 +112,20 @@ export async function POST(
 
 
 
+  // ---- Fire the Cancellation Notice.
+  //   Only when this referral was actually Scheduled -- an Unscheduled
+  //   referral being cancelled never had a confirmed appointment to notify
+  //   anyone about.
+  let cancellationNotice: Awaited<ReturnType<typeof sendCancellationNotice>> | null = null
+  if (wasScheduled) {
+    cancellationNotice = await sendCancellationNotice(id, currentApptDate, currentTime ?? null)
+  }
+
+
+
   return NextResponse.json({
     success: true,
     snapshottedOriginal: wasScheduled,
+    cancellationNotice,
   })
 }

@@ -16,6 +16,7 @@ const isPublicRoute = createRouteMatcher([
   '/inactive(.*)',
   '/agency/claim(.*)',
   '/api/agency/claim(.*)',
+  '/api/cron(.*)',
 ])
 
 

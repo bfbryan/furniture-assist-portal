@@ -22,11 +22,20 @@
 // Whenever the referral currently has a Saturday Schedule + Appointment
 // Time set, the pre-reschedule values are copied into 'Original Appointment
 // Date' / 'Original Appointment Time' (overwrite-every-time policy).
+//
+// Whenever that snapshot happens (i.e. this referral was already
+// Scheduled and is genuinely being moved, not scheduled for the first
+// time), we also fire the Reschedule Notice: regenerates the slip PDF for
+// the new date, overwrites it in Blob + Airtable, and emails the
+// referring agency with the new + previous appointment details. That
+// email failing does NOT fail this request — the Airtable write is what
+// matters operationally, and the notice runs after it's already committed.
 
 
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
+import { sendRescheduleNotice } from '@/lib/reschedule-notice'
 
 
 
@@ -269,5 +278,25 @@ export async function POST(
 
 
 
-  return NextResponse.json({ success: true, appointmentTime: resolvedTime })
+  // ---- Fire the Reschedule Notice.
+  //   Only when this referral was already Scheduled (shouldSnapshot true) --
+  //   i.e. there's a genuine previous appointment to report. A first-time
+  //   Unscheduled -> Scheduled transition is handled by the Wednesday
+  //   Appointment Confirmation cron instead, not here.
+  let rescheduleNotice: Awaited<ReturnType<typeof sendRescheduleNotice>> | null = null
+  if (shouldSnapshot) {
+    rescheduleNotice = await sendRescheduleNotice(
+      id,
+      currentApptDate,
+      currentApptTime ?? null
+    )
+  }
+
+
+
+  return NextResponse.json({
+    success: true,
+    appointmentTime: resolvedTime,
+    rescheduleNotice,
+  })
 }
