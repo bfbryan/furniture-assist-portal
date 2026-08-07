@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import AddAgencyStaffModal, { type AddStaffResult } from '@/components/dawson/modals/AddAgencyStaffModal'
+import DuplicateClientBanner, { type ClientMatch } from '@/components/dawson/modals/DuplicateClientModal'
 
 
 
@@ -148,6 +149,36 @@ export default function DawsonAddReferralPage() {
   const [isDuplicate, setIsDuplicate] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
+  // Duplicate-check step (app/api/dawson/referrals/check-duplicate) and the
+  // inline banner it can surface (DuplicateClientBanner -- not a popup,
+  // rendered directly in the page flow). See lib/client-match.ts for the
+  // matching logic and the confirmed lookback windows (Completed 12mo,
+  // Cancelled 12mo, No Show 25 days). This fires EARLY -- as soon as
+  // First/Last/DOB are filled in, well before Submit -- specifically so
+  // that a "book new appointment" prefill actually saves Dawson from
+  // retyping identifying info, and so the banner is already in view by
+  // the time he reaches Address to compare against.
+  const [checkingDuplicate, setCheckingDuplicate] = useState(false)
+  const [duplicateMatches, setDuplicateMatches] = useState<ClientMatch[]>([])
+  // "Same person, do not book" or "none of these" -- hides the banner
+  // without a resolution. Reset the moment identity fields change again.
+  const [bannerDismissed, setBannerDismissed] = useState(false)
+  // The exact firstName|lastName|dob|phone combo the check has already run
+  // for, so the debounced effect below doesn't re-fire on every unrelated
+  // re-render, and so we know whether it's safe to tell the API route to
+  // skip its own fallback check at Submit time.
+  const [checkedKey, setCheckedKey] = useState<string | null>(null)
+  // What the banner resolved to, if anything: clientId links a new
+  // referral to an existing Client (clientName is just for the collapsed
+  // confirmation strip's copy). Cleared automatically the moment the
+  // identity fields change again, since a stale resolution shouldn't carry
+  // over to a now-different person.
+  const [matchResolution, setMatchResolution] = useState<{ clientId: string; clientName: string } | null>(null)
+  // Set when staff choose "reschedule their no-show" -- switches the page
+  // into a stripped-down reschedule-only view (just pick a new date/time)
+  // since nothing else about the record needs to change.
+  const [rescheduleMode, setRescheduleMode] = useState<{ referralId: string; clientName: string } | null>(null)
+
 
 
   const [agencies, setAgencies] = useState<Agency[]>([])
@@ -200,6 +231,11 @@ export default function DawsonAddReferralPage() {
 
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
+
+  // City autocomplete -- most-common values already on file, fetched once
+  // and offered via a native <datalist> on the City field. No per-keystroke
+  // querying; the browser handles prefix-filtering itself.
+  const [commonCities, setCommonCities] = useState<string[]>([])
 
 
 
@@ -301,6 +337,61 @@ const loadAvailability = () => {
 useEffect(() => {
   loadAvailability()
 }, [])
+
+
+
+  // Load the most-common City values once, for the datalist autocomplete.
+  useEffect(() => {
+    fetch('/api/dawson/clients/cities')
+      .then(r => r.json())
+      .then(data => setCommonCities(Array.isArray(data.cities) ? data.cities : []))
+      .catch(() => setCommonCities([]))
+  }, [])
+
+
+
+  // Fires the duplicate check as soon as First/Last/DOB are filled in --
+  // Agency & Staff is the first section on the form, so by the time
+  // someone reaches Client Information the current agency is already
+  // known (needed for the no-show "reschedule" same-agency gate).
+  // Debounced so it doesn't fire on every keystroke.
+  useEffect(() => {
+    const first = form.firstName.trim()
+    const last = form.lastName.trim()
+    if (!first || !last || !form.dob) return
+
+    const key = `${first.toLowerCase()}|${last.toLowerCase()}|${form.dob}|${form.phone.replace(/\D/g, '')}`
+    if (key === checkedKey) return
+
+    // Identity changed since whatever was last checked/resolved -- any
+    // earlier resolution no longer applies to whoever is typed in now.
+    setMatchResolution(null)
+    setRescheduleMode(null)
+    setBannerDismissed(false)
+
+    let cancelled = false
+    const timer = setTimeout(() => {
+      setCheckingDuplicate(true)
+      fetch('/api/dawson/referrals/check-duplicate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ firstName: first, lastName: last, dob: form.dob, phone: form.phone }),
+      })
+        .then(r => r.json())
+        .then(data => {
+          if (cancelled) return
+          const matches: ClientMatch[] = Array.isArray(data.matches) ? data.matches : []
+          setCheckedKey(key)
+          setCheckingDuplicate(false)
+          setDuplicateMatches(matches)
+        })
+        .catch(() => {
+          if (!cancelled) { setCheckedKey(key); setCheckingDuplicate(false); setDuplicateMatches([]) }
+        })
+    }, 600)
+
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [form.firstName, form.lastName, form.dob, form.phone, checkedKey])
 
 
 
@@ -453,6 +544,176 @@ useEffect(() => {
 
 
 
+  // Actually posts the referral. Called either directly (no duplicate
+  // concerns) or after the duplicate-check modal has been resolved one
+  // way or another. `extra` carries whatever the modal step decided:
+  // clientId (link to an existing Client), rescheduleReferralId (reopen an
+  // existing no-show instead of creating anything new), and
+  // skipDuplicateCheck (tells the API route this has already been
+  // resolved client-side, so it shouldn't re-run its own check).
+  const submitReferral = async (extra: {
+    clientId?: string
+    rescheduleReferralId?: string
+    skipDuplicateCheck?: boolean
+  }) => {
+    // Build payload — three agency/staff cases.
+    //
+    // Post-migration (June 2026): the API route must NOT write to
+    //   Referring Agency / Referring Staff / Agency Email / Staff Phone
+    // on the Client Referrals record (those are Lookups via Referring
+    // Staff Link). Instead it writes Referring Staff Link = [userId].
+    //
+    // We only send the IDs and (for new-staff cases) the data needed to
+    // create the Agency User. The API route is responsible for the
+    // find-or-create logic and for setting Referring Staff Link.
+    const payload: any = {
+      ...form,
+      preferredDate: form.preferredDate,
+      appointmentTime: form.appointmentTime,
+      ...extra,
+    }
+
+
+
+    // Rescheduling an existing no-show record touches nothing about
+    // agency/staff -- the submit route short-circuits before it would
+    // even look at these fields -- so skip resolving them entirely rather
+    // than risk a null-selectedAgency crash on a path that doesn't need it.
+    if (!extra.rescheduleReferralId) {
+      if (newAgencyMode) {
+        // Case 3: brand new agency + new staff
+        payload.newAgency = {
+          name: newAgency.name.trim(),
+          email: newAgency.email.trim(),
+        }
+        payload.newStaff = {
+          firstName: newStaff.firstName.trim(),
+          lastName: newStaff.lastName.trim(),
+          email: newStaff.email.trim(),
+          phone: newStaff.phone.trim(),
+        }
+      } else if (newStaffMode) {
+        // Case 2: existing agency + new staff
+        if (!selectedAgency) { setError('Please select an agency.'); return }
+        payload.agencyId = selectedAgency.id
+        payload.newStaff = {
+          firstName: newStaff.firstName.trim(),
+          lastName: newStaff.lastName.trim(),
+          email: newStaff.email.trim(),
+          phone: newStaff.phone.trim(),
+        }
+      } else {
+        // Case 1: both exist — just send the IDs; the API route resolves
+        // everything else from Airtable via the Referring Staff Link lookup.
+        if (!selectedAgency || !selectedStaff) {
+          setError('Please select an agency and staff member.')
+          return
+        }
+        payload.agencyId = selectedAgency.id
+        payload.staffId = selectedStaff.id
+      }
+    }
+
+
+
+    setLoading(true)
+    try {
+      const res = await fetch('/api/dawson/referrals/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+            const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Submission failed')
+      setIsDuplicate(!!data.duplicate)
+      setSubmitted(true)
+      loadAvailability()  // refresh slot counts for next referral
+    } catch (e: any) {
+      setError(e.message)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+
+
+  // Resolution handlers for DuplicateClientBanner (inline, not a popup --
+  // see that file). Nothing has been written to Airtable up to this point
+  // — check-duplicate is read-only — so every path here is safe to walk
+  // away from with no cleanup needed. This no longer submits anything
+  // directly -- it fires early, well before the rest of the form is
+  // filled in, so it just records the resolution (or switches into
+  // reschedule-only mode) and lets Dawson keep going.
+  const handleDuplicateResolve = (action: 'reschedule' | 'book-new', match: ClientMatch) => {
+    if (action === 'reschedule') {
+      const noShow = match.scenarios.find(s => s.type === 'no-show')
+      if (!noShow) return // button is only ever shown when this exists
+      setRescheduleMode({
+        referralId: noShow.referral.id,
+        clientName: `${match.client.firstName} ${match.client.lastName}`.trim(),
+      })
+      return
+    }
+
+    // book-new: link the eventual new referral to this existing Client.
+    // Prefill DOB/phone/address/city/state/zip/language from the matched
+    // Client record so Dawson isn't retyping who they already are -- but
+    // leave every field editable, and leave Items Requested, Household
+    // size, Children, and Internal Notes blank. This is a new
+    // appointment, not a copy of an old one -- those details get filled
+    // in fresh. (If Dawson edits DOB/phone/address enough that it no
+    // longer matches this Client's record on file, the submit route
+    // detects that and creates a new Client instead of linking to this
+    // one -- see clientDataDiverges in lib/client-match.ts.) The banner
+    // collapses to a one-line confirmation strip once this resolves.
+    setMatchResolution({
+      clientId: match.client.id,
+      clientName: `${match.client.firstName} ${match.client.lastName}`.trim(),
+    })
+    setForm(prev => ({
+      ...prev,
+      address: match.client.address || prev.address,
+      address2: match.client.address2 || prev.address2,
+      city: match.client.city || prev.city,
+      state: match.client.state || prev.state,
+      zip: match.client.zip || prev.zip,
+      language: match.client.language || prev.language,
+    }))
+  }
+
+  const handleDuplicateDecline = () => {
+    // "Same person — do not book." No-op today: just hides the banner and
+    // leaves the form as Dawson left it. Kept as its own handler (distinct
+    // from onDismiss) in case a backend hook gets added here later.
+    setBannerDismissed(true)
+  }
+
+  const handleDuplicateDismiss = () => {
+    // "None of these are the same person" -- proceed as a genuinely new client.
+    setBannerDismissed(true)
+    setMatchResolution(null)
+  }
+
+  // "Change" on the collapsed confirmation strip -- reopens the full
+  // match list so Dawson can pick a different match, reschedule instead,
+  // or back out entirely. Doesn't touch whatever got prefilled; he can
+  // just edit those fields directly if he picks someone else.
+  const handleReopenBanner = () => {
+    setMatchResolution(null)
+  }
+
+  const handleRescheduleConfirm = async () => {
+    setError(null)
+    if (!form.preferredDate) {
+      setError('Please select a preferred Saturday.')
+      return
+    }
+    if (!rescheduleMode) return
+    await submitReferral({ rescheduleReferralId: rescheduleMode.referralId, skipDuplicateCheck: true })
+  }
+
+
+
   const handleSubmit = async () => {
     setError(null)
 
@@ -517,71 +778,16 @@ useEffect(() => {
 
 
 
-    // Build payload — three cases.
-    //
-    // Post-migration (June 2026): the API route must NOT write to
-    //   Referring Agency / Referring Staff / Agency Email / Staff Phone
-    // on the Client Referrals record (those are Lookups via Referring
-    // Staff Link). Instead it writes Referring Staff Link = [userId].
-    //
-    // We only send the IDs and (for new-staff cases) the data needed to
-    // create the Agency User. The API route is responsible for the
-    // find-or-create logic and for setting Referring Staff Link.
-    const payload: any = {
-      ...form,
-      preferredDate: form.preferredDate,
-      appointmentTime: form.appointmentTime,
-    }
-
-
-
-    if (newAgencyMode) {
-      // Case 3: brand new agency + new staff
-      payload.newAgency = {
-        name: newAgency.name.trim(),
-        email: newAgency.email.trim(),
-      }
-      payload.newStaff = {
-        firstName: newStaff.firstName.trim(),
-        lastName: newStaff.lastName.trim(),
-        email: newStaff.email.trim(),
-        phone: newStaff.phone.trim(),
-      }
-    } else if (newStaffMode) {
-      // Case 2: existing agency + new staff
-      payload.agencyId = selectedAgency!.id
-      payload.newStaff = {
-        firstName: newStaff.firstName.trim(),
-        lastName: newStaff.lastName.trim(),
-        email: newStaff.email.trim(),
-        phone: newStaff.phone.trim(),
-      }
-    } else {
-      // Case 1: both exist — just send the IDs; the API route resolves
-      // everything else from Airtable via the Referring Staff Link lookup.
-      payload.agencyId = selectedAgency!.id
-      payload.staffId = selectedStaff!.id
-    }
-
-
-
-    setLoading(true)
-    try {
-      const res = await fetch('/api/dawson/referrals/submit', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-            const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Submission failed')
-      setIsDuplicate(data.duplicate)
-      setSubmitted(true)
-      loadAvailability()  // refresh slot counts for next referral
-    } catch (e: any) {
-      setError(e.message)
-    } finally {
-      setLoading(false)
-    }
+    // The duplicate check already ran earlier (right after First/Last/DOB
+    // were filled in) via the debounced effect above -- this just uses
+    // whatever it resolved to. `checkedKey` matching the current identity
+    // fields means it's safe to tell the API route to trust that rather
+    // than re-run its own fallback check.
+    const currentKey = `${form.firstName.trim().toLowerCase()}|${form.lastName.trim().toLowerCase()}|${form.dob}|${form.phone.replace(/\D/g, '')}`
+    await submitReferral({
+      clientId: matchResolution?.clientId,
+      skipDuplicateCheck: checkedKey === currentKey,
+    })
   }
 
 
@@ -596,21 +802,28 @@ useEffect(() => {
             </svg>
           </div>
           <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '20px', color: '#1B2B4B', marginBottom: '10px' }}>
-            Referral Submitted
+            {rescheduleMode ? 'Appointment Rescheduled' : 'Referral Submitted'}
           </h2>
-          {isDuplicate && (
+          {isDuplicate && !rescheduleMode && (
             <div style={{ background: '#FEF9EC', border: '1px solid #C9A84C', borderRadius: '8px', padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#2C3A4A' }}>
               ⚠️ This client may already be in our system. Review before processing.
             </div>
           )}
           <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '28px' }}>
-            Referral for {form.firstName} {form.lastName} has been submitted successfully.
+            {rescheduleMode
+              ? `${rescheduleMode.clientName}'s appointment has been rescheduled — no new referral was created.`
+              : `Referral for ${form.firstName} ${form.lastName} has been submitted successfully.`}
           </p>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
             <button onClick={() => {
   setSubmitted(false)
   clearAgency()
   setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '', preferredDate: '', appointmentTime: null })
+  setRescheduleMode(null)
+  setMatchResolution(null)
+  setCheckedKey(null)
+  setDuplicateMatches([])
+  setBannerDismissed(false)
   loadAvailability()
 }}
               style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
@@ -620,6 +833,130 @@ useEffect(() => {
               style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
               View Scheduled
             </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+
+
+  // Reschedule-only view: shown once staff pick "reschedule their
+  // no-show" in the duplicate-check modal. Nothing else about the
+  // existing Client Referrals record changes -- items, household,
+  // agency, notes all stay exactly as they were -- so the only thing
+  // left to collect is the new date/time. Reuses the same
+  // availableDates/preferredDate/appointmentTime state as the full form.
+  if (rescheduleMode) {
+    const rSelectedDate = availableDates.find(d => d.date === form.preferredDate)
+    const rIsOverride =
+      form.appointmentTime !== null &&
+      rSelectedDate !== undefined &&
+      bookedForSlot(rSelectedDate, form.appointmentTime) >= SLOT_CAP[form.appointmentTime]
+
+    return (
+      <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
+        <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 50 }}>
+          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>
+            Reschedule No-Show
+          </div>
+        </header>
+
+        <div style={{ maxWidth: '600px', margin: '0 auto', padding: '32px' }}>
+          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
+            <div style={SECTION}>Reschedule No-Show</div>
+            <p style={{ fontSize: '13.5px', color: '#2C3A4A', lineHeight: 1.6, marginBottom: '24px' }}>
+              Rescheduling {rescheduleMode.clientName}'s missed appointment. This reuses their existing
+              referral — no new record is created, and everything else on file (items, household, notes,
+              agency) stays as it was. Just pick the new date and time.
+            </p>
+
+            <div style={{ marginBottom: '16px' }}>
+              <label style={LABEL}>New Saturday *</label>
+              <select
+                style={{ ...INPUT, cursor: 'pointer' }}
+                value={form.preferredDate}
+                onChange={e => {
+                  set('preferredDate', e.target.value)
+                  set('appointmentTime', null)
+                }}
+                disabled={availabilityLoading}
+              >
+                <option value="">
+                  {availabilityLoading ? 'Loading dates...' : 'Select a Saturday...'}
+                </option>
+                {availableDates.map(d => {
+                  const dateObj = new Date(d.date + 'T00:00:00')
+                  const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+                  return (
+                    <option key={d.date} value={d.date}>
+                      {label} — {d.slotsRemaining} slot{d.slotsRemaining === 1 ? '' : 's'}
+                    </option>
+                  )
+                })}
+              </select>
+            </div>
+
+            {form.preferredDate && (
+              <div style={{ marginBottom: '20px' }}>
+                <label style={LABEL}>Time (optional — leave blank to auto-schedule)</label>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
+                  {TIME_SLOTS.map(slot => {
+                    const booked = bookedForSlot(rSelectedDate, slot)
+                    const cap = SLOT_CAP[slot]
+                    const full = booked >= cap
+                    const selected = form.appointmentTime === slot
+                    return (
+                      <button
+                        key={slot}
+                        type="button"
+                        onClick={() => set('appointmentTime', selected ? null : slot)}
+                        style={{
+                          padding: '10px 6px', borderRadius: '8px',
+                          border: selected ? '2px solid #2A7F6F' : full ? '1px solid #F0C4BE' : '1px solid #EDE9E1',
+                          background: selected ? '#2A7F6F' : full ? '#FDEDEC' : 'white',
+                          color: selected ? 'white' : full ? '#C0392B' : '#2C3A4A',
+                          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
+                          fontFamily: 'var(--font-montserrat)',
+                        }}
+                      >
+                        <span style={{ fontSize: '13px', fontWeight: 800, lineHeight: 1 }}>{slot}</span>
+                        <span style={{ fontSize: '11px', fontWeight: 600, opacity: selected ? 0.85 : 1, lineHeight: 1 }}>
+                          {booked}/{cap}
+                        </span>
+                      </button>
+                    )
+                  })}
+                </div>
+                {rIsOverride && form.appointmentTime && (
+                  <div style={{ fontSize: '12px', color: '#8A6A00', marginTop: '10px' }}>
+                    Override — {form.appointmentTime} is at capacity ({bookedForSlot(rSelectedDate, form.appointmentTime)}/{SLOT_CAP[form.appointmentTime]} booked)
+                  </div>
+                )}
+              </div>
+            )}
+
+            {error && (
+              <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: '#C0392B' }}>
+                {error}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '10px' }}>
+              <button
+                onClick={() => setRescheduleMode(null)}
+                style={{ flex: 1, padding: '13px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13.5px', cursor: 'pointer' }}
+              >
+                Back
+              </button>
+              <button
+                onClick={handleRescheduleConfirm}
+                disabled={loading}
+                style={{ flex: 2, padding: '13px', borderRadius: '8px', border: 'none', background: loading ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13.5px', cursor: loading ? 'not-allowed' : 'pointer' }}
+              >
+                {loading ? 'Rescheduling...' : 'Confirm Reschedule'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -898,6 +1235,28 @@ useEffect(() => {
             </div>
           </div>
 
+          {/* Inline duplicate-client banner -- not a popup. Appears here,
+              right after the identity fields that trigger it and right
+              before Address, so it's in view both immediately (comparing
+              DOB/phone) and as Dawson keeps filling in Address below (live
+              compare updates as he types). */}
+          {duplicateMatches.length > 0 && !bannerDismissed && (
+            <DuplicateClientBanner
+              matches={duplicateMatches}
+              currentAgencyName={newAgencyMode ? newAgency.name : (selectedAgency?.name || '')}
+              form={{
+                dob: form.dob, phone: form.phone,
+                address: form.address, address2: form.address2,
+                city: form.city, state: form.state, zip: form.zip,
+              }}
+              resolved={matchResolution}
+              onResolve={handleDuplicateResolve}
+              onDecline={handleDuplicateDecline}
+              onDismiss={handleDuplicateDismiss}
+              onReopen={handleReopenBanner}
+            />
+          )}
+
 
 
           {/* Address */}
@@ -913,7 +1272,17 @@ useEffect(() => {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px', gap: '16px', marginBottom: '16px' }}>
             <div>
               <label style={LABEL}>City *</label>
-              <input style={INPUT} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" />
+              <input
+                style={INPUT}
+                value={form.city}
+                onChange={e => set('city', e.target.value)}
+                placeholder="City"
+                list="common-cities"
+                autoComplete="off"
+              />
+              <datalist id="common-cities">
+                {commonCities.map(c => <option key={c} value={c} />)}
+              </datalist>
             </div>
             <div>
               <label style={LABEL}>State *</label>
@@ -1114,9 +1483,9 @@ useEffect(() => {
 
 
 
-          <button onClick={handleSubmit} disabled={loading}
-            style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: loading ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', cursor: loading ? 'not-allowed' : 'pointer', letterSpacing: '0.02em' }}>
-            {loading ? 'Submitting...' : 'Submit Referral'}
+          <button onClick={handleSubmit} disabled={loading || checkingDuplicate}
+            style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: (loading || checkingDuplicate) ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', cursor: (loading || checkingDuplicate) ? 'not-allowed' : 'pointer', letterSpacing: '0.02em' }}>
+            {checkingDuplicate ? 'Checking for existing client...' : loading ? 'Submitting...' : 'Submit Referral'}
           </button>
 
 
