@@ -1,6 +1,5 @@
 'use client'
 
-
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import CancelModal from '@/components/dawson/modals/CancelModal'
@@ -63,6 +62,13 @@ type Referral = {
   agencyEmail: string | null
   referringStaffLinkId: string | null        // link to Agency User — for future Staff ID deep-link
   possibleDuplicate: boolean
+  // Aug 2026: back these with two Airtable checkbox fields on Client
+  // Referrals — "Ready for Post-Appt Email" (Dawson flips this after
+  // auditing the pickup sheet against the portal) and "Post-Appt Email Sent"
+  // (set by the future Tuesday batch send, not built yet). The GET route for
+  // this page needs to map both through; see bottom-of-file note.
+  readyForPostApptEmail: boolean
+  postApptEmailSent: boolean
   itemsDisbursed: ItemsDisbursed | null
 }
 
@@ -99,6 +105,13 @@ const LANGUAGES = ['English', 'Spanish', 'Haitian Creole', 'French', 'Arabic', '
 
 
 const STATES = ['NJ', 'NY', 'PA', 'CT', 'DE']
+
+
+// Same 25-day window as lib/client-match.ts's NO_SHOW_RESCHEDULE_WINDOW_DAYS
+// and the History page's own gating. Kept in sync everywhere so a No Show
+// that's aged out of "reschedule in place" on Add Referral / History doesn't
+// still show live Reschedule/Cancel actions -- or editable fields -- here.
+const NO_SHOW_ACTION_WINDOW_DAYS = 25
 
 
 // ---------------------------------------------------------------------------
@@ -278,6 +291,21 @@ function EditButton({ onClick, label = 'Edit' }: { onClick: () => void; label?: 
 }
 
 
+// Shown in place of the Edit button once a record is locked (Completed with
+// the post-appt email sent, or a No Show past the 25-day window). Purely a
+// visual signal — there's no "unlock" affordance yet.
+function LockedBadge() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: '#9AA6B2' }}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+      Locked
+    </span>
+  )
+}
+
+
 // Reusable input style — keeps all inputs visually consistent
 const inputStyle: React.CSSProperties = {
   width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #EDE9E1',
@@ -324,7 +352,9 @@ function MetaCell({ label, last, children }: {
 // Display mode shows only what was actually given (non-zero). Edit mode shows
 // the FULL 30-item catalog with steppers — because the catalog is fixed and
 // small, an "add item" picker would be pure friction. Every item is one click
-// away from 1.
+// away from 1. Both modes list items alphabetically within each category —
+// display mode always did; edit mode is sorted here rather than in CATALOG
+// itself so the catalog's own (unrelated) ordering doesn't have to change.
 //
 // No new Airtable fields: changed-row highlighting and the pending-changes
 // summary are client-side session state that dies on save.
@@ -394,9 +424,11 @@ function Stepper({ value, onChange, changed }: {
 
 function ItemsDisbursedCard({
   referral,
+  locked,
   onSaved,
 }: {
   referral: Referral
+  locked: boolean
   onSaved: (updated: Partial<Referral>) => void
 }) {
   const d = referral.itemsDisbursed
@@ -500,10 +532,12 @@ function ItemsDisbursedCard({
         accent={EDIT_ACCENT}
         title="Items Disbursed"
         headerRight={
-          <button onClick={startEdit}
-            style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: EDIT_ACCENT, color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
-            Edit Items
-          </button>
+          locked ? <LockedBadge /> : (
+            <button onClick={startEdit}
+              style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: EDIT_ACCENT, color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
+              Edit Items
+            </button>
+          )
         }
       >
         {lineCount === 0 ? (
@@ -587,35 +621,41 @@ function ItemsDisbursedCard({
       }
     >
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '0 28px', padding: '4px 0' }}>
-        {CATALOG.map(g => (
-          <div key={g.key} style={{ breakInside: 'avoid', marginBottom: '16px' }}>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: EDIT_ACCENT, marginBottom: '6px' }}>
-              {g.title}
+        {CATALOG.map(g => {
+          // Sorted alphabetically per Dawson's request — the catalog's own
+          // (category-internal) order isn't meaningful to the audit workflow.
+          const sortedItems = [...g.items].sort((a, b) =>
+            a.label.localeCompare(b.label, undefined, { sensitivity: 'base' }))
+          return (
+            <div key={g.key} style={{ breakInside: 'avoid', marginBottom: '16px' }}>
+              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: EDIT_ACCENT, marginBottom: '6px' }}>
+                {g.title}
+              </div>
+              {sortedItems.map(i => {
+                const changed = qty[i.field] !== baseline[i.field]
+                return (
+                  <div key={i.field} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '3px 0' }}>
+                    <span style={{
+                      minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                      fontSize: '12.5px',
+                      color: changed ? EDIT_ACCENT : qty[i.field] > 0 ? '#2C3A4A' : '#9AA6B2',
+                      fontWeight: changed ? 700 : 400,
+                    }}>
+                      {i.label}
+                      {changed && (
+                        <span style={{ fontSize: '10.5px', fontWeight: 600, color: '#B9C2CC', marginLeft: '6px' }}>
+                          was {baseline[i.field]}
+                        </span>
+                      )}
+                    </span>
+                    <Stepper value={qty[i.field]} changed={changed}
+                      onChange={n => setQty(prev => ({ ...prev, [i.field]: n }))} />
+                  </div>
+                )
+              })}
             </div>
-            {g.items.map(i => {
-              const changed = qty[i.field] !== baseline[i.field]
-              return (
-                <div key={i.field} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '8px', padding: '3px 0' }}>
-                  <span style={{
-                    minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-                    fontSize: '12.5px',
-                    color: changed ? EDIT_ACCENT : qty[i.field] > 0 ? '#2C3A4A' : '#9AA6B2',
-                    fontWeight: changed ? 700 : 400,
-                  }}>
-                    {i.label}
-                    {changed && (
-                      <span style={{ fontSize: '10.5px', fontWeight: 600, color: '#B9C2CC', marginLeft: '6px' }}>
-                        was {baseline[i.field]}
-                      </span>
-                    )}
-                  </span>
-                  <Stepper value={qty[i.field]} changed={changed}
-                    onChange={n => setQty(prev => ({ ...prev, [i.field]: n }))} />
-                </div>
-              )
-            })}
-          </div>
-        ))}
+          )
+        })}
       </div>
 
       <div style={{ marginTop: '6px', paddingTop: '14px', borderTop: '1px solid #EDE9E1', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
@@ -697,9 +737,11 @@ function referralToClientEditState(r: Referral): ClientEditState {
 
 function ClientInfoCard({
   referral,
+  locked,
   onSaved,
 }: {
   referral: Referral
+  locked: boolean
   onSaved: (updated: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -810,7 +852,7 @@ function ClientInfoCard({
       <Card
         accent={EDIT_ACCENT}
         title="Client Information"
-        headerRight={<EditButton onClick={startEdit} />}
+        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
       >
         {/* Order follows how Dawson actually uses the record: who and where
             first (that's what he's confirming against the pickup sheet), then
@@ -950,9 +992,11 @@ function parseItemsToSet(items: unknown): Set<string> {
 
 function ItemsRequestedCard({
   referral,
+  locked,
   onSaved,
 }: {
   referral: Referral
+  locked: boolean
   onSaved: (updated: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -1013,7 +1057,7 @@ function ItemsRequestedCard({
       <Card
         accent={EDIT_ACCENT}
         title="Items Requested"
-        headerRight={<EditButton onClick={startEdit} />}
+        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
       >
         {current.length === 0 ? (
           <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '4px 0' }}>No items specified.</div>
@@ -1073,9 +1117,11 @@ function ItemsRequestedCard({
 
 function InternalNotesCard({
   referral,
+  locked,
   onSaved,
 }: {
   referral: Referral
+  locked: boolean
   onSaved: (updated: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -1121,8 +1167,11 @@ function InternalNotesCard({
       <Card
         accent={EDIT_ACCENT}
         title="Internal Notes"
-        headerRight={<EditButton onClick={startEdit} label={referral.internalNotes ? 'Edit' : '+ Add'} />}
+        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} label={referral.internalNotes ? 'Edit' : '+ Add'} />}
       >
+        {/* Aug 2026: notes-left / outbound-emails-right two-column split is a
+            later-date idea Ben raised — not implemented yet. Revisit once the
+            post-appt email batch is built and there's real send history to show. */}
         {referral.internalNotes ? (
           <div style={{ fontSize: '13px', color: '#1B2B4B', whiteSpace: 'pre-wrap', lineHeight: 1.6, padding: '4px 0' }}>{referral.internalNotes}</div>
         ) : (
@@ -1177,6 +1226,13 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const [cancelModal, setCancelModal] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' })
   const [rescheduleModal, setRescheduleModal] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' })
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
+  // "Ready for Post-Appt Email" checkbox — Dawson flips this once he's
+  // audited the pickup sheet against the portal for a Completed record. A
+  // future Tuesday batch job reads this flag, sends the post-appt email, and
+  // sets referral.postApptEmailSent (which is what actually locks the page —
+  // see completedLocked below).
+  const [readyForPostApptEmail, setReadyForPostApptEmail] = useState(false)
+  const [emailToggleSaving, setEmailToggleSaving] = useState(false)
 
 
   useEffect(() => {
@@ -1203,6 +1259,14 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       .then(data => setAvailableDates(Array.isArray(data) ? data : []))
       .catch(() => {})
   }, [params])
+
+
+  // Sync the checkbox from the fetched record once per referral load. Keyed
+  // on id (not the whole referral object) so a local optimistic toggle isn't
+  // clobbered by an unrelated refetch/applyUpdate elsewhere on the page.
+  useEffect(() => {
+    if (referral) setReadyForPostApptEmail(!!referral.readyForPostApptEmail)
+  }, [referral?.id])
 
 
   // Refetch the referral after a successful mutation (cancel/reschedule) so
@@ -1266,6 +1330,27 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   }
 
 
+  // Optimistic toggle for "Ready for Post-Appt Email." Reverts on failure so
+  // the checkbox never silently drifts from what's saved in Airtable.
+  async function handleToggleReady(e: React.ChangeEvent<HTMLInputElement>) {
+    const next = e.target.checked
+    setReadyForPostApptEmail(next)
+    setEmailToggleSaving(true)
+    try {
+      const res = await fetch(`/api/dawson/referrals/${referralId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ readyForPostApptEmail: next }),
+      })
+      if (!res.ok) throw new Error('Save failed')
+    } catch {
+      setReadyForPostApptEmail(!next)
+    } finally {
+      setEmailToggleSaving(false)
+    }
+  }
+
+
   // Local mutator — components pass partial updates back up so the UI stays
   // in sync without a full refetch.
   function applyUpdate(u: Partial<Referral>) {
@@ -1312,17 +1397,8 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const showItemsDisbursed = status === 'Completed'
 
 
-  // Reschedule / Cancel live in the meta strip. Shown while the appointment is
-  // still actionable. No Show is included on purpose: Dawson often learns days
-  // later whether a no-show should become a reschedule or a cancel.
-  const showApptActions =
-    status !== 'Completed' &&
-    status !== 'Cancelled' &&
-    status !== 'Rejected' &&
-    (status === 'Scheduled' || status === 'No Show' || referral.referralReview === 'Approved')
-
-
-  // Days-since counter for No Show. Uses appointmentDate as the anchor
+  // Days-since counter for No Show, and the gate for whether this record is
+  // still "fresh" enough to act on / edit. Uses appointmentDate as the anchor
   // (that's the date the client didn't show up on). Falls back to null
   // silently if the date is missing/malformed.
   const daysSinceNoShow = (() => {
@@ -1332,6 +1408,34 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     const diffMs = Date.now() - appt.getTime()
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)))
   })()
+
+
+  // A No Show older than the window is a closed record everywhere else in the
+  // app (Add Referral duplicate-check, History page) — same rule applies
+  // here: no more Reschedule/Cancel below, and no more field edits.
+  const noShowAged = status === 'No Show' && daysSinceNoShow !== null && daysSinceNoShow > NO_SHOW_ACTION_WINDOW_DAYS
+
+
+  // Reschedule / Cancel live in the meta strip. Shown while the appointment is
+  // still actionable. No Show is included on purpose: Dawson often learns days
+  // later whether a no-show should become a reschedule or a cancel — but only
+  // within the window; past that it's a closed record and a fresh referral is
+  // the right move instead.
+  const showApptActions =
+    status !== 'Completed' &&
+    status !== 'Cancelled' &&
+    status !== 'Rejected' &&
+    !noShowAged &&
+    (status === 'Scheduled' || status === 'No Show' || referral.referralReview === 'Approved')
+
+
+  // Once the post-appt email has actually gone out for a Completed record, or
+  // a No Show has aged past the window, treat the record as locked: every
+  // card's Edit button disappears (LockedBadge shows instead). There's no
+  // "unlock" affordance yet — ping Ben if a locked record genuinely needs a
+  // correction.
+  const completedLocked = status === 'Completed' && !!referral.postApptEmailSent
+  const recordLocked = completedLocked || noShowAged
 
 
   // Agency link: only render as link if we have an ID; otherwise plain text.
@@ -1468,6 +1572,31 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             {referral.itemsDisbursed?.checkoutTime || <span style={{ color: '#C9CFD6' }}>—</span>}
           </MetaCell>
 
+          {/* Post-appt email readiness. Completed-only, and only before the
+              email has actually gone out -- once postApptEmailSent flips,
+              this cell disappears entirely rather than showing a disabled
+              checkbox. The record is locked at that point (see recordLocked
+              below); there's nothing left to toggle. */}
+          {status === 'Completed' && !referral.postApptEmailSent && (
+            <MetaCell label="Post-Appt Email">
+              <label style={{
+                display: 'flex', alignItems: 'center', gap: '6px',
+                cursor: emailToggleSaving ? 'default' : 'pointer',
+                fontSize: '13px', fontWeight: 700,
+                color: readyForPostApptEmail ? '#C9A84C' : '#7A8899',
+              }}>
+                <input
+                  type="checkbox"
+                  checked={readyForPostApptEmail}
+                  disabled={emailToggleSaving}
+                  onChange={handleToggleReady}
+                  style={{ width: '15px', height: '15px', accentColor: '#2A7F6F', cursor: 'inherit', flexShrink: 0 }}
+                />
+                Ready
+              </label>
+            </MetaCell>
+          )}
+
           {/* Spacer — pushes actions + review status to the right edge when
               there are no actions to render. */}
           <div style={{ flex: 1 }} />
@@ -1518,18 +1647,18 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       <div style={{ padding: '20px 32px 32px', display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', alignItems: 'start' }}>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <InternalNotesCard referral={referral} onSaved={applyUpdate} />
-          <ItemsRequestedCard referral={referral} onSaved={applyUpdate} />
+          <InternalNotesCard referral={referral} locked={recordLocked} onSaved={applyUpdate} />
+          <ItemsRequestedCard referral={referral} locked={recordLocked} onSaved={applyUpdate} />
           {/* Completed only. Cancelled / No Show / Scheduled mean nothing was
               handed out, so the card would be an empty box asking to be
               filled in for an appointment that hasn't happened. */}
           {showItemsDisbursed && (
-            <ItemsDisbursedCard referral={referral} onSaved={applyUpdate} />
+            <ItemsDisbursedCard referral={referral} locked={completedLocked} onSaved={applyUpdate} />
           )}
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <ClientInfoCard referral={referral} onSaved={applyUpdate} />
+          <ClientInfoCard referral={referral} locked={recordLocked} onSaved={applyUpdate} />
 
           {/* Review Status intentionally omitted here — it lives in the meta
               strip now. Showing it twice invited "which one is current?". */}

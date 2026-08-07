@@ -27,9 +27,6 @@ type Referral = {
 }
 
 
-const TIME_ORDER = ['9am', '10am', '11am', '12pm', '1pm']
-// Grid now has a trailing column for the No Show action buttons. Empty for
-// Completed and Cancelled rows — keeps column alignment across the group.
 const GRID = '260px 240px 1fr 1fr 1fr 130px 190px'
 
 
@@ -66,6 +63,23 @@ function daysAgo(days: number) {
 }
 
 
+// Same 25-day window as the reschedule-eligibility rule in
+// lib/client-match.ts (NO_SHOW_RESCHEDULE_WINDOW_DAYS) -- kept in sync so
+// a No Show that's aged out of "reschedule in place" on the Add Referral
+// flow doesn't still offer that action here. Null (no Appointment Date on
+// record) is treated as NOT eligible, matching that same file's
+// daysAgo()-returns-null-so-skip-it behavior.
+function daysSince(dateStr: string | null): number | null {
+  if (!dateStr) return null
+  const datePart = dateStr.split('T')[0]
+  const [y, m, d] = datePart.split('-').map(Number)
+  if (!y || !m || !d) return null
+  const then = new Date(y, m - 1, d)
+  const now = new Date()
+  return Math.floor((now.getTime() - then.getTime()) / (1000 * 60 * 60 * 24))
+}
+
+
 function lastNameOf(clientName: string): string {
   const parts = clientName.trim().split(/\s+/)
   return parts[parts.length - 1].toLowerCase()
@@ -88,6 +102,12 @@ function ReferralRow({ r, onReschedule, onCancel }: {
 }) {
   const s = STATUS_STYLES[r.appointmentStatus] ?? { bg: '#F0F0F0', color: '#7A8899' }
   const isNoShow = r.appointmentStatus === 'No Show'
+  const noShowAge = isNoShow ? daysSince(r.appointmentDate) : null
+  // Only offer Reschedule/Cancel from here within the same 25-day window
+  // the Add Referral flow uses to decide whether a No Show is still
+  // "reschedule in place" eligible -- past that, it's just history, same
+  // as everywhere else these two views need to agree with each other.
+  const canManageNoShow = isNoShow && noShowAge !== null && noShowAge <= 25
   return (
     <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: '16px', alignItems: 'center', padding: '14px 28px', borderBottom: '1px solid #F0EDE5', background: 'white' }}>
       {/* Client — indented 16px */}
@@ -147,12 +167,16 @@ function ReferralRow({ r, onReschedule, onCancel }: {
       </div>
 
 
-      {/* Action buttons — only on No Show rows. Follow-up (voicemail/email)
-          often arrives days after the missed appt, so Dawson needs to
-          transition No Show → Scheduled (reschedule) or → Cancelled from
-          this page. Both fire the existing backend + Zap triggers. */}
+      {/* Action buttons — only on No Show rows within the 25-day
+          reschedule window. Follow-up (voicemail/email) often arrives
+          days after the missed appt, so Dawson needs to transition
+          No Show → Scheduled (reschedule) or → Cancelled from this page.
+          Both fire the existing backend + Zap triggers. Past 25 days, a
+          No Show is just history here too -- same as the Add Referral
+          flow, which stops offering "reschedule in place" at that point
+          and treats it as a fresh referral instead. */}
       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
-        {isNoShow ? (
+        {canManageNoShow ? (
           <>
             <button
               type="button"
@@ -176,6 +200,9 @@ function ReferralRow({ r, onReschedule, onCancel }: {
 }
 
 
+// Groups by Saturday date, same as before -- but no longer sub-groups by
+// time slot within the week (that was extra structure Dawson didn't want).
+// Just one alphabetical-by-last-name list per week now.
 function SaturdayGroup({ dateKey, referrals, defaultOpen, onReschedule, onCancel }: {
   dateKey: string
   referrals: Referral[]
@@ -185,21 +212,7 @@ function SaturdayGroup({ dateKey, referrals, defaultOpen, onReschedule, onCancel
 }) {
   const [open, setOpen] = useState(defaultOpen)
 
-
-  // Group by time slot
-  const byTime: Record<string, Referral[]> = {}
-  TIME_ORDER.forEach(t => byTime[t] = [])
-  const other: Referral[] = []
-  referrals.forEach(r => {
-    const t = r.appointmentTime
-    if (t && byTime[t]) byTime[t].push(r)
-    else other.push(r)
-  })
-  Object.keys(byTime).forEach(t => {
-    byTime[t].sort((a, b) => lastNameOf(a.clientName).localeCompare(lastNameOf(b.clientName)))
-  })
-  other.sort((a, b) => lastNameOf(a.clientName).localeCompare(lastNameOf(b.clientName)))
-
+  const sorted = [...referrals].sort((a, b) => lastNameOf(a.clientName).localeCompare(lastNameOf(b.clientName)))
 
   const completed = referrals.filter(r => r.appointmentStatus === 'Completed').length
   const noShow = referrals.filter(r => r.appointmentStatus === 'No Show').length
@@ -261,32 +274,9 @@ function SaturdayGroup({ dateKey, referrals, defaultOpen, onReschedule, onCancel
           </div>
 
 
-          {TIME_ORDER.map(t => byTime[t].length > 0 && (
-            <div key={t}>
-              <div style={{ fontSize: '13px', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1B2B4B', padding: '10px 28px', background: '#F0F7F5', borderLeft: '3px solid #2A7F6F', borderTop: '1px solid #D4E8E3', borderBottom: '1px solid #D4E8E3', display: 'flex', alignItems: 'center', gap: '10px' }}>
-                <span style={{ color: '#2A7F6F' }}>{t}</span>
-                <span style={{ color: '#7A8899', fontWeight: 600 }}>·</span>
-                <span style={{ color: '#7A8899', fontWeight: 600, textTransform: 'none', letterSpacing: 0 }}>
-                  {byTime[t].length} {byTime[t].length === 1 ? 'appt' : 'appts'}
-                </span>
-              </div>
-              {byTime[t].map(r => (
-                <ReferralRow key={r.id} r={r} onReschedule={onReschedule} onCancel={onCancel} />
-              ))}
-            </div>
+          {sorted.map(r => (
+            <ReferralRow key={r.id} r={r} onReschedule={onReschedule} onCancel={onCancel} />
           ))}
-
-
-          {other.length > 0 && (
-            <div>
-              <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7A8899', padding: '10px 28px', background: '#FAFCFB', borderLeft: '3px solid #7A8899' }}>
-                No time assigned · {other.length}
-              </div>
-              {other.map(r => (
-                <ReferralRow key={r.id} r={r} onReschedule={onReschedule} onCancel={onCancel} />
-              ))}
-            </div>
-          )}
         </div>
       )}
     </div>

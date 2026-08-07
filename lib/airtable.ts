@@ -32,7 +32,7 @@
 // via the Primary Admin link. Every staff/agency-facing field on a
 // Client Referral comes through Agency Users via the Referring Staff Link.
 
-import { CATALOG } from '@/lib/items-disbursed' 
+import { CATALOG } from '@/lib/items-disbursed'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -897,6 +897,14 @@ export async function getReferralById(referralId: string) {
     referringStaffLinkId,                             // for deep-link to Staff ID page
     referringAgencyId,                                // for deep-link to Agency detail page
     possibleDuplicate: (f['Possible Duplicate'] as boolean) ?? false,
+    // Aug 2026: two plain Airtable checkboxes on Client Referrals.
+    // Unchecked checkboxes come back as `undefined` from the API (not
+    // `false`), so both need the `?? false` coercion — otherwise the
+    // Referral Detail page's lock logic (recordLocked / completedLocked)
+    // would see `undefined`, which is falsy in the same way but breaks the
+    // `boolean` type the page expects.
+    readyForPostApptEmail: (f['Ready for Post-Appt Email'] as boolean) ?? false,
+    postApptEmailSent: (f['Post Appt Email Sent'] as boolean) ?? false,
     itemsDisbursed,
   }
 }

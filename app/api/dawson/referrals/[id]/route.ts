@@ -26,6 +26,10 @@ export async function GET(
 //   • # in HH
 //   • # Children
 //   • Items Disbursed quantities + the four free-text companions
+//   • Ready for Post-Appt Email (Dawson's manual audit-complete flag —
+//     read by the future Tuesday batch send; does NOT itself mean the
+//     email went out, that's a separate "Post-Appt Email Sent" field the
+//     batch job will flip)
 //
 // Client identity fields (name / DOB / address / etc.) live on the Clients
 // table and are lookups here, so those edits go through /api/dawson/clients/[id].
@@ -84,6 +88,14 @@ export async function PATCH(
   if ('children' in body) {
     const v = coerceCount(body.children)
     if (v !== undefined) fields['# Children'] = v
+  }
+
+  // Ready for Post-Appt Email — a plain checkbox. Only accept a real
+  // boolean; anything else is dropped so a malformed request can't
+  // silently flip it via truthiness (e.g. the string "false").
+  if ('readyForPostApptEmail' in body) {
+    const v = body.readyForPostApptEmail
+    if (typeof v === 'boolean') fields['Ready for Post-Appt Email'] = v
   }
 
   // ---------------------------------------------------------------------
