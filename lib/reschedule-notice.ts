@@ -117,9 +117,11 @@ export async function sendRescheduleNotice(
     }
 
     // Regenerate the slip for the new date/time; overwrites the same Blob
-    // path and the same Airtable attachment (allowOverwrite: true). filename
-    // is the shared builder's output, same name as the Airtable attachment.
-    const { buffer, filename } = await generateAndStoreSlip(recordId, f);
+    // path and the same Airtable attachment (allowOverwrite: true).
+    // generateAndStoreSlip only returns { buffer, blobUrl } -- no filename --
+    // so build the attachment filename here the same way
+    // appointment-slip-notice/route.ts does for its own slip attachment.
+    const { buffer } = await generateAndStoreSlip(recordId, f);
 
     const rawNewApptDate = f["Appointment Date"];
     const newApptDateStr = Array.isArray(rawNewApptDate) ? rawNewApptDate[0] : rawNewApptDate;
@@ -141,6 +143,7 @@ export async function sendRescheduleNotice(
     });
 
     const to = toList.join(", ");
+    const clientLastName = toTokenValue(f["Last Name"]) || recordId;
 
     const { data, error } = await resend.emails.send({
       from: FROM_ADDRESS,
@@ -150,7 +153,7 @@ export async function sendRescheduleNotice(
       html,
       attachments: [
         {
-          filename,
+          filename: `appointment-slip-${clientLastName}.pdf`,
           content: buffer,
         },
       ],
