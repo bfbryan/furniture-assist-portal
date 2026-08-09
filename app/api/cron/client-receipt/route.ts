@@ -16,6 +16,12 @@ import {
   markPostApptEmailSent,
 } from "@/lib/client-receipt";
 
+// Aug 2026: same fix as the other two cron routes -- without this, Next.js
+// can serve a cached response for this GET route instead of invoking the
+// function on every cron call, which shows up as zero logged invocations
+// in Vercel's Cron Jobs tab even though the schedule is firing.
+export const dynamic = "force-dynamic";
+
 const AUTOMATION_NAME = "Client Receipt"; // must match the row's primary field value in Email Automations
 const TIMEZONE = process.env.REMINDER_TIMEZONE || "America/New_York";
 const FROM_ADDRESS =

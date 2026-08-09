@@ -18,6 +18,12 @@ import {
 } from "@/lib/airtable-reminders";
 import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/reminder-template";
 
+// Aug 2026: without this, Next.js can serve a cached response for this GET
+// route instead of actually invoking the function on every cron call --
+// Vercel's own cron troubleshooting docs call this out specifically. Forces
+// a fresh execution (and therefore a logged invocation) every single time.
+export const dynamic = "force-dynamic";
+
 const AUTOMATION_NAME = "Appointment Reminder"; // must match the row's primary field value
 const TIMEZONE = process.env.REMINDER_TIMEZONE || "America/New_York";
 const FROM_ADDRESS =
