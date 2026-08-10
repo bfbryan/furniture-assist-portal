@@ -34,13 +34,22 @@
 //
 // ---------------------------------------------------------------------------
 // This file is now a BARREL. The implementations live in ./airtable/*.
-// It re-exports the same 23 names it always has, so the 33 modules that
+// It re-exports the same 23 names it always has, so the 25 modules that
 // `import { ... } from '@/lib/airtable'` keep working unchanged.
 //
-// Note: the shared transport in ./airtable/client.ts (airtableFetch,
-// airtableFetchAll, unwrapLookup, safeLookupString, BASE_ID/API_KEY/HEADERS,
-// REC_ID_RE) is intentionally NOT re-exported here — it was private before
-// the split and stays private. Modules inside ./airtable import it directly.
+// Two modules under ./airtable are intentionally NOT re-exported here:
+//
+//   client.ts     The shared transport: airtableFetch, airtableFetchAll,
+//                 unwrapLookup, safeLookupString, BASE_ID/API_KEY/HEADERS,
+//                 REC_ID_RE. All of it was private before the split and
+//                 stays private. Modules inside ./airtable import it
+//                 directly from './client'.
+//
+//   reminders.ts  The appointment reminder automation. It opens its own
+//                 Airtable SDK connection (new Airtable(...).base(...))
+//                 instead of going through the shared transport above, so
+//                 it is not part of this barrel's surface. Its importers
+//                 reach it directly at '@/lib/airtable/reminders'.
 // ---------------------------------------------------------------------------
 
 export * from './airtable/agencies'
