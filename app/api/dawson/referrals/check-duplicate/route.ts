@@ -6,7 +6,7 @@
 // BEFORE submit, to surface possible existing-Client matches and their
 // recent appointment history so staff can confirm intent in a modal
 // instead of silently creating a duplicate Client + Client Referrals
-// record. See lib/client-match.ts for the matching/bucketing logic.
+// record. See lib/referrals/match.ts for the matching/bucketing logic.
 //
 // Request body: { firstName, lastName, dob, phone }
 //   dob expected as M/D/YYYY (same formatDOB() convention used elsewhere).
@@ -19,7 +19,7 @@
 
 import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { findClientMatches } from '@/lib/client-match'
+import { findClientMatches } from '@/lib/referrals/match'
 
 const ALLOWED_USER_IDS = [
   'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben

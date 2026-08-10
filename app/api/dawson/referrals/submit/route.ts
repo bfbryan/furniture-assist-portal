@@ -25,7 +25,7 @@
 //      city/state/zip from that Client so Dawson doesn't retype them, but
 //      leaves them fully editable. If what actually gets submitted no
 //      longer agrees with what's on file for that Client (see
-//      clientDataDiverges in lib/client-match.ts), staff effectively told
+//      clientDataDiverges in lib/referrals/match.ts), staff effectively told
 //      us -- by editing it -- that this isn't confidently the same
 //      person, so a fresh Client is created from the submitted values
 //      instead of linking to (and disagreeing with) the matched one. We
@@ -90,8 +90,8 @@
 
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { findClientMatches, createClient, clientDataDiverges } from '@/lib/client-match'
-import { sendRescheduleNotice } from '@/lib/reschedule-notice'
+import { findClientMatches, createClient, clientDataDiverges } from '@/lib/referrals/match'
+import { sendRescheduleNotice } from '@/lib/notifications/reschedule-notice'
 
 // Match the Dawson area allowlist so Ben/Ray/Chase can also submit referrals.
 const ALLOWED_USER_IDS = [
@@ -121,7 +121,7 @@ function isSaturday(isoDate: string): boolean {
 
 // ---- Ported from app/api/dawson/referrals/[id]/reschedule/route.ts for
 // the no-show reschedule branch. Keep these in sync with that route,
-// components/dawson/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
+// components/internal/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
 // constant on app/dawson/schedule/page.tsx.
 const VALID_TIMES = new Set(['9am', '10am', '11am', '12pm', '1pm'])
 type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'

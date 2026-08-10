@@ -1,4 +1,4 @@
-// lib/client-match.ts
+// lib/referrals/match.ts
 //
 // Fuzzy client matching against the Clients table, used by the referral
 // intake route (app/api/dawson/referrals/submit/route.ts) to find an
@@ -7,7 +7,7 @@
 // confirm intent before booking instead of silently creating a duplicate
 // Client + Client Referrals record.
 //
-// Distinct from the OCR resolver's normName() in lib/gemini-ocr.ts: that
+// Distinct from the OCR resolver's normName() in lib/scanning/ocr.ts: that
 // function folds lookalike glyphs (1/i/l, 0/o, 5/s, 8/b, 2/z) because it's
 // disambiguating a scanned/printed record ID. Here the input is typed by
 // hand at intake, so the failure mode is typos, not OCR glyph confusion --

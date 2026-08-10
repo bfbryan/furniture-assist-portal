@@ -17,7 +17,7 @@
 //      cancelled outright), fire the Cancellation Notice — emails the
 //      referring agency confirming the cancellation with the original
 //      appointment details. Email-only, no PDF work (see
-//      lib/cancellation-notice.ts). A failure here doesn't fail this
+//      lib/notifications/cancellation-notice.ts). A failure here doesn't fail this
 //      request — the Airtable write above already committed and is the
 //      part that matters operationally.
 //
@@ -29,7 +29,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
-import { sendCancellationNotice } from '@/lib/cancellation-notice'
+import { sendCancellationNotice } from '@/lib/notifications/cancellation-notice'
 
 
 

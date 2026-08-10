@@ -3,7 +3,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import InviteStaffModal from './InviteStaffModal'
+import InviteStaffModal from '../InviteStaffModal'
 
 
 type Member = {

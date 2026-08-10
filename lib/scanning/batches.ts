@@ -1,5 +1,5 @@
 /**
- * lib/scan-batches.ts
+ * lib/scanning/batches.ts
  *
  * Airtable helpers for the Scan Batches table. Handles create, update,
  * PDF attachment, and record-URL construction.

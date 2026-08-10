@@ -3,8 +3,8 @@
 
 
 import { useState, useEffect, useMemo } from 'react'
-import CancelModal from '@/components/dawson/modals/CancelModal'
-import RescheduleModal, { type AvailableDate } from '@/components/dawson/modals/RescheduleModal'
+import CancelModal from '@/components/internal/modals/CancelModal'
+import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
 
 
 type Referral = {
@@ -64,7 +64,7 @@ function daysAgo(days: number) {
 
 
 // Same 25-day window as the reschedule-eligibility rule in
-// lib/client-match.ts (NO_SHOW_RESCHEDULE_WINDOW_DAYS) -- kept in sync so
+// lib/referrals/match.ts (NO_SHOW_RESCHEDULE_WINDOW_DAYS) -- kept in sync so
 // a No Show that's aged out of "reschedule in place" on the Add Referral
 // flow doesn't still offer that action here. Null (no Appointment Date on
 // record) is treated as NOT eligible, matching that same file's

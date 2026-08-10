@@ -34,12 +34,12 @@ import {
   attachOriginalPdf,
   batchRecordUrl,
   type BatchStatus,
-} from '@/lib/scan-batches'
+} from '@/lib/scanning/batches'
 import {
   processPage,
   CandidateCache,
   type ProcessPageResult,
-} from '@/lib/gemini-ocr'
+} from '@/lib/scanning/ocr'
 
 export const runtime = 'nodejs'
 export const maxDuration = 300 // 5 min — Vercel Pro plan max

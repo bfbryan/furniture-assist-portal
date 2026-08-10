@@ -9,7 +9,7 @@ import {
   getAgencyUserByClerkId,
   getAgencyById,
 } from '@/lib/airtable'
-import AgencyPageHeader from '@/components/AgencyPageHeader'
+import AgencyPageHeader from '@/components/agency/AgencyPageHeader'
 import ProfileClient from './ProfileClient'
 
 

@@ -1,4 +1,4 @@
-// lib/airtable-reminders.ts
+// lib/airtable/reminders.ts
 //
 // Airtable access for the appointment reminder automation.
 // If you already have an Airtable client set up elsewhere in the app,

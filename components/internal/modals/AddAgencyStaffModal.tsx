@@ -1,4 +1,4 @@
-// components/dawson/modals/AddAgencyStaffModal.tsx
+// components/internal/modals/AddAgencyStaffModal.tsx
 //
 // Opened from the new-referral form when a staff search comes up empty.
 //
@@ -17,7 +17,7 @@
 // This modal does not write to Airtable. It hands a payload back to the
 // form, which submits it with the referral so agency/staff creation and
 // the referral write stay in one transaction (see
-// lib/createReferralWithAgency.ts).
+// lib/referrals/create.ts).
 
 'use client'
 

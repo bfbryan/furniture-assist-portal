@@ -4,8 +4,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import AddAgencyStaffModal, { type AddStaffResult } from '@/components/dawson/modals/AddAgencyStaffModal'
-import DuplicateClientBanner, { type ClientMatch } from '@/components/dawson/modals/DuplicateClientModal'
+import AddAgencyStaffModal, { type AddStaffResult } from '@/components/internal/modals/AddAgencyStaffModal'
+import DuplicateClientBanner, { type ClientMatch } from '@/components/internal/modals/DuplicateClientModal'
 
 
 
@@ -25,7 +25,7 @@ const ITEMS = [
 
 
 // Per-slot capacities — MUST match at-auto-schedule-script.js TIME_CAPS,
-// components/dawson/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
+// components/internal/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
 // constant on app/dawson/schedule/page.tsx.
 type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'
 const SLOT_CAP: Record<TimeSlot, number> = {
@@ -82,7 +82,7 @@ const SUBPANEL: React.CSSProperties = {
 // Agency type — post-migration `email` comes from the Primary Admin lookup
 // chain and is null for Unclaimed agencies. We keep it for display only;
 // the API route does NOT use it to write to the referral (those columns
-// are computed lookups now — see lib/createReferralWithAgency.ts).
+// are computed lookups now — see lib/referrals/create.ts).
 type Agency = {
   id: string
   name: string
@@ -151,7 +151,7 @@ export default function DawsonAddReferralPage() {
 
   // Duplicate-check step (app/api/dawson/referrals/check-duplicate) and the
   // inline banner it can surface (DuplicateClientBanner -- not a popup,
-  // rendered directly in the page flow). See lib/client-match.ts for the
+  // rendered directly in the page flow). See lib/referrals/match.ts for the
   // matching logic and the confirmed lookback windows (Completed 12mo,
   // Cancelled 12mo, No Show 25 days). This fires EARLY -- as soon as
   // First/Last/DOB are filled in, well before Submit -- specifically so
@@ -664,7 +664,7 @@ useEffect(() => {
     // in fresh. (If Dawson edits DOB/phone/address enough that it no
     // longer matches this Client's record on file, the submit route
     // detects that and creates a new Client instead of linking to this
-    // one -- see clientDataDiverges in lib/client-match.ts.) The banner
+    // one -- see clientDataDiverges in lib/referrals/match.ts.) The banner
     // collapses to a one-line confirmation strip once this resolves.
     setMatchResolution({
       clientId: match.client.id,

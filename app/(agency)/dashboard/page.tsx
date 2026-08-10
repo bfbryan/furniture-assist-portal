@@ -17,7 +17,7 @@ import {
   getAgencyById,
   getReferralsByAgencyId,
 } from '@/lib/airtable'
-import AgencyPageHeader from '@/components/AgencyPageHeader'
+import AgencyPageHeader from '@/components/agency/AgencyPageHeader'
 
 
 // ---------- helpers ----------

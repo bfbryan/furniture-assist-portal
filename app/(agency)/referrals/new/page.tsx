@@ -2,7 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById } from '@/lib/airtable'
 import { UserButton } from '@clerk/nextjs'
-import NewReferralForm from '@/components/NewReferralForm'
+import NewReferralForm from '@/components/agency/NewReferralForm'
 
 export default async function NewReferralPage() {
   const { userId } = await auth()

@@ -1,4 +1,4 @@
-// lib/upsertAgencyAndUser.ts
+// lib/agencies/upsert.ts
 //
 // Canonical "find-or-create Agency + find-or-create Agency User" helper.
 //

@@ -14,7 +14,7 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import AgencyReferralsPanel, { AgencyReferral, ReferralStatus } from '@/components/AgencyReferralsPanel'
+import AgencyReferralsPanel, { AgencyReferral, ReferralStatus } from '@/components/internal/AgencyReferralsPanel'
 
 type Referral = {
   id: string

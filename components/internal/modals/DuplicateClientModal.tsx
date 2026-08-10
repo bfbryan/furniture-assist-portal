@@ -1,4 +1,4 @@
-// components/dawson/modals/DuplicateClientModal.tsx
+// components/internal/modals/DuplicateClientModal.tsx
 //
 // Despite the filename (kept as-is so the file path in the project doesn't
 // change), this is an INLINE banner, not a popup dialog. Rendered by
@@ -123,7 +123,7 @@ function normalizeAgencyName(s: string): string {
 // Loose, display-only normalization for the live compare -- just enough to
 // ignore case/punctuation/whitespace differences that aren't meaningful.
 // The real, authoritative divergence check happens server-side at submit
-// (clientDataDiverges in lib/client-match.ts); this is purely a visual hint
+// (clientDataDiverges in lib/referrals/match.ts); this is purely a visual hint
 // so Dawson isn't surprised by it later.
 function normalizeForCompare(s: string): string {
   return s.toLowerCase().trim().replace(/[^a-z0-9]/g, '')

@@ -1,4 +1,4 @@
-// components/AgencyPageHeader.tsx
+// components/agency/AgencyPageHeader.tsx
 // Universal navy hero used across every agency portal page.
 // - Left column: "AGENCY PARTNER" + agency name + address + phone
 // - Divider
