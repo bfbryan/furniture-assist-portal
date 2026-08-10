@@ -88,18 +88,10 @@
 //     Bedroom Furniture, Dining Room Furniture, Living Room Furniture,
 //     Household Items (including kitchen & linens), Clothes, Baby Items
 
-import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { findClientMatches, createClient, clientDataDiverges } from '@/lib/referrals/match'
 import { sendRescheduleNotice } from '@/lib/notifications/reschedule-notice'
-
-// Match the Dawson area allowlist so Ben/Ray/Chase can also submit referrals.
-const ALLOWED_USER_IDS = [
-  'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben
-  'user_3BodwTW4I7Vamt4t7wD3qeA7boM', // Ray
-  'user_3BtKn01OMXSmi7eSsWvzvnEroCg', // Dawson
-  'user_3DE1gUnIeNmWZpQyd7LjdZb9vnN', // Chase
-]
+import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -313,10 +305,8 @@ async function rescheduleExistingReferral(
 }
 
 export async function POST(req: Request) {
-  const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const denied = await requireDawsonAccess()
+  if (denied) return denied
 
   const body = await req.json()
 

@@ -12,15 +12,8 @@
 // paging through the entire table -- more than enough to see which towns
 // actually repeat, and keeps this endpoint quick.
 
-import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-
-const ALLOWED_USER_IDS = [
-  'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben
-  'user_3BodwTW4I7Vamt4t7wD3qeA7boM', // Ray
-  'user_3BtKn01OMXSmi7eSsWvzvnEroCg', // Dawson
-  'user_3DE1gUnIeNmWZpQyd7LjdZb9vnN', // Chase
-]
+import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -29,10 +22,8 @@ const HEADERS = { Authorization: `Bearer ${API_KEY}` }
 const MAX_PAGES = 5 // ~500 records -- plenty to see which cities repeat
 
 export async function GET() {
-  const { userId } = await auth()
-  if (!userId || !ALLOWED_USER_IDS.includes(userId)) {
-    return NextResponse.json({ error: 'Unauthorized' }, { status: 403 })
-  }
+  const denied = await requireDawsonAccess()
+  if (denied) return denied
 
   try {
     const counts = new Map<string, number>()
