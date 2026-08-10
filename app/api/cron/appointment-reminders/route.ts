@@ -35,7 +35,11 @@ const FROM_ADDRESS =
 const REPLY_TO_ADDRESS =
   process.env.REMINDER_REPLY_TO_ADDRESS || "agencies@furnitureassist.com";
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+// Created on first use rather than at import. The Resend constructor throws
+// when the key is falsy, so building this module must not require a runtime
+// secret. Still one instance per module, just deferred until a send happens.
+let _resend: Resend | null = null;
+const getResend = () => (_resend ??= new Resend(process.env.RESEND_API_KEY));
 
 function currentDayAndHour(timeZone: string) {
   const now = new Date();
@@ -147,7 +151,7 @@ export async function GET(req: NextRequest) {
     });
 
     try {
-      const { data, error } = await resend.emails.send({
+      const { data, error } = await getResend().emails.send({
         from: FROM_ADDRESS,
         to: toList,
         replyTo: REPLY_TO_ADDRESS,
