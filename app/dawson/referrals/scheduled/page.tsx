@@ -3,8 +3,8 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import CancelModal from '@/components/dawson/modals/CancelModal'
-import RescheduleModal, { type AvailableDate } from '@/components/dawson/modals/RescheduleModal'
+import CancelModal from '@/components/internal/modals/CancelModal'
+import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
 
 
 type Referral = {

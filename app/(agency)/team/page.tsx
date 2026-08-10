@@ -13,8 +13,8 @@
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById, getAgencyUsersByAgencyId } from '@/lib/airtable'
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import AgencyPageHeader from '@/components/AgencyPageHeader'
-import StaffList from '@/components/StaffList'
+import AgencyPageHeader from '@/components/agency/AgencyPageHeader'
+import StaffList from '@/components/agency/StaffList'
 
 
 export default async function AdminPage() {

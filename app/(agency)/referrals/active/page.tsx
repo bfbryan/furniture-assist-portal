@@ -10,7 +10,7 @@ import {
   getReferralsByStaffName,
   getReferralsByAgencyId,
 } from '@/lib/airtable'
-import ReferralTable from '@/components/ReferralTable'
+import ReferralTable from '@/components/agency/ReferralTable'
 
 // Active = not yet approved OR upcoming appointment.
 // Excludes Completed, Cancelled, Rejected.

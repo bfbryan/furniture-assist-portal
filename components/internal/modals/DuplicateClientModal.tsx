@@ -1,4 +1,4 @@
-// components/dawson/modals/DuplicateClientModal.tsx
+// components/internal/modals/DuplicateClientModal.tsx
 //
 // Despite the filename (kept as-is so the file path in the project doesn't
 // change), this is an INLINE banner, not a popup dialog. Rendered by

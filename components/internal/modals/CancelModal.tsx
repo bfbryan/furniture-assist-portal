@@ -1,4 +1,4 @@
-// components/dawson/modals/CancelModal.tsx
+// components/internal/modals/CancelModal.tsx
 //
 // Confirmation modal for cancelling a scheduled referral.
 //

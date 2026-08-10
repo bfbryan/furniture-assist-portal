@@ -1,4 +1,4 @@
-// components/dawson/IconBtn.tsx
+// components/internal/IconBtn.tsx
 //
 // Extracted verbatim from dawson/referrals/scheduled/page.tsx (July 2026).
 // The referral detail page is the second consumer, so the pattern moved here

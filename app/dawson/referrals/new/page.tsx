@@ -4,8 +4,8 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import AddAgencyStaffModal, { type AddStaffResult } from '@/components/dawson/modals/AddAgencyStaffModal'
-import DuplicateClientBanner, { type ClientMatch } from '@/components/dawson/modals/DuplicateClientModal'
+import AddAgencyStaffModal, { type AddStaffResult } from '@/components/internal/modals/AddAgencyStaffModal'
+import DuplicateClientBanner, { type ClientMatch } from '@/components/internal/modals/DuplicateClientModal'
 
 
 
@@ -25,7 +25,7 @@ const ITEMS = [
 
 
 // Per-slot capacities — MUST match at-auto-schedule-script.js TIME_CAPS,
-// components/dawson/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
+// components/internal/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
 // constant on app/dawson/schedule/page.tsx.
 type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'
 const SLOT_CAP: Record<TimeSlot, number> = {

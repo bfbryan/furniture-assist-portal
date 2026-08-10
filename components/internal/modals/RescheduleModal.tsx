@@ -1,4 +1,4 @@
-// components/dawson/modals/RescheduleModal.tsx
+// components/internal/modals/RescheduleModal.tsx
 //
 // Reschedule modal for shifting a referral to a different Saturday.
 //

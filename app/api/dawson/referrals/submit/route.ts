@@ -121,7 +121,7 @@ function isSaturday(isoDate: string): boolean {
 
 // ---- Ported from app/api/dawson/referrals/[id]/reschedule/route.ts for
 // the no-show reschedule branch. Keep these in sync with that route,
-// components/dawson/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
+// components/internal/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
 // constant on app/dawson/schedule/page.tsx.
 const VALID_TIMES = new Set(['9am', '10am', '11am', '12pm', '1pm'])
 type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'

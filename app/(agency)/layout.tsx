@@ -2,7 +2,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById } from '@/lib/airtable'
-import AgencyPortalShell from '@/components/AgencyPortalShell'
+import AgencyPortalShell from '@/components/agency/AgencyPortalShell'
 
 export default async function AgencyLayout({
   children,
