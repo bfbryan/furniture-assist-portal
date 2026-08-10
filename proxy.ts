@@ -2,13 +2,6 @@ import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 
 
-const DAWSON_USER_IDS = [
-  'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben
-  'user_3BodwTW4I7Vamt4t7wD3qeA7boM',  // Ray
-  'user_3BtKn01OMXSmi7eSsWvzvnEroCg',  //Dawson
-]
-
-
 const isPublicRoute = createRouteMatcher([
   '/sign-in(.*)',
   '/sign-up(.*)',

@@ -26,7 +26,7 @@
  * REQUIRES:
  *   - AIRTABLE_API_KEY and AIRTABLE_BASE_ID in .env.local
  *   - NEXT_PUBLIC_APP_URL in .env.local (base URL for claim links, e.g.
- *     https://portal.furnitureassist.org). Falls back to a placeholder
+ *     https://portal.furnitureassist.com). Falls back to a placeholder
  *     if not set — you can find/replace the CSV before sending.
  */
 
