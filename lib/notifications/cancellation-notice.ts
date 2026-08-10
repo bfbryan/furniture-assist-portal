@@ -1,4 +1,4 @@
-// lib/cancellation-notice.ts
+// lib/notifications/cancellation-notice.ts
 //
 // Immediate (non-cron) Cancellation Notice. Called directly from
 // app/api/dawson/referrals/[id]/cancel/route.ts right after a referral
@@ -22,8 +22,8 @@
 // route), same guard as the reschedule flow.
 
 import { Resend } from "resend";
-import { getAutomationSettings, logEmailSend } from "@/lib/airtable-reminders";
-import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/reminder-template";
+import { getAutomationSettings, logEmailSend } from "@/lib/airtable/reminders";
+import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/notifications/template";
 
 const AUTOMATION_NAME = "Cancellation Notice"; // must match the row's primary field value in Email Automations
 const FROM_ADDRESS =

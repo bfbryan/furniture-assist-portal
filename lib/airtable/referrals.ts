@@ -7,7 +7,7 @@
 // identity fields are lookups through the Client link. Everything that reads
 // them goes through safeLookupString.
 
-import { CATALOG } from '@/lib/items-disbursed'
+import { CATALOG } from '@/lib/catalog/items-disbursed'
 import {
   airtableFetch,
   airtableFetchAll,
@@ -244,7 +244,7 @@ export async function getReferralById(referralId: string) {
   }
   const compact = <T,>(arr: (T | null)[]) => arr.filter((x): x is T => x !== null)
 
-    // Built from the shared catalog in lib/items-disbursed.ts so the read shape,
+    // Built from the shared catalog in lib/catalog/items-disbursed.ts so the read shape,
   // the PATCH allowlist, and the edit UI can never drift apart. Adding an item
   // to the pickup sheet is now a one-line change there.
   const itemsDisbursed = {

@@ -1,4 +1,4 @@
-// lib/appointment-slip.ts
+// lib/notifications/appointment-slip.ts
 //
 // Generates the appointment slip PDF for a Client Referral record, stores it
 // in a Private Vercel Blob, and populates the Airtable "Appt Slip" attachment
@@ -12,7 +12,7 @@ import {
   AppointmentSlipDocument,
   AppointmentSlipData,
 } from "@/components/pdf/AppointmentSlipDocument";
-import { toTokenValue } from "@/lib/reminder-template";
+import { toTokenValue } from "@/lib/notifications/template";
 
 const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
   process.env.AIRTABLE_BASE_ID!

@@ -15,8 +15,8 @@ import {
   getDueReminders,
   markReminderSent,
   logEmailSend,
-} from "@/lib/airtable-reminders";
-import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/reminder-template";
+} from "@/lib/airtable/reminders";
+import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/notifications/template";
 
 // Aug 2026: without this, Next.js can serve a cached response for this GET
 // route instead of actually invoking the function on every cron call --

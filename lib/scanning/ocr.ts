@@ -1,5 +1,5 @@
 /**
- * lib/gemini-ocr.ts
+ * lib/scanning/ocr.ts
  *
  * Portal-native OCR pipeline. Ports the Apps Script `ocr-sheet-processor.js`
  * pipeline (extractWithGemini + resolveRecordId + writeToAirtable +

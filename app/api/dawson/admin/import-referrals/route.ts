@@ -23,7 +23,7 @@ import {
   type ReferralInput,
   type CreateResult,
   type SaturdayMap,
-} from '@/lib/createReferralWithAgency'
+} from '@/lib/referrals/create'
 import { writeImportLog } from '@/lib/airtable'
 
 export async function POST(req: Request) {

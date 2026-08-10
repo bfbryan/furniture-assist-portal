@@ -7,7 +7,7 @@ import RescheduleModal, { type AvailableDate } from '@/components/dawson/modals/
 import {
   IconBtn, RescheduleIcon, CancelIcon, RESCHEDULE_COLOR, CANCEL_COLOR,
 } from '@/components/dawson/IconBtn'
-import { CATALOG } from '@/lib/items-disbursed'
+import { CATALOG } from '@/lib/catalog/items-disbursed'
 
 
 type ItemsDisbursed = {
@@ -107,7 +107,7 @@ const LANGUAGES = ['English', 'Spanish', 'Haitian Creole', 'French', 'Arabic', '
 const STATES = ['NJ', 'NY', 'PA', 'CT', 'DE']
 
 
-// Same 25-day window as lib/client-match.ts's NO_SHOW_RESCHEDULE_WINDOW_DAYS
+// Same 25-day window as lib/referrals/match.ts's NO_SHOW_RESCHEDULE_WINDOW_DAYS
 // and the History page's own gating. Kept in sync everywhere so a No Show
 // that's aged out of "reschedule in place" on Add Referral / History doesn't
 // still show live Reschedule/Cancel actions -- or editable fields -- here.

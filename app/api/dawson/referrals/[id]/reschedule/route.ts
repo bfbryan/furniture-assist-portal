@@ -35,7 +35,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
-import { sendRescheduleNotice } from '@/lib/reschedule-notice'
+import { sendRescheduleNotice } from '@/lib/notifications/reschedule-notice'
 
 
 

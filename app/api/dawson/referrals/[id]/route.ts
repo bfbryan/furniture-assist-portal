@@ -3,7 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getReferralById } from '@/lib/airtable'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
-import { QUANTITY_FIELDS, DISBURSED_TEXT_FIELDS, type DisbursedTextKey } from '@/lib/items-disbursed'
+import { QUANTITY_FIELDS, DISBURSED_TEXT_FIELDS, type DisbursedTextKey } from '@/lib/catalog/items-disbursed'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!

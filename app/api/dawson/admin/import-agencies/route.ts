@@ -14,7 +14,7 @@
 import { NextResponse } from 'next/server'
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
-import { upsertAgencyAndUser } from '@/lib/upsertAgencyAndUser'
+import { upsertAgencyAndUser } from '@/lib/agencies/upsert'
 import { writeImportLog } from '@/lib/airtable'
 
 // Bump serverless function timeout to 60s. 33 rows × ~500ms each = ~16s,

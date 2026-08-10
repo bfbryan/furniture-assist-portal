@@ -7,13 +7,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { getAutomationSettings, logEmailSend } from "@/lib/airtable-reminders";
-import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/reminder-template";
+import { getAutomationSettings, logEmailSend } from "@/lib/airtable/reminders";
+import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/notifications/template";
 import {
   getConfirmEmailPending,
   generateAndStoreSlip,
   markConfirmEmailSent,
-} from "@/lib/appointment-slip";
+} from "@/lib/notifications/appointment-slip";
 
 // Aug 2026: same fix as appointment-reminders/route.ts -- without this,
 // Next.js can serve a cached response for this GET route instead of

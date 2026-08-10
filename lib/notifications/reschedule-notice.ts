@@ -1,4 +1,4 @@
-// lib/reschedule-notice.ts
+// lib/notifications/reschedule-notice.ts
 //
 // Immediate (non-cron) Reschedule Notice. Called directly from
 // app/api/dawson/referrals/[id]/reschedule/route.ts right after a referral
@@ -19,9 +19,9 @@
 // report (see the `shouldSnapshot` check in the reschedule route).
 
 import { Resend } from "resend";
-import { getAutomationSettings, logEmailSend } from "@/lib/airtable-reminders";
-import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/reminder-template";
-import { generateAndStoreSlip } from "@/lib/appointment-slip";
+import { getAutomationSettings, logEmailSend } from "@/lib/airtable/reminders";
+import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/notifications/template";
+import { generateAndStoreSlip } from "@/lib/notifications/appointment-slip";
 
 const AUTOMATION_NAME = "Reschedule Notice"; // must match the row's primary field value in Email Automations
 const FROM_ADDRESS =

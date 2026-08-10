@@ -8,13 +8,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { getAutomationSettings, logEmailSend } from "@/lib/airtable-reminders";
-import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/reminder-template";
+import { getAutomationSettings, logEmailSend } from "@/lib/airtable/reminders";
+import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/notifications/template";
 import {
   getReceiptPending,
   generateAndStoreReceipt,
   markPostApptEmailSent,
-} from "@/lib/client-receipt";
+} from "@/lib/notifications/client-receipt";
 
 // Aug 2026: same fix as the other two cron routes -- without this, Next.js
 // can serve a cached response for this GET route instead of invoking the

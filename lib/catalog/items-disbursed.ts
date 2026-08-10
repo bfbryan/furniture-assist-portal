@@ -1,4 +1,4 @@
-// lib/items-disbursed.ts
+// lib/catalog/items-disbursed.ts
 //
 // Single source of truth for the Items Disbursed catalog.
 //

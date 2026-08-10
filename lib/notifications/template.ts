@@ -1,4 +1,4 @@
-// lib/reminder-template.ts
+// lib/notifications/template.ts
 //
 // Fills {{token}} placeholders in the HTML template stored in Airtable
 // (Email Automations > Template field) with real values, and formats

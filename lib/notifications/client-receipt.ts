@@ -1,4 +1,4 @@
-// lib/client-receipt.ts
+// lib/notifications/client-receipt.ts
 //
 // Generates the post-appointment client receipt PDF, stores it in the same
 // Private Vercel Blob store as the appointment slip (under a
@@ -16,7 +16,7 @@ import {
   ClientReceiptData,
   ReceiptCategory,
 } from "@/components/pdf/ClientReceiptDocument";
-import { toTokenValue } from "@/lib/reminder-template";
+import { toTokenValue } from "@/lib/notifications/template";
 
 const CLIENT_RECEIPT_TABLE = "Client Referrals";
 // ---- UPDATE if this doesn't match your exact Airtable view name ----
