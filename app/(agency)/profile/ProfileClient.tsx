@@ -78,9 +78,10 @@ const CARD_TITLE: React.CSSProperties = {
   fontSize: '15px',
   color: '#1B2B4B',
 }
+// Column tracks live in globals.css (.fa-profile-row) so they can stack below
+// 1280px — every element using ROW / ROW_LAST carries that class.
 const ROW: React.CSSProperties = {
   display: 'grid',
-  gridTemplateColumns: '140px 1fr',
   alignItems: 'start',
   padding: '10px 0',
   borderBottom: '1px solid #F5F1EA',
@@ -219,17 +220,17 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
 
       {!editing ? (
         <div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Agency Name</div>
             <div style={VALUE}>{agency.name}</div>
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Office Name</div>
             <div style={agency.officeName ? VALUE : VALUE_MUTED}>
               {agency.officeName ?? 'Not set'}
             </div>
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Address</div>
             <div style={VALUE}>
               {agency.address}
@@ -243,11 +244,11 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
               {agency.city}, {agency.state} {agency.zip}
             </div>
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Main Phone</div>
             <div style={VALUE}>{agency.phone || '—'}</div>
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Website</div>
             <div style={agency.website ? VALUE : VALUE_MUTED}>
               {agency.website ? (
@@ -264,46 +265,46 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
               )}
             </div>
           </div>
-          <div style={ROW_LAST}>
+          <div className="fa-profile-row" style={ROW_LAST}>
             <div style={LABEL}>EIN</div>
             <div style={agency.ein ? VALUE : VALUE_MUTED}>{agency.ein ?? 'Not set'}</div>
           </div>
         </div>
       ) : (
         <div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Agency Name</div>
             <input style={INPUT} value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} />
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Office Name</div>
             <input style={INPUT} value={form.officeName} onChange={e => setForm({ ...form, officeName: e.target.value })} />
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Address</div>
             <input style={INPUT} value={form.address} onChange={e => setForm({ ...form, address: e.target.value })} placeholder="Street" />
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Address 2</div>
             <input style={INPUT} value={form.address2} onChange={e => setForm({ ...form, address2: e.target.value })} placeholder="Apt / Suite / Unit" />
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>City / State / Zip</div>
-            <div style={{ display: 'grid', gridTemplateColumns: '2fr 80px 100px', gap: '6px' }}>
+            <div className="fa-profile-citystatezip" style={{ display: 'grid', gap: '6px' }}>
               <input style={INPUT} value={form.city} onChange={e => setForm({ ...form, city: e.target.value })} placeholder="City" />
               <input style={INPUT} value={form.state} onChange={e => setForm({ ...form, state: e.target.value })} placeholder="ST" maxLength={2} />
               <input style={INPUT} value={form.zip} onChange={e => setForm({ ...form, zip: e.target.value })} placeholder="Zip" />
             </div>
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Main Phone</div>
             <input style={INPUT} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Website</div>
             <input style={INPUT} value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} placeholder="reagan.com" />
           </div>
-          <div style={ROW_LAST}>
+          <div className="fa-profile-row" style={ROW_LAST}>
             <div style={LABEL}>EIN</div>
             <input style={INPUT} value={form.ein} onChange={e => setForm({ ...form, ein: e.target.value })} placeholder="12-3456789" />
           </div>
@@ -385,42 +386,42 @@ function MyProfileCard({ user }: { user: AgencyUser }) {
 
       {!editing ? (
         <div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Name</div>
             <div style={VALUE}>{user.name}</div>
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Email</div>
             <div style={VALUE}>{user.email}</div>
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Phone</div>
             <div style={user.phone ? VALUE : VALUE_MUTED}>{user.phone ?? 'Not set'}</div>
           </div>
-          <div style={ROW_LAST}>
+          <div className="fa-profile-row" style={ROW_LAST}>
             <div style={LABEL}>Role</div>
             <div style={VALUE}>{user.role}</div>
           </div>
         </div>
       ) : (
         <div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>First Name</div>
             <input style={INPUT} value={form.firstName} onChange={e => setForm({ ...form, firstName: e.target.value })} />
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Last Name</div>
             <input style={INPUT} value={form.lastName} onChange={e => setForm({ ...form, lastName: e.target.value })} />
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Email</div>
             <div style={{ ...VALUE_MUTED, paddingTop: '3px' }}>{user.email} (managed by Clerk)</div>
           </div>
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Phone</div>
             <input style={INPUT} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
           </div>
-          <div style={ROW_LAST}>
+          <div className="fa-profile-row" style={ROW_LAST}>
             <div style={LABEL}>Role</div>
             <div style={{ ...VALUE_MUTED, paddingTop: '3px' }}>{user.role} (assigned by admin)</div>
           </div>
@@ -484,7 +485,7 @@ function AdminCard({ agency, isAdmin }: { agency: Agency; isAdmin: boolean }) {
             </div>
           </div>
 
-          <div style={ROW}>
+          <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Email</div>
             <div style={VALUE}>
               {agency.adminEmail ? (
@@ -496,7 +497,7 @@ function AdminCard({ agency, isAdmin }: { agency: Agency; isAdmin: boolean }) {
               )}
             </div>
           </div>
-          <div style={ROW_LAST}>
+          <div className="fa-profile-row" style={ROW_LAST}>
             <div style={LABEL}>Phone</div>
             <div style={VALUE}>
               {agency.adminPhone ? (
@@ -545,11 +546,12 @@ export default function ProfileClient({
   agencyUser: AgencyUser
   isAdmin: boolean
 }) {
+  // Column tracks live in globals.css (.fa-profile-grid) so they can stack below 1280px.
   return (
     <div
+      className="fa-profile-grid"
       style={{
         display: 'grid',
-        gridTemplateColumns: 'minmax(0, 1.5fr) minmax(0, 1fr)',
         gap: '20px',
         alignItems: 'start',
       }}

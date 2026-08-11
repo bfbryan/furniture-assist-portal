@@ -193,10 +193,11 @@ function HistoryCard({ r }: { r: Referral }) {
       }}
     >
       <div style={{ background: meta.accent, borderTopLeftRadius: '10px', borderBottomLeftRadius: '10px' }} />
+      {/* Column tracks live in globals.css (.fa-history-card-grid) so they can stack below 1280px. */}
       <div
+        className="fa-history-card-grid"
         style={{
           display: 'grid',
-          gridTemplateColumns: '160px 180px 130px 110px 110px 150px 60px',
           alignItems: 'start',
           gap: '10px',
           padding: '14px 16px',

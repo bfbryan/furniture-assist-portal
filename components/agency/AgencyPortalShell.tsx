@@ -1,6 +1,7 @@
 // components/agency/AgencyPortalShell.tsx
 'use client'
 
+import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
 import { UserButton } from '@clerk/nextjs'
 import Link from 'next/link'
@@ -22,19 +23,67 @@ export default function AgencyPortalShell({
 }: Props) {
   const pathname = usePathname()
 
+  // Off-canvas drawer state — below 1280px only. Above it the sidebar is
+  // permanently in place and this state is never read.
+  //
+  // The drawer is open only while we are still on the page it was opened from,
+  // so navigating closes it for free — including via browser back/forward.
+  const [openedFrom, setOpenedFrom] = useState<string | null>(null)
+  const navOpen = openedFrom === pathname
+  const closeNav = () => setOpenedFrom(null)
+
+  const hamburgerRef = useRef<HTMLButtonElement>(null)
+  const drawerRef = useRef<HTMLElement>(null)
+
+  // At 1280px and up the sidebar is permanent, so a drawer left open on a
+  // smaller viewport (iPad Pro portrait 1024 → landscape 1366) must close —
+  // otherwise the body scroll lock below would never be released.
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 1280px)')
+    const onChange = () => {
+      if (mq.matches) setOpenedFrom(null)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
+  // While open: Escape closes, body scroll is locked, focus moves into the
+  // drawer, and focus returns to the hamburger when it closes.
+  useEffect(() => {
+    if (!navOpen) return
+
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setOpenedFrom(null)
+    }
+    document.addEventListener('keydown', onKey)
+
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const hamburger = hamburgerRef.current
+    drawerRef.current?.focus()
+
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      document.body.style.overflow = previousOverflow
+      hamburger?.focus()
+    }
+  }, [navOpen])
+
   // Active link if pathname starts with href (so /referrals/[id] highlights /referrals/history via loose match — we handle exact/prefix per link below)
   const isActive = (href: string, mode: 'exact' | 'prefix' = 'prefix') => {
     if (mode === 'exact') return pathname === href
     return pathname === href || pathname.startsWith(href + '/')
   }
 
-    const linkStyle = (_active: boolean) => ({
+    const linkStyle = (active: boolean) => ({
     display: 'flex',
     alignItems: 'center',
     gap: '10px',
     padding: '9px 12px',
     borderRadius: '8px',
-    color: 'rgba(255,255,255,0.6)',
+    background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
+    color: active ? 'white' : 'rgba(255,255,255,0.6)',
     fontSize: '13.5px',
     fontWeight: 500,
     textDecoration: 'none',
@@ -70,8 +119,27 @@ export default function AgencyPortalShell({
     .toUpperCase()
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="fa-portal" style={{ display: 'flex', minHeight: '100vh' }}>
+      {navOpen && (
+        <div
+          className="fa-shell-backdrop"
+          onClick={closeNav}
+          aria-hidden="true"
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 90,
+            background: 'rgba(27,43,75,0.55)',
+          }}
+        />
+      )}
+
       <aside
+        id="fa-agency-nav"
+        className="fa-shell-sidebar"
+        ref={drawerRef}
+        tabIndex={-1}
+        data-open={navOpen}
         style={{
           width: '240px',
           background: '#1B2B4B',
@@ -248,7 +316,47 @@ export default function AgencyPortalShell({
         </div>
       </aside>
 
-      <main style={{ marginLeft: '240px', flex: 1, background: '#F7F6F2', minHeight: '100vh' }}>
+      <main className="fa-shell-main" style={{ flex: 1, background: '#F7F6F2', minHeight: '100vh' }}>
+        {/* Mobile top bar — below 1280px only. This is the navy h-16 header
+            that /referrals/[id] and /referrals/new used to hand-roll, promoted
+            into the shell so there is one copy and it carries the hamburger. */}
+        <header className="fa-shell-topbar bg-[#1B2B4B] h-16 items-center justify-between px-8 sticky top-0 z-40 shadow-lg">
+          <button
+            ref={hamburgerRef}
+            type="button"
+            onClick={() => setOpenedFrom(navOpen ? null : pathname)}
+            aria-expanded={navOpen}
+            aria-controls="fa-agency-nav"
+            aria-label={navOpen ? 'Close navigation menu' : 'Open navigation menu'}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              width: '44px',
+              height: '44px',
+              background: 'none',
+              border: 'none',
+              color: 'white',
+              cursor: 'pointer',
+            }}
+          >
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="3" y1="6" x2="21" y2="6" />
+              <line x1="3" y1="12" x2="21" y2="12" />
+              <line x1="3" y1="18" x2="21" y2="18" />
+            </svg>
+          </button>
+          <span className="font-extrabold text-sm text-white tracking-wide">
+            Furniture Assist <span className="text-[#3AA08D]">| Agency Portal</span>
+          </span>
+          <UserButton
+            appearance={{
+              elements: {
+                avatarBox: { width: '32px', height: '32px' },
+              },
+            }}
+          />
+        </header>
         {children}
       </main>
     </div>

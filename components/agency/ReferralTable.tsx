@@ -94,16 +94,26 @@ function ConfirmModal({ modal, onConfirm, onClose, loading }: {
   onClose: () => void
   loading: boolean
 }) {
+  // Close on Esc — same as InviteStaffModal.
+  useEffect(() => {
+    if (!modal.open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [modal.open, loading, onClose])
+
   if (!modal.open) return null
   const isCancel = modal.type === 'cancel'
   const isWithdraw = modal.type === 'withdraw'
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '440px', width: '90%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
+      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '440px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
         <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
           {isWithdraw ? 'Withdraw Referral' : 'Cancel Appointment'}
         </h3>
@@ -147,6 +157,16 @@ function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading }:
     if (modal.open) { setPreferredDate(''); setFlexible(false); setError(null) }
   }, [modal.open])
 
+  // Close on Esc — same as InviteStaffModal.
+  useEffect(() => {
+    if (!modal.open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [modal.open, loading, onClose])
+
   if (!modal.open) return null
 
   const handleConfirm = () => {
@@ -158,10 +178,10 @@ function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading }:
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
+      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '500px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
         <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
           Reschedule Appointment
         </h3>
@@ -273,7 +293,8 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
     <div style={{ display: 'grid', gridTemplateColumns: '4px 1fr', background: 'white', borderRadius: '12px', boxShadow: '0 2px 12px rgba(27,43,75,0.07)', marginBottom: '10px' }}>
       <div style={{ background: colors.accent }} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '130px 130px 160px 180px 140px 120px 1fr', alignItems: 'start', gap: '10px', padding: '14px 16px' }}>
+      {/* Column tracks live in globals.css (.fa-referral-card-grid) so they can stack below 1280px. */}
+      <div className="fa-referral-card-grid" style={{ display: 'grid', alignItems: 'start', gap: '10px', padding: '14px 16px' }}>
 
        {/* CLIENT NAME */}
 <div>

@@ -182,9 +182,10 @@ export default async function DashboardPage() {
       />
 
 
+      {/* Column tracks live in globals.css (.fa-dashboard-grid) so they can stack below 1280px. */}
       <main
-        className="max-w-7xl mx-auto px-8 py-9 grid gap-7"
-        style={{ gridTemplateColumns: 'minmax(0, 1fr) 300px', alignItems: 'start' }}
+        className="fa-dashboard-grid max-w-7xl mx-auto px-8 py-9 grid gap-7"
+        style={{ alignItems: 'start' }}
       >
         {/* ============ LEFT: Upcoming Appointments ============ */}
         <div
@@ -363,9 +364,9 @@ export default async function DashboardPage() {
                     return (
                       <div
                         key={r.id}
+                        className="fa-dash-appt-row"
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: '4px 1fr 90px 130px',
                           alignItems: 'center',
                           background: '#FBFAF7',
                           border: '1px solid #EDE9E1',
