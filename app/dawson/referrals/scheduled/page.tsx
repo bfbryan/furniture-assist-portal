@@ -289,8 +289,11 @@ export default function ScheduledPage() {
   }
 
 
+  // leadDays=1 so a reschedule can land on the upcoming Saturday, matching the
+  // detail page. This list only ever feeds the Reschedule modal below, so it
+  // does not affect new-referral scheduling.
   const loadAvailability = () => {
-    fetch('/api/dawson/schedule/available?weeks=8', { cache: 'no-store' })
+    fetch('/api/dawson/schedule/available?weeks=8&leadDays=1', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => setAvailableDates(Array.isArray(data) ? data : []))
       .catch(() => {})
