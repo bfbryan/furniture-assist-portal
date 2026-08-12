@@ -9,7 +9,7 @@
 //
 // Filter policy (form vs. auto-schedule):
 //   FORM (this endpoint, Dawson manually scheduling):
-//     - Date >= today + 7 days
+//     - Date >= today + `leadDays` days (?leadDays=N, default 7, clamped 0-60)
 //     - Status = 'Open'
 //     - Slots Remaining > 0
 //   AUTO-SCHEDULE (Airtable automation, new submissions):
@@ -37,13 +37,28 @@ const HEADERS = {
 
 
 const SCHEDULE_TABLE = 'Saturday Schedule'
-const MIN_LEAD_DAYS = 7
+
+// How far out a date must be before this endpoint will offer it. Callers can
+// override per-picker with ?leadDays=N; anything that doesn't pass the param
+// keeps the historical 7, so existing callers are unchanged.
+const DEFAULT_LEAD_DAYS = 7
+const LEAD_DAYS_MIN = 0
+const LEAD_DAYS_MAX = 60
 
 
 function addDays(d: Date, days: number): string {
   const out = new Date(d)
   out.setDate(out.getDate() + days)
   return out.toISOString().split('T')[0]
+}
+
+
+// Missing or non-numeric -> DEFAULT_LEAD_DAYS; otherwise clamped into range.
+function parseLeadDays(raw: string | null): number {
+  if (raw === null) return DEFAULT_LEAD_DAYS
+  const n = parseInt(raw, 10)
+  if (!Number.isFinite(n)) return DEFAULT_LEAD_DAYS
+  return Math.min(Math.max(n, LEAD_DAYS_MIN), LEAD_DAYS_MAX)
 }
 
 
@@ -56,10 +71,11 @@ export async function GET(request: Request) {
     const { searchParams } = new URL(request.url)
     const debug = searchParams.get('debug') === '1'
     const weeksAhead = Math.min(parseInt(searchParams.get('weeks') || '8'), 26)
+    const leadDays = parseLeadDays(searchParams.get('leadDays'))
 
 
     const today = new Date()
-    const minDate = addDays(today, MIN_LEAD_DAYS) // inclusive lower bound
+    const minDate = addDays(today, leadDays) // inclusive lower bound
     const endDate = addDays(today, weeksAhead * 7) // exclusive upper bound
 
 
@@ -80,7 +96,11 @@ export async function GET(request: Request) {
       `maxRecords=100`
 
 
-    console.log('Schedule available route - minDate:', minDate, 'endDate:', endDate)
+    console.log(
+      'Schedule available route - minDate:', minDate,
+      'endDate:', endDate,
+      'leadDays:', leadDays
+    )
 
 
     const res = await fetch(url, { headers: HEADERS })
@@ -105,6 +125,7 @@ export async function GET(request: Request) {
         minDate,
         endDate,
         weeksAhead,
+        leadDays,
         recordCount: data.records?.length || 0,
         records: (data.records || []).map((r: any) => ({
           id: r.id,
