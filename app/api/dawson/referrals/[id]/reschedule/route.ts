@@ -249,6 +249,11 @@ export async function POST(
     'Saturday Schedule': [scheduleRow.id],
     'Appointment Time': resolvedTime,
     'Appointment Status': 'Scheduled',
+    // Re-arm the Monday reminder for the NEW date: the "Reminder Email Pending"
+    // view only matches rows where 'Reminder Email Sent' is blank, so without
+    // this a referral that was already reminded never re-enters the view.
+    'Reminder Email Sent': false,
+    'Reminder Sent At': null,
   }
 
 

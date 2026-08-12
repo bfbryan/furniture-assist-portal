@@ -1253,8 +1253,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         .catch(e => setLoadError(e instanceof Error ? e.message : String(e)))
         .finally(() => setLoading(false))
     })
-    // Availability powers the Reschedule modal's Saturday picker.
-    fetch('/api/dawson/schedule/available?weeks=8', { cache: 'no-store' })
+    // Availability powers the Reschedule modal's Saturday picker. leadDays=1
+    // so a reschedule can land on the upcoming Saturday; the endpoint's
+    // default of 7 would skip it from midweek.
+    fetch('/api/dawson/schedule/available?weeks=8&leadDays=1', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => setAvailableDates(Array.isArray(data) ? data : []))
       .catch(() => {})
