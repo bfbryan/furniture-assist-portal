@@ -117,7 +117,7 @@ export default async function HistoryPage() {
           </div>
 
           {/* Right — KPI tiles */}
-          <div className="flex items-center gap-4 flex-wrap">
+          <div className="fa-hero-stats flex items-center gap-4 flex-wrap">
             <div className="bg-white/8 border border-[rgba(58,160,141,0.4)] rounded-xl px-5 py-3 text-center min-w-[80px]">
               <div className="font-montserrat font-extrabold text-2xl text-[#3AA08D] leading-none mb-1">
                 {completedCount}

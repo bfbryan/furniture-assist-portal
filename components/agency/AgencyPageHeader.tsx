@@ -125,7 +125,7 @@ export default function AgencyPageHeader({
 
         {/* Stat tiles — optional */}
         {hasStats && (
-          <div className="flex items-center gap-4 flex-wrap">
+          <div className="fa-hero-stats flex items-center gap-4 flex-wrap">
             {stats!.map((s, i) => (
               <div
                 key={i}

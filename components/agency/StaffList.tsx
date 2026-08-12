@@ -459,7 +459,10 @@ function Section({
 
   return (
     <div style={{ marginBottom: '36px' }}>
+      {/* Wrapping lives in globals.css (.fa-staff-section-header) so the action
+          button drops to its own line below 1280px instead of compressing. */}
       <div
+        className="fa-staff-section-header"
         style={{
           display: 'flex',
           alignItems: 'center',

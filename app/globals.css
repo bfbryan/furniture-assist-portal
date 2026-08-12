@@ -182,13 +182,52 @@ h1, h2, h3, h4, h5, h6 {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  /* Appointment row keeps its accent bar; the bar spans the stacked rows. */
-  .fa-dash-appt-row {
-    grid-template-columns: 4px minmax(0, 1fr);
+  /* Populated referral and history cards: stacking every cell into its own
+     full-width block turned a card into ~16 lines of label-over-value, which
+     read as a jumble once there was real data in it. Instead each cell becomes
+     a label column plus a value column — the same shape the Profile and client
+     detail pages already use, which is what makes those two read cleanly on a
+     phone. Cells with several value lines (address, appointment date + time)
+     keep every line in the value column. */
+  .fa-referral-card-grid > div,
+  .fa-history-card-grid > div {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    align-items: start;
+    justify-items: start;
+    gap: 10px;
   }
 
-  .fa-dash-appt-row > :first-child {
-    grid-row: 1 / -1;
+  .fa-referral-card-grid > div > :not(:first-child),
+  .fa-history-card-grid > div > :not(:first-child) {
+    grid-column: 2;
+  }
+
+  /* The appointment row carries no labels, so it stays a single row and simply
+     lets the time and status columns shrink to their content. Stacking it put
+     a centred time and a centred pill under a left-aligned name. */
+  .fa-dash-appt-row {
+    grid-template-columns: 4px minmax(0, 1fr) auto auto;
+  }
+
+  /* Hero stat tiles: three tiles at their natural width overflow a phone and
+     wrap 2 + 1, leaving an orphan. An even two-up grid wraps deliberately
+     instead, with an odd last tile spanning the full width. */
+  .fa-hero-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .fa-hero-stats > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  /* Section title and its action button compressed into each other; let the
+     button drop to its own line. */
+  .fa-staff-section-header {
+    flex-wrap: wrap;
+    gap: 10px;
   }
 
   /* InfoRow keeps its label column, narrowed so the value has room. */
