@@ -83,12 +83,38 @@ const INPUT: React.CSSProperties = {
   outline: 'none',
 }
 
+// Staff phones may carry an extension -- the Airtable phone field accepts one
+// after the number. Everything before an extension marker is formatted as
+// (000) 000-0000; the digits after it are kept and re-emitted as ' x<digits>'.
+//
+// formatPhone runs on its own output on every keystroke (controlled input), so
+// it MUST be idempotent: formatPhone(formatPhone(v)) === formatPhone(v).
+// The marker is only honoured once the 10-digit number is complete, which is
+// what keeps a stray letter typed mid-number being dropped as it always was.
+const EXT_MARKER = /\s*(?:extension|ext\.?|x|#)\s*/i
+const MAX_EXT_DIGITS = 8
+
 function formatPhone(value: string): string {
-  const digits = value.replace(/\D/g, '').slice(0, 10)
+  const marker = EXT_MARKER.exec(value)
+  let beforeMarker = value
+  let afterMarker = ''
+  if (marker) {
+    beforeMarker = value.slice(0, marker.index)
+    afterMarker = value.slice(marker.index + marker[0].length)
+  }
+
+  const digits = beforeMarker.replace(/\D/g, '').slice(0, 10)
   if (digits.length === 0) return ''
   if (digits.length <= 3) return `(${digits}`
   if (digits.length <= 6) return `(${digits.slice(0, 3)}) ${digits.slice(3)}`
-  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+
+  const main = `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+  if (!marker || digits.length < 10) return main
+
+  // Emitted even when empty so that typing 'x' leaves somewhere to type into
+  // rather than being swallowed on the same keystroke.
+  const ext = afterMarker.replace(/\D/g, '').slice(0, MAX_EXT_DIGITS)
+  return `${main} x${ext}`
 }
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -486,7 +512,7 @@ export default function AddAgencyStaffModal({
               style={INPUT}
               value={staff.phone}
               onChange={e => setStaff({ ...staff, phone: formatPhone(e.target.value) })}
-              placeholder="(000) 000-0000"
+              placeholder="(000) 000-0000 x000"
             />
           </div>
         </div>

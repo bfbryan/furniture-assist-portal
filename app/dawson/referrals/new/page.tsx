@@ -1022,8 +1022,13 @@ useEffect(() => {
                     </div>
                   )}
 
+                  {/* Sticky so the section label stays pinned while the list
+                      scrolls -- with several staff matches the Agencies group
+                      sits below the fold, and a pinned header is what signals
+                      it's there. Background must stay fully opaque or rows
+                      show through as they pass underneath. */}
                   {staffResults.length > 0 && (
-                    <div style={{ padding: '7px 14px 5px', fontSize: '10px', fontWeight: 800, color: '#7A8899', textTransform: 'uppercase', letterSpacing: '0.08em', background: '#FCFBF9' }}>
+                    <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '7px 14px 5px', fontSize: '11px', fontWeight: 800, color: '#2A7F6F', textTransform: 'uppercase', letterSpacing: '0.08em', background: '#EAF4F2' }}>
                       Staff Members
                     </div>
                   )}
@@ -1051,7 +1056,7 @@ useEffect(() => {
                   ))}
 
                   {filteredAgencies.length > 0 && staffResults.length > 0 && (
-                    <div style={{ padding: '7px 14px 5px', fontSize: '10px', fontWeight: 800, color: '#7A8899', textTransform: 'uppercase', letterSpacing: '0.08em', background: '#FCFBF9', borderTop: '1px solid #EDE9E1' }}>
+                    <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '7px 14px 5px', fontSize: '11px', fontWeight: 800, color: '#2A7F6F', textTransform: 'uppercase', letterSpacing: '0.08em', background: '#EAF4F2', borderTop: '1px solid #EDE9E1' }}>
                       Agencies
                     </div>
                   )}
