@@ -318,8 +318,12 @@ export default function HistoryPage() {
 
   // Load available Saturdays once on mount — same source the detail page +
   // schedule page use. Cheap enough to keep in memory.
+  //
+  // leadDays=1 so a reschedule can land on the upcoming Saturday, matching the
+  // detail page. This list only ever feeds the Reschedule modal below, so it
+  // does not affect new-referral scheduling.
   useEffect(() => {
-    fetch('/api/dawson/schedule/available', { cache: 'no-store' })
+    fetch('/api/dawson/schedule/available?leadDays=1', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => { if (Array.isArray(data)) setAvailableDates(data) })
       .catch(() => {})
