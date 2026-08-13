@@ -71,6 +71,12 @@ export default async function HistoryPage() {
   const cancelledCount = historyReferrals.filter(
     (r: any) => r.appointmentStatus === 'Cancelled'
   ).length
+  // Fourth tile so the set is an even 2x2 on a phone rather than stranding one.
+  // Rejected is already a first-class outcome here — it has a filter chip and an
+  // outcome pill — and matches how outcomeOf() classifies a referral.
+  const rejectedCount = historyReferrals.filter(
+    (r: any) => r.referralReview === 'Rejected'
+  ).length
 
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
@@ -140,6 +146,14 @@ export default async function HistoryPage() {
               </div>
               <div className="text-xs font-bold uppercase tracking-wider text-white/45">
                 Cancelled
+              </div>
+            </div>
+            <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
+              <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
+                {rejectedCount}
+              </div>
+              <div className="text-xs font-bold uppercase tracking-wider text-white/45">
+                Rejected
               </div>
             </div>
           </div>

@@ -332,20 +332,22 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
           <div style={COL_SUB}>{formatDate(r.referralDate)}</div>
         </div>
 
-        {/* APPOINTMENT */}
+        {/* APPOINTMENT — date and time share one line under the single header,
+            so mobile reads the same way the desktop column is labelled. Wraps
+            back to two lines only where the column is too narrow to hold both. */}
 <div>
   <div style={COL_HEADER}>Appointment</div>
-  <div style={COL_SUB}>
-    {status === 'Scheduled' ? formatDate(r.appointmentDate) : '—'}
+  <div style={{ ...COL_SUB, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px 6px' }}>
+    <span>{status === 'Scheduled' ? formatDate(r.appointmentDate) : '—'}</span>
+    {status === 'Scheduled' && r.appointmentTime && (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        {r.appointmentTime}
+      </span>
+    )}
   </div>
-  {status === 'Scheduled' && r.appointmentTime && (
-    <div style={{ ...COL_SUB, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-      </svg>
-      {r.appointmentTime}
-    </div>
-  )}
 </div>
 
         {/* ACTIONS */}

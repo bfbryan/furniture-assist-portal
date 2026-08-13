@@ -310,7 +310,11 @@ export default function HistoryClient({
           >
             Filter by staff:
           </label>
+          {/* Width lives in globals.css (.fa-history-staff-select): the label
+              plus a 200px select overflows a phone, so below 1280px the select
+              takes its own full-width line. */}
           <select
+            className="fa-history-staff-select"
             value={staffFilter}
             onChange={e => setStaffFilter(e.target.value)}
             style={{
@@ -322,7 +326,6 @@ export default function HistoryClient({
               background: 'white',
               cursor: 'pointer',
               fontFamily: 'inherit',
-              minWidth: '200px',
             }}
           >
             <option value="all">All Staff</option>
@@ -378,7 +381,10 @@ export default function HistoryClient({
             }}
           />
         </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {/* Wrapping lives in globals.css (.fa-history-chips): below 1280px both
+            chip rows become one-line horizontal strips instead of wrapping to
+            two rows each and pushing the results off screen. */}
+        <div className="fa-history-chips" style={{ display: 'flex', gap: '6px' }}>
           {DATE_CHIPS.map(c => {
             const active = dateRange === c.key
             return (
@@ -405,7 +411,7 @@ export default function HistoryClient({
       </div>
 
       {/* Row 2 — status chips */}
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '22px' }}>
+      <div className="fa-history-chips" style={{ display: 'flex', gap: '6px', marginBottom: '22px' }}>
         {STATUS_CHIPS.map(c => {
           const active = statusFilter === c.key
           return (

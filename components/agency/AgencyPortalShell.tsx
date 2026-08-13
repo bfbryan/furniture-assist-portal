@@ -278,13 +278,20 @@ export default function AgencyPortalShell({
         {/* Footer — user identity */}
         <div style={{ padding: '16px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px' }}>
+            {/* Declaring MenuItems replaces Clerk's default menu, so this drops
+                "Manage account" and leaves only sign out — the portal captures
+                profile details on its own Profile page. */}
             <UserButton
               appearance={{
                 elements: {
                   avatarBox: { width: '32px', height: '32px' },
                 },
               }}
-            />
+            >
+              <UserButton.MenuItems>
+                <UserButton.Action label="signOut" />
+              </UserButton.MenuItems>
+            </UserButton>
             <div style={{ minWidth: 0, flex: 1 }}>
               <div
                 style={{
@@ -355,7 +362,11 @@ export default function AgencyPortalShell({
                 avatarBox: { width: '32px', height: '32px' },
               },
             }}
-          />
+          >
+            <UserButton.MenuItems>
+              <UserButton.Action label="signOut" />
+            </UserButton.MenuItems>
+          </UserButton>
         </header>
         {children}
       </main>

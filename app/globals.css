@@ -129,6 +129,15 @@ h1, h2, h3, h4, h5, h6 {
   width: 160px;
 }
 
+/* History filter chips wrap on desktop exactly as they did inline. */
+.fa-history-chips {
+  flex-wrap: wrap;
+}
+
+.fa-history-staff-select {
+  min-width: 200px;
+}
+
 /* ==========================================================================
    Below 1280px — stack
    ========================================================================== */
@@ -228,6 +237,36 @@ h1, h2, h3, h4, h5, h6 {
   .fa-staff-section-header {
     flex-wrap: wrap;
     gap: 10px;
+  }
+
+  /* Same problem on the dashboard's Saturday line: space-between with nothing
+     left to distribute pushed the referral count pill hard against the date. */
+  .fa-dash-day-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* History filters: five date chips and five status chips each wrapped to two
+     rows, so the filters owned most of the screen before a single result. Each
+     row becomes a single horizontal strip you swipe, which keeps every control
+     exactly where it was and gives the list back roughly four rows of height.
+     Search stays full width and always visible — on a flat, newest-first list
+     it is the primary way to find a client. */
+  .fa-history-chips {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    width: 100%;
+  }
+
+  .fa-history-chips > button {
+    flex-shrink: 0;
+  }
+
+  /* Label plus a 200px select overflowed a 390px screen and reintroduced
+     sideways scroll; the select takes its own line instead. */
+  .fa-history-staff-select {
+    width: 100%;
+    min-width: 0;
   }
 
   /* InfoRow keeps its label column, narrowed so the value has room. */

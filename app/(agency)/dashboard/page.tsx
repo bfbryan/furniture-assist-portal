@@ -124,6 +124,10 @@ export default async function DashboardPage() {
 
   // Stats — same shape as Profile/Active/History
   const totalCount = scopedReferrals.length
+  // Pending uses the same definition as the Active page: awaiting our review.
+  const pendingCount = scopedReferrals.filter(
+    (r: any) => r.referralReview === 'Pending'
+  ).length
   const activeCount = scopedReferrals.filter((r: any) => {
     if (r.referralReview === 'Rejected') return false
     const s = r.appointmentStatus
@@ -175,9 +179,10 @@ export default async function DashboardPage() {
         userPhone={agencyUser.phone ?? 'No phone on file'}
         userRole={agencyUser.role}
         stats={[
-          { label: 'Total', value: totalCount },
+          { label: 'Pending', value: pendingCount },
           { label: 'Active', value: activeCount, emphasized: true },
           { label: 'Completed', value: completedCount },
+          { label: 'Total', value: totalCount },
         ]}
       />
 
@@ -291,7 +296,11 @@ export default async function DashboardPage() {
 
               return (
                 <div key={date} style={{ marginBottom: '20px' }}>
+                  {/* Wrapping lives in globals.css (.fa-dash-day-header) so the
+                      referral count pill gets clear of the date line below 1280px
+                      instead of being pushed hard against it. */}
                   <div
+                    className="fa-dash-day-header"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
