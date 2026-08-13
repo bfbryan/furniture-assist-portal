@@ -77,6 +77,18 @@ const STATUS_CHIPS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'rejected',  label: 'REJECTED' },
 ]
 
+// Shared by all three filter selects so they read as one set of controls.
+const FILTER_SELECT: React.CSSProperties = {
+  padding: '7px 14px',
+  borderRadius: '7px',
+  border: '1px solid #EDE9E1',
+  fontSize: '13px',
+  color: '#2C3A4A',
+  background: 'white',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+}
+
 const DATE_CHIPS: Array<{ key: DateRange; label: string }> = [
   { key: '30',  label: 'Last 30 days' },
   { key: '60',  label: 'Last 60 days' },
@@ -317,16 +329,7 @@ export default function HistoryClient({
             className="fa-history-staff-select"
             value={staffFilter}
             onChange={e => setStaffFilter(e.target.value)}
-            style={{
-              padding: '7px 14px',
-              borderRadius: '7px',
-              border: '1px solid #EDE9E1',
-              fontSize: '13px',
-              color: '#2C3A4A',
-              background: 'white',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-            }}
+            style={FILTER_SELECT}
           >
             <option value="all">All Staff</option>
             {staffNames.map(name => (
@@ -384,7 +387,7 @@ export default function HistoryClient({
         {/* Wrapping lives in globals.css (.fa-history-chips): below 1280px both
             chip rows become one-line horizontal strips instead of wrapping to
             two rows each and pushing the results off screen. */}
-        <div className="fa-history-chips" style={{ display: 'flex', gap: '6px' }}>
+        <div className="fa-history-chips" style={{ gap: '6px' }}>
           {DATE_CHIPS.map(c => {
             const active = dateRange === c.key
             return (
@@ -410,8 +413,39 @@ export default function HistoryClient({
         </div>
       </div>
 
+      {/* Below 1280px the two chip rows are replaced by these — same state, so
+          the desktop chips are untouched. Ten chips wrapped to four rows owned
+          most of the screen; as one-line strips they were compact but clipped
+          at the right edge, which read as broken. Two selects are compact and
+          complete, and match the staff filter directly above them. Their
+          options are self-labelling, so no extra label rows are needed. */}
+      <div className="fa-history-selects" style={{ gap: '8px', marginBottom: '22px' }}>
+        <select
+          value={dateRange}
+          onChange={e => setDateRange(e.target.value as DateRange)}
+          style={FILTER_SELECT}
+        >
+          {DATE_CHIPS.map(c => (
+            <option key={c.key} value={c.key}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+          style={FILTER_SELECT}
+        >
+          {STATUS_CHIPS.map(c => (
+            <option key={c.key} value={c.key}>
+              {c.key === 'all' ? 'All outcomes' : c.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Row 2 — status chips */}
-      <div className="fa-history-chips" style={{ display: 'flex', gap: '6px', marginBottom: '22px' }}>
+      <div className="fa-history-chips" style={{ gap: '6px', marginBottom: '22px' }}>
         {STATUS_CHIPS.map(c => {
           const active = statusFilter === c.key
           return (

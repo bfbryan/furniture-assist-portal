@@ -506,9 +506,11 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
         onClose={() => setRescheduleModal({ open: false, id: '', name: '' })}
         loading={loading}
       />
-      {/* Staff filter — admin only */}
+      {/* Staff filter — admin only. Wrapping lives in globals.css
+          (.fa-filter-row): label plus select is wider than a small phone, so
+          the select takes its own line. */}
       {isAdmin && staffNames.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+        <div className="fa-filter-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#1B2B4B', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
             Filter by Staff
           </label>

@@ -129,9 +129,16 @@ h1, h2, h3, h4, h5, h6 {
   width: 160px;
 }
 
-/* History filter chips wrap on desktop exactly as they did inline. */
+/* History filter chips lay out on desktop exactly as they did inline; display
+   lives here too so the below-1280 rule can swap them out. Their replacement
+   is hidden here. */
 .fa-history-chips {
+  display: flex;
   flex-wrap: wrap;
+}
+
+.fa-history-selects {
+  display: none;
 }
 
 .fa-history-staff-select {
@@ -159,9 +166,17 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   /* The single change that stops content sliding under the fixed sidebar
-     on every page at once. */
+     on every page at once.
+
+     min-width matters as much as the margin. <main> is a flex item, and a flex
+     item's default min-width:auto refuses to shrink below its widest child, so
+     one wide descendant stretched <main> past the viewport and every
+     width:100% / minmax(0,1fr) below it then resolved against that inflated
+     width instead of the screen. Pinning it to 0 makes the whole subtree
+     measure against the phone. */
   .fa-shell-main {
     margin-left: 0;
+    min-width: 0;
   }
 
   .fa-shell-topbar {
@@ -212,11 +227,28 @@ h1, h2, h3, h4, h5, h6 {
     grid-column: 2;
   }
 
-  /* The appointment row carries no labels, so it stays a single row and simply
-     lets the time and status columns shrink to their content. Stacking it put
-     a centred time and a centred pill under a left-aligned name. */
+  /* The actions cell renders empty when a row has no available action, and
+     stacked that left a band of dead space at the foot of the card. */
+  .fa-referral-card-grid > div:empty,
+  .fa-history-card-grid > div:empty {
+    display: none;
+  }
+
+  /* The appointment row carries no labels. Kept on one line the time and the
+     status pill ate ~190px of a 278px card, leaving the client name about 58px
+     and truncating it to "Vande…" — you could not tell whose appointment it
+     was. The name and address now take the full first row and the time and
+     status sit beneath as a footer row, with the accent bar spanning both. */
   .fa-dash-appt-row {
-    grid-template-columns: 4px minmax(0, 1fr) auto auto;
+    grid-template-columns: 4px minmax(0, 1fr) auto;
+  }
+
+  .fa-dash-appt-row > :first-child {
+    grid-row: span 2;
+  }
+
+  .fa-dash-appt-row > :nth-child(2) {
+    grid-column: 2 / -1;
   }
 
   /* Hero stat tiles: three tiles at their natural width overflow a phone and
@@ -246,25 +278,34 @@ h1, h2, h3, h4, h5, h6 {
     gap: 8px;
   }
 
-  /* History filters: five date chips and five status chips each wrapped to two
-     rows, so the filters owned most of the screen before a single result. Each
-     row becomes a single horizontal strip you swipe, which keeps every control
-     exactly where it was and gives the list back roughly four rows of height.
-     Search stays full width and always visible — on a flat, newest-first list
-     it is the primary way to find a client. */
+  /* History filters: ten chips wrapped to four rows owned most of the screen
+     before a single result. Swapped below 1280 for two selects carrying the
+     same state — compact, and nothing is cut off at the right edge. Search
+     stays full width and always visible; on a flat, newest-first list it is
+     the primary way to find a client. */
   .fa-history-chips {
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    width: 100%;
+    display: none;
   }
 
-  .fa-history-chips > button {
-    flex-shrink: 0;
+  .fa-history-selects {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   /* Label plus a 200px select overflowed a 390px screen and reintroduced
      sideways scroll; the select takes its own line instead. */
   .fa-history-staff-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Same on the Active page's staff filter, which is a non-wrapping flex row
+     whose select is sized by its widest staff name. */
+  .fa-filter-row {
+    flex-wrap: wrap;
+  }
+
+  .fa-filter-row > select {
     width: 100%;
     min-width: 0;
   }
