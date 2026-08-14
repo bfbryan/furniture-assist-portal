@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { TIME_CAPS, TIME_ORDER, describeDayLoad, type TimeSlot } from '@/lib/schedule/capacity'
 import AddAgencyStaffModal, { type AddStaffResult } from '@/components/internal/modals/AddAgencyStaffModal'
 import DuplicateClientBanner, { type ClientMatch } from '@/components/internal/modals/DuplicateClientModal'
 
@@ -24,18 +25,9 @@ const ITEMS = [
 
 
 
-// Per-slot capacities — MUST match at-auto-schedule-script.js TIME_CAPS,
-// components/internal/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
-// constant on app/dawson/schedule/page.tsx.
-type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'
-const SLOT_CAP: Record<TimeSlot, number> = {
-  '9am': 5,
-  '10am': 14,
-  '11am': 14,
-  '12pm': 14,
-  '1pm': 3,
-}
-const TIME_SLOTS: TimeSlot[] = ['9am', '10am', '11am', '12pm', '1pm']
+// Per-slot capacities come from lib/schedule/capacity.ts.
+const SLOT_CAP = TIME_CAPS
+const TIME_SLOTS = TIME_ORDER
 
 
 
@@ -125,6 +117,11 @@ type AvailableDate = {
   slots11am?: number
   slots12pm?: number
   slots1pm?: number
+  // Day-level load from the availability endpoint, so a full Saturday can be
+  // labelled rather than hidden.
+  totalBooked?: number
+  dayCapacity?: number
+  isFull?: boolean
 }
 
 
@@ -890,7 +887,9 @@ useEffect(() => {
                   const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
                   return (
                     <option key={d.date} value={d.date}>
-                      {label} — {d.slotsRemaining} slot{d.slotsRemaining === 1 ? '' : 's'}
+                      {label} — {d.totalBooked !== undefined
+                        ? describeDayLoad(d.totalBooked, d.dayCapacity)
+                        : `${d.slotsRemaining} slot${d.slotsRemaining === 1 ? '' : 's'}`}
                     </option>
                   )
                 })}
@@ -1357,7 +1356,9 @@ useEffect(() => {
                 const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
                 return (
                   <option key={d.date} value={d.date}>
-                    {label} — {d.slotsRemaining} slot{d.slotsRemaining === 1 ? '' : 's'}
+                    {label} — {d.totalBooked !== undefined
+                        ? describeDayLoad(d.totalBooked, d.dayCapacity)
+                        : `${d.slotsRemaining} slot${d.slotsRemaining === 1 ? '' : 's'}`}
                   </option>
                 )
               })}

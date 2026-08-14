@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { differenceInDaysISO, easternTodayISO } from '@/lib/dates'
+import { TIME_CAPS } from '@/lib/schedule/capacity'
 
 type Saturday = {
   id: string
@@ -18,13 +19,8 @@ type Saturday = {
   mailMergeComplete: boolean
 }
 
-const SLOT_MAX: Record<string, number> = {
-  '9am': 5,
-  '10am': 14,
-  '11am': 14,
-  '12pm': 14,
-  '1pm': 3,
-}
+// Per-slot capacities come from lib/schedule/capacity.ts.
+const SLOT_MAX: Record<string, number> = TIME_CAPS
 
 function formatShortDate(dateStr: string) {
   const d = new Date(dateStr + 'T12:00:00')
