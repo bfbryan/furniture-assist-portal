@@ -92,6 +92,7 @@ import { NextResponse } from 'next/server'
 import { findClientMatches, createClient, clientDataDiverges } from '@/lib/referrals/match'
 import { sendRescheduleNotice } from '@/lib/notifications/reschedule-notice'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
+import { TIME_CAPS, TIME_ORDER, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -111,20 +112,7 @@ function isSaturday(isoDate: string): boolean {
   return !isNaN(dt.getTime()) && dt.getDay() === 6
 }
 
-// ---- Ported from app/api/dawson/referrals/[id]/reschedule/route.ts for
-// the no-show reschedule branch. Keep these in sync with that route,
-// components/internal/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
-// constant on app/dawson/schedule/page.tsx.
-const VALID_TIMES = new Set(['9am', '10am', '11am', '12pm', '1pm'])
-type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'
-const TIME_CAPS: Record<TimeSlot, number> = {
-  '9am': 5,
-  '10am': 14,
-  '11am': 14,
-  '12pm': 14,
-  '1pm': 3,
-}
-const TIME_ORDER: TimeSlot[] = ['9am', '10am', '11am', '12pm', '1pm']
+// Slot names, capacities and fill order for the no-show reschedule branch.
 
 function toInt(v: any): number {
   const n = typeof v === 'number' ? v : parseInt(v, 10)

@@ -2,32 +2,40 @@
 //
 // GET /api/dawson/schedule/available
 //
-// Returns the list of Saturdays the Dawson-facing forms + modals can offer
-// as a preferred date. Each entry now includes per-slot booked counts so
-// the reschedule modal (and new-referral form) can show slot-level load
-// and let Dawson override full slots.
+// DAWSON-ONLY. The Saturdays the internal forms and modals can offer.
 //
-// Filter policy (form vs. auto-schedule):
-//   FORM (this endpoint, Dawson manually scheduling):
+// This endpoint is deliberately UNCAPPED. Dawson is the human scheduler: he
+// books past a Saturday's 50 knowingly and routinely lands around 60-65. The
+// day used to be filtered out by `{Slots Remaining} > 0` the moment it hit
+// 50, which did not merely hide an override — it removed the date from the
+// picker entirely, so there was nothing left to override and five referrals
+// could not be entered at all.
+//
+// There is NO second, higher ceiling. That was considered and declined: 50 is
+// a limit for agencies, and for Dawson it is information, not a gate.
+//
+// Because a full Saturday now stays in the list, every entry carries enough
+// for the caller to show how full it is — per-slot counts as before, plus the
+// day's total booked against DAY_CAPACITY. Full days are labelled, not hidden.
+//
+// Filter policy:
+//   THIS ENDPOINT (Dawson scheduling by hand):
 //     - Date >= today + `leadDays` days (?leadDays=N, default 7, clamped 0-60)
 //     - Status = 'Open'
-//     - Slots Remaining > 0
-//   AUTO-SCHEDULE (Airtable automation, new submissions):
-//     - Date >= today + 21 days
-//     - Status = 'Open'
-//     - Slots Remaining > 0
-//     - Ready to Schedule = 1
-//     - At least one time slot under cap
-// The form does NOT enforce 'Ready to Schedule' or per-slot caps -- those
-// gates live in the auto-schedule script. Dawson manually schedules, so
-// the form trusts him with Slots Remaining as the headline number AND
-// exposes per-slot counts for visibility. Per-slot caps are hardcoded to
-// match at-auto-schedule-script.js's TIME_CAPS.
+//   AGENCY (/api/agency/schedule/available):
+//     - the above, AND Slots Remaining > 0, i.e. the 50 cap enforced
+//   AUTO-SCHEDULE (at-auto-schedule-script.js, in Airtable, new submissions):
+//     - Date >= today + 21 days, Status = 'Open', Slots Remaining > 0,
+//       Ready to Schedule = 1, at least one time slot under cap
+//
+// 'Ready to Schedule' is not enforced here; that gate belongs to the
+// auto-scheduler.
 
 
 import { NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { addDaysISO, easternTodayISO } from '@/lib/dates'
+import { DAY_CAPACITY, totalBooked } from '@/lib/schedule/capacity'
 
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
@@ -81,11 +89,12 @@ export async function GET(request: Request) {
 
     // IS_SAME_OR_AFTER doesn't exist in Airtable formulas; use
     // NOT(IS_BEFORE(...)) for inclusive >=.
+    // No {Slots Remaining} > 0 clause — see the header. A Saturday at or past
+    // 50 must still be offered to Dawson.
     const formula = `AND(
       NOT(IS_BEFORE({Date}, '${minDate}')),
       IS_BEFORE({Date}, '${endDate}'),
-      {Status} = 'Open',
-      {Slots Remaining} > 0
+      {Status} = 'Open'
     )`.replace(/\s+/g, ' ')
 
 
@@ -148,15 +157,28 @@ export async function GET(request: Request) {
     // We accept either raw label form ('9am') or the '9am Booked' form to
     // stay defensive if the schema is renamed.
     const dates = (data.records || [])
-      .map((r: any) => ({
-        date: r.fields.Date,
-        slotsRemaining: r.fields['Slots Remaining'],
-        slots9am:  toInt(r.fields['9am']  ?? r.fields['9am Booked']),
-        slots10am: toInt(r.fields['10am'] ?? r.fields['10am Booked']),
-        slots11am: toInt(r.fields['11am'] ?? r.fields['11am Booked']),
-        slots12pm: toInt(r.fields['12pm'] ?? r.fields['12pm Booked']),
-        slots1pm:  toInt(r.fields['1pm']  ?? r.fields['1pm Booked']),
-      }))
+      .map((r: any) => {
+        const slots = {
+          slots9am:  toInt(r.fields['9am']  ?? r.fields['9am Booked']),
+          slots10am: toInt(r.fields['10am'] ?? r.fields['10am Booked']),
+          slots11am: toInt(r.fields['11am'] ?? r.fields['11am Booked']),
+          slots12pm: toInt(r.fields['12pm'] ?? r.fields['12pm Booked']),
+          slots1pm:  toInt(r.fields['1pm']  ?? r.fields['1pm Booked']),
+        }
+        const booked = totalBooked(slots)
+        return {
+          date: r.fields.Date,
+          slotsRemaining: r.fields['Slots Remaining'],
+          ...slots,
+          // Day-level load, so the date list can say how full a Saturday is
+          // instead of only whether it had room. Summed from the five hours
+          // rather than taken from Slots Remaining, which stops being a
+          // useful measure once a day is past its cap.
+          totalBooked: booked,
+          dayCapacity: DAY_CAPACITY,
+          isFull: booked >= DAY_CAPACITY,
+        }
+      })
       .filter((d: any) => d.date && typeof d.slotsRemaining === 'number')
 
 

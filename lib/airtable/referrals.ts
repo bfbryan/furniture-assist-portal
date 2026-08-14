@@ -327,6 +327,10 @@ export async function getReferralById(referralId: string) {
     appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
     appointmentTime: (f['Appointment Time'] as string) ?? null,
     appointmentSlipUrl: (f['Appt Slip'] as any[])?.[0]?.url ?? null,
+    // Written by the client-receipt cron (lib/notifications/client-receipt.ts)
+    // into the "Client Receipt" attachment field once the visit is done. Read
+    // only — the portal surfaces the PDF, it never generates it.
+    clientReceiptUrl: (f['Client Receipt'] as any[])?.[0]?.url ?? null,
     dataPageUrl: (f['Data Page URL'] as string) ?? null,
     referredBy: safeLookupString(f['Referring Staff']),
     referringAgency: safeLookupString(f['Referring Agency']),

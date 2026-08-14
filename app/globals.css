@@ -81,8 +81,13 @@ h1, h2, h3, h4, h5, h6 {
   grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
 }
 
+/* minmax(0, …) rather than a bare 1fr: a grid track defaults to min-width
+   auto, so once the left column held edit forms instead of plain text it
+   refused to shrink below its widest row and pushed the whole page into
+   horizontal scroll. Same guard the other tracks in this file already use.
+   Identical rendering whenever the content fits. */
 .fa-referral-detail-grid {
-  grid-template-columns: 1fr 380px;
+  grid-template-columns: minmax(0, 1fr) 380px;
 }
 
 .fa-new-referral-grid {
@@ -130,6 +135,14 @@ h1, h2, h3, h4, h5, h6 {
 /* Referral detail: the fixed label column used ~15 times by InfoRow. */
 .fa-inforow-label {
   width: 160px;
+}
+
+/* Items Received on the agency referral detail page. Two columns of room
+   groups fit the ~560px left track; on a phone they become one, since a
+   two-up split there leaves each item name too narrow to read. */
+.fa-disbursed-columns {
+  column-count: 2;
+  column-gap: 28px;
 }
 
 /* History filter chips lay out on desktop exactly as they did inline; display
@@ -327,6 +340,10 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   /* InfoRow keeps its label column, narrowed so the value has room. */
+  .fa-disbursed-columns {
+    column-count: 1;
+  }
+
   .fa-inforow-label {
     width: 110px;
   }

@@ -39,23 +39,11 @@ const HEADERS = {
   'Content-Type': 'application/json',
 }
 
-export type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'
-
-export const VALID_TIMES = new Set<string>(['9am', '10am', '11am', '12pm', '1pm'])
-
-// Per-slot capacities -- MUST match at-auto-schedule-script.js TIME_CAPS,
-// components/internal/modals/RescheduleModal.tsx SLOT_CAP, and the SLOT_MAX
-// constant on app/dawson/schedule/page.tsx.
-export const TIME_CAPS: Record<TimeSlot, number> = {
-  '9am': 5,
-  '10am': 14,
-  '11am': 14,
-  '12pm': 14,
-  '1pm': 3,
-}
-
-// Fill order for auto-allocation when a date is given but no time.
-export const TIME_ORDER: TimeSlot[] = ['9am', '10am', '11am', '12pm', '1pm']
+// Capacities, slot names and fill order all come from lib/schedule/capacity.ts.
+// Re-exported here so the modules that already import them from this file keep
+// working -- there is still exactly one definition.
+import { TIME_CAPS, TIME_ORDER, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
+export { TIME_CAPS, TIME_ORDER, VALID_TIMES, type TimeSlot }
 
 // An appointment date is a date-only value, so it is anchored at UTC midnight
 // via the shared parser and read back with getUTCDay(). The pair has to stay

@@ -1,10 +1,55 @@
 'use client'
 
+// app/(agency)/referrals/[id]/page.tsx
+//
+// Agency-facing referral detail. Brought up to parity with the internal
+// Dawson detail page (app/dawson/referrals/[id]/page.tsx), whose card / edit /
+// action patterns this follows deliberately rather than inventing a second
+// set:
+//
+//   • Client info, Items Requested and Your Notes are inline-editable, using
+//     the same read-mode-then-Edit-button shape as the internal cards.
+//   • Reschedule / Cancel / Withdraw, using the agency portal's own dialogs
+//     (shared with ReferralTable) — an agency proposes and Furniture Assist
+//     confirms, which is why these are not the internal book-a-slot modals.
+//   • Items Received on completed referrals: only what was actually handed
+//     over, grouped by room.
+//   • The client receipt PDF, which the cron generates into an Airtable
+//     attachment; this page only links to it.
+//
+// Editing closes after the Monday before the appointment, and only while the
+// referral is still open. That rule lives in lib/referrals/edit-window.ts
+// because PATCH /api/referrals/[id] enforces the same thing server-side —
+// hiding the button is presentation, not permission.
+
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { CATALOG } from '@/lib/catalog/items-disbursed'
+import { agencyEditWindow, getPortalStatus } from '@/lib/referrals/edit-window'
+import {
+  ConfirmModal,
+  RescheduleModal,
+  type AvailableDate,
+  type ConfirmModalState,
+  type RescheduleModalState,
+} from '@/components/agency/ReferralActionModals'
+
+type DisbursedLine = { name: string; qty: string | number }
+
+type ItemsDisbursed = {
+  livingRoom: DisbursedLine[]
+  bedroom: DisbursedLine[]
+  diningRoom: DisbursedLine[]
+  kitchen: DisbursedLine[]
+  linens: DisbursedLine[]
+  misc: DisbursedLine[]
+  otherItems: string | null
+  distributionNotes: string | null
+}
 
 type Referral = {
   id: string
+  clientId: string | null
   clientName: string
   firstName: string
   lastName: string
@@ -27,12 +72,37 @@ type Referral = {
   appointmentDate: string | null
   appointmentTime: string | null
   appointmentSlipUrl: string | null
+  clientReceiptUrl: string | null
   dataPageUrl: string | null
   referredBy: string | null
   referringAgency: string | null
   agencyEmail: string | null
   possibleDuplicate: boolean
+  itemsDisbursed: ItemsDisbursed | null
 }
+
+// Mirrors the internal page's list and the agency New Referral form's.
+const ITEM_CATEGORIES = [
+  'Bedroom Furniture',
+  'Living Room Furniture',
+  'Dining Room Furniture',
+  'Clothes',
+  'Household Items (including kitchen & linens)',
+  'Baby Items',
+]
+
+const NJ_COUNTIES = [
+  'Atlantic', 'Bergen', 'Burlington', 'Camden', 'Cape May', 'Cumberland',
+  'Essex', 'Gloucester', 'Hudson', 'Hunterdon', 'Mercer', 'Middlesex',
+  'Monmouth', 'Morris', 'Ocean', 'Passaic', 'Salem', 'Somerset',
+  'Sussex', 'Union', 'Warren',
+]
+
+const LANGUAGES = ['English', 'Spanish', 'Haitian Creole', 'French', 'Arabic', 'Portuguese', 'Other']
+
+const STATES = ['NJ', 'NY', 'PA', 'CT', 'DE']
+
+const EDIT_ACCENT = '#2A7F6F'
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return '—'
@@ -40,15 +110,39 @@ function formatDate(dateStr: string | null) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function getPortalStatus(review: string, status: string) {
-  if (review === 'Rejected') return 'Rejected'
-  if (review === 'Withdrawn') return 'Withdrawn'
-  if (status === 'Cancelled') return 'Cancelled'
-  if (status === 'Completed') return 'Completed'
-  if (review === 'Pending') return 'Submitted'
-  if (status === 'Pending Schedule') return 'Scheduling'
-  if (status === 'Scheduled') return 'Scheduled'
-  return status
+// DOB is stored as MDY text on Clients; <input type="date"> wants ISO.
+function dobToInputValue(dob: string | null): string {
+  if (!dob) return ''
+  const mdy = dob.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (mdy) {
+    const [, m, d, y] = mdy
+    return `${y}-${m.padStart(2, '0')}-${d.padStart(2, '0')}`
+  }
+  const parsed = new Date(dob)
+  if (isNaN(parsed.getTime())) return ''
+  return parsed.toISOString().slice(0, 10)
+}
+
+function inputValueToMDY(input: string): string {
+  if (!input) return ''
+  const iso = input.match(/^(\d{4})-(\d{2})-(\d{2})$/)
+  if (!iso) return input
+  const [, y, m, d] = iso
+  return `${parseInt(m, 10)}/${parseInt(d, 10)}/${y}`
+}
+
+function formatPhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '')
+  if (digits.length !== 10) return raw
+  return `(${digits.slice(0, 3)}) ${digits.slice(3, 6)}-${digits.slice(6)}`
+}
+
+function parseItemsToSet(items: unknown): Set<string> {
+  if (Array.isArray(items)) return new Set(items.map(String))
+  if (typeof items === 'string') {
+    return new Set(items.split(',').map(s => s.trim()).filter(Boolean))
+  }
+  return new Set()
 }
 
 const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText: string }> = {
@@ -59,6 +153,8 @@ const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText
   Cancelled:  { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',    badgeText: '#C0392B' },
   Rejected:   { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',    badgeText: '#C0392B' },
 }
+
+// ---------------------------------------------------------------- UI atoms
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
@@ -74,18 +170,533 @@ function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   )
 }
 
+function Card({ accent, title, headerRight, children }: {
+  accent?: string
+  title: string
+  headerRight?: React.ReactNode
+  children: React.ReactNode
+}) {
+  return (
+    <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
+      {accent && <div style={{ background: accent, height: '4px' }} />}
+      <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
+        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>{title}</h2>
+        {headerRight}
+      </div>
+      <div style={{ padding: '16px 24px' }}>{children}</div>
+    </div>
+  )
+}
+
+function EditButton({ onClick, label = 'Edit' }: { onClick: () => void; label?: string }) {
+  return (
+    <button onClick={onClick}
+      style={{ padding: '5px 12px', borderRadius: '6px', border: 'none', background: 'rgba(42,127,111,0.1)', color: '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', flexShrink: 0 }}>
+      {label}
+    </button>
+  )
+}
+
+function LockedBadge() {
+  return (
+    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: '#9AA6B2', flexShrink: 0 }}>
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
+      </svg>
+      Locked
+    </span>
+  )
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', padding: '8px 10px', borderRadius: '6px', border: '1px solid #EDE9E1',
+  fontSize: '13px', color: '#1B2B4B', fontFamily: 'inherit', outline: 'none', boxSizing: 'border-box', background: 'white',
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div style={{ display: 'flex', gap: '16px', padding: '8px 0', alignItems: 'center' }}>
+      <div className="fa-inforow-label" style={{ flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em' }}>{label}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>{children}</div>
+    </div>
+  )
+}
+
+function SaveBar({ onSave, onCancel, saving }: { onSave: () => void; onCancel: () => void; saving: boolean }) {
+  return (
+    <div style={{ display: 'flex', gap: '8px', flexShrink: 0 }}>
+      <button onClick={onCancel} disabled={saving}
+        style={{ padding: '5px 12px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
+        Cancel
+      </button>
+      <button onClick={onSave} disabled={saving}
+        style={{ padding: '5px 14px', borderRadius: '6px', border: 'none', background: EDIT_ACCENT, color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', opacity: saving ? 0.6 : 1 }}>
+        {saving ? 'Saving...' : 'Save'}
+      </button>
+    </div>
+  )
+}
+
+function SaveError({ message }: { message: string | null }) {
+  if (!message) return null
+  return (
+    <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '10px 14px', marginTop: '12px', fontSize: '12.5px', color: '#C0392B', lineHeight: 1.5 }}>
+      {message}
+    </div>
+  )
+}
+
+// ------------------------------------------------------------ Client Info
+
+type ClientEditState = {
+  firstName: string; lastName: string; dob: string; phone: string; language: string
+  address: string; address2: string; city: string; state: string; zip: string; county: string
+  hhSize: string; children: string
+}
+
+function toClientEditState(r: Referral): ClientEditState {
+  return {
+    firstName: r.firstName ?? '', lastName: r.lastName ?? '',
+    dob: dobToInputValue(r.dob), phone: r.phone ?? '', language: r.language ?? '',
+    address: r.address ?? '', address2: r.address2 ?? '', city: r.city ?? '',
+    state: r.state ?? 'NJ', zip: r.zip ?? '', county: r.county ?? '',
+    hhSize: r.hhSize ?? '', children: r.children ?? '',
+  }
+}
+
+function ClientInfoCard({ referral, locked, accent, onSaved }: {
+  referral: Referral
+  locked: boolean
+  accent: string
+  onSaved: (u: Partial<Referral>) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [form, setForm] = useState<ClientEditState>(() => toClientEditState(referral))
+
+  const set = (k: keyof ClientEditState, v: string) => setForm(p => ({ ...p, [k]: v }))
+
+  function startEdit() {
+    setForm(toClientEditState(referral))
+    setError(null)
+    setEditing(true)
+  }
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/referrals/${referral.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          client: {
+            firstName: form.firstName, lastName: form.lastName,
+            dob: inputValueToMDY(form.dob), phone: form.phone, language: form.language,
+            address: form.address, address2: form.address2, city: form.city,
+            state: form.state, zip: form.zip, county: form.county,
+          },
+          hhSize: form.hhSize,
+          children: form.children,
+        }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Could not save those changes.')
+      }
+      onSaved({
+        firstName: form.firstName, lastName: form.lastName,
+        clientName: `${form.firstName} ${form.lastName}`.trim(),
+        dob: inputValueToMDY(form.dob) || null, phone: form.phone || null,
+        language: form.language || null, address: form.address || null,
+        address2: form.address2 || null, city: form.city || null,
+        state: form.state || null, zip: form.zip || null, county: form.county || null,
+        hhSize: form.hhSize || null, children: form.children || null,
+      })
+      setEditing(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <Card
+        accent={accent}
+        title="Client Information"
+        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
+      >
+        <InfoRow label="Full Name" value={referral.clientName} />
+        <InfoRow label="Date of Birth" value={referral.dob} />
+        <InfoRow label="Phone" value={referral.phone} />
+        <InfoRow label="Language" value={referral.language} />
+        <InfoRow label="Address" value={
+          referral.address ? (
+            <>{referral.address}{referral.address2 ? `, ${referral.address2}` : ''}<br />
+            {referral.city}, {referral.state} {referral.zip}
+            {referral.county ? ` · ${referral.county} County` : ''}</>
+          ) : null
+        } />
+        <InfoRow label="Household Size" value={referral.hhSize} />
+        <InfoRow label="Children" value={referral.children} />
+      </Card>
+    )
+  }
+
+  return (
+    <Card
+      accent={EDIT_ACCENT}
+      title="Client Information — Editing"
+      headerRight={<SaveBar onSave={save} onCancel={() => setEditing(false)} saving={saving} />}
+    >
+      {/* A single stack of label-beside-control rows, matching the internal
+          card. Multi-column grids were tried here and do not work: each row
+          carries a fixed-width label, so two or three of them side by side
+          leave the inputs a few pixels wide and push the whole page into
+          horizontal scroll. Pairs that genuinely belong together (State/Zip,
+          the two household counts) share one row via an inner flex instead,
+          which is what the internal card does. */}
+      <Field label="First Name">
+        <input style={inputStyle} value={form.firstName} onChange={e => set('firstName', e.target.value)} />
+      </Field>
+      <Field label="Last Name">
+        <input style={inputStyle} value={form.lastName} onChange={e => set('lastName', e.target.value)} />
+      </Field>
+      <Field label="Date of Birth">
+        <input type="date" style={inputStyle} value={form.dob} onChange={e => set('dob', e.target.value)} />
+      </Field>
+      <Field label="Phone">
+        <input style={inputStyle} value={form.phone}
+          onChange={e => set('phone', e.target.value)}
+          onBlur={e => set('phone', formatPhone(e.target.value))}
+          placeholder="(555) 555-5555" />
+      </Field>
+      <Field label="Language">
+        <select style={inputStyle} value={form.language} onChange={e => set('language', e.target.value)}>
+          <option value="">—</option>
+          {LANGUAGES.map(l => <option key={l} value={l}>{l}</option>)}
+        </select>
+      </Field>
+      <Field label="Address">
+        <input style={inputStyle} value={form.address} onChange={e => set('address', e.target.value)} />
+      </Field>
+      <Field label="Address 2">
+        <input style={inputStyle} value={form.address2} onChange={e => set('address2', e.target.value)} placeholder="Apt / Unit" />
+      </Field>
+      <Field label="City">
+        <input style={inputStyle} value={form.city} onChange={e => set('city', e.target.value)} />
+      </Field>
+      {/* wrap + minWidth:0 on these paired rows: the control column is only
+          about 150px on a phone once the label takes its share, which is
+          narrower than a fixed select plus a second input. Without this the
+          Zip clipped mid-value. Wrapping is width-independent, so it stays
+          inline rather than going behind the media query. */}
+      <Field label="State / Zip">
+        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', rowGap: '8px' }}>
+          <select style={{ ...inputStyle, width: '90px', flexShrink: 0 }} value={form.state} onChange={e => set('state', e.target.value)}>
+            {STATES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <input style={{ ...inputStyle, flex: 1, minWidth: '72px' }} value={form.zip}
+            onChange={e => set('zip', e.target.value.replace(/\D/g, '').slice(0, 5))}
+            inputMode="numeric" maxLength={5} placeholder="07111" />
+        </div>
+      </Field>
+      <Field label="County">
+        <select style={inputStyle} value={form.county} onChange={e => set('county', e.target.value)}>
+          <option value="">—</option>
+          {NJ_COUNTIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+      </Field>
+      <Field label="Household">
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', rowGap: '8px' }}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input style={{ ...inputStyle, width: '70px', flexShrink: 0 }} inputMode="numeric" value={form.hhSize}
+              onChange={e => set('hhSize', e.target.value)} placeholder="Total" />
+            <span style={{ fontSize: '12px', color: '#7A8899', flexShrink: 0 }}>total,</span>
+          </span>
+          <span style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <input style={{ ...inputStyle, width: '70px', flexShrink: 0 }} inputMode="numeric" value={form.children}
+              onChange={e => set('children', e.target.value)} placeholder="Kids" />
+            <span style={{ fontSize: '12px', color: '#7A8899', flexShrink: 0 }}>children</span>
+          </span>
+        </div>
+      </Field>
+      <SaveError message={error} />
+    </Card>
+  )
+}
+
+// -------------------------------------------------------- Items Requested
+
+function ItemsRequestedCard({ referral, locked, onSaved }: {
+  referral: Referral
+  locked: boolean
+  onSaved: (u: Partial<Referral>) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useState<Set<string>>(() => parseItemsToSet(referral.items))
+
+  function startEdit() {
+    setSelected(parseItemsToSet(referral.items))
+    setError(null)
+    setEditing(true)
+  }
+
+  function toggle(item: string) {
+    setSelected(prev => {
+      const next = new Set(prev)
+      if (next.has(item)) next.delete(item)
+      else next.add(item)
+      return next
+    })
+  }
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      const items = ITEM_CATEGORIES.filter(i => selected.has(i))
+      const res = await fetch(`/api/referrals/${referral.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Could not save those changes.')
+      }
+      onSaved({ items: items.join(', ') })
+      setEditing(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    const list = [...parseItemsToSet(referral.items)]
+    return (
+      <Card
+        title="Items Requested"
+        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
+      >
+        {list.length > 0 ? list.map((item, i) => (
+          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
+            <span style={{ color: '#2A7F6F', fontWeight: 700, flexShrink: 0 }}>•</span>
+            <span style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.6 }}>{item}</span>
+          </div>
+        )) : (
+          <div style={{ fontSize: '13px', color: '#7A8899' }}>No items specified</div>
+        )}
+      </Card>
+    )
+  }
+
+  return (
+    <Card
+      accent={EDIT_ACCENT}
+      title="Items Requested — Editing"
+      headerRight={<SaveBar onSave={save} onCancel={() => setEditing(false)} saving={saving} />}
+    >
+      {/* Same checkbox rows as the New Referral form; column count lives in
+          globals.css (.fa-form-items-grid). */}
+      <div className="fa-form-items-grid" style={{ display: 'grid', gap: '10px' }}>
+        {ITEM_CATEGORIES.map(item => {
+          const on = selected.has(item)
+          return (
+            <label key={item} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${on ? '#2A7F6F' : '#EDE9E1'}`, background: on ? '#EAF4F2' : 'white' }}>
+              <input type="checkbox" checked={on} onChange={() => toggle(item)} style={{ display: 'none' }} />
+              <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: `2px solid ${on ? '#2A7F6F' : '#EDE9E1'}`, background: on ? '#2A7F6F' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                {on && (
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                )}
+              </div>
+              <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: on ? 600 : 400 }}>{item}</span>
+            </label>
+          )
+        })}
+      </div>
+      <SaveError message={error} />
+    </Card>
+  )
+}
+
+// -------------------------------------------------------------- Your Notes
+
+function YourNotesCard({ referral, locked, onSaved }: {
+  referral: Referral
+  locked: boolean
+  onSaved: (u: Partial<Referral>) => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [text, setText] = useState(referral.externalNotes ?? '')
+
+  function startEdit() {
+    setText(referral.externalNotes ?? '')
+    setError(null)
+    setEditing(true)
+  }
+
+  async function save() {
+    setSaving(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/referrals/${referral.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ externalNotes: text }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.error || 'Could not save those changes.')
+      }
+      onSaved({ externalNotes: text.trim() || null })
+      setEditing(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <Card
+        title="Your Notes"
+        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} label={referral.externalNotes ? 'Edit' : '+ Add'} />}
+      >
+        {referral.externalNotes ? (
+          <div style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{referral.externalNotes}</div>
+        ) : (
+          <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>No notes submitted.</div>
+        )}
+      </Card>
+    )
+  }
+
+  return (
+    <Card
+      accent={EDIT_ACCENT}
+      title="Your Notes — Editing"
+      headerRight={<SaveBar onSave={save} onCancel={() => setEditing(false)} saving={saving} />}
+    >
+      <textarea
+        value={text}
+        onChange={e => setText(e.target.value)}
+        rows={6}
+        placeholder="Anything Furniture Assist should know about this client or delivery."
+        style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }}
+      />
+      <SaveError message={error} />
+    </Card>
+  )
+}
+
+// ----------------------------------------------------------- Items Received
+
+// Completed referrals only. Shows what the client actually left with, from the
+// per-item number fields on the referral, grouped by room. getReferralById
+// already drops zero/blank quantities, so a client who took three things gets
+// three lines rather than a grid of noughts.
+function ItemsReceivedCard({ disbursed }: { disbursed: ItemsDisbursed | null }) {
+  const groups = CATALOG
+    .map(g => ({
+      title: g.title,
+      items: [...(((disbursed?.[g.key as keyof ItemsDisbursed] ?? []) as DisbursedLine[]))]
+        .sort((a, b) => a.name.localeCompare(b.name, undefined, { sensitivity: 'base' })),
+    }))
+    .filter(g => g.items.length > 0)
+
+  const lineCount = groups.reduce((s, g) => s + g.items.length, 0)
+  const unitCount = groups.reduce(
+    (s, g) => s + g.items.reduce((t, i) => t + (Number(i.qty) || 0), 0), 0,
+  )
+
+  return (
+    <Card title="Items Received">
+      {lineCount === 0 ? (
+        <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>
+          No items were recorded for this appointment.
+        </div>
+      ) : (
+        <>
+          {/* Column count lives in globals.css (.fa-disbursed-columns). */}
+          <div className="fa-disbursed-columns">
+            {groups.map(g => (
+              <div key={g.title} style={{ breakInside: 'avoid', marginBottom: '14px' }}>
+                <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: EDIT_ACCENT, marginBottom: '6px' }}>
+                  {g.title}
+                </div>
+                {g.items.map((it, i) => (
+                  <div key={i} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', fontSize: '12.5px', color: '#2C3A4A', padding: '3px 0', borderBottom: '1px dotted #EDE9E1', gap: '8px' }}>
+                    <span style={{ minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{it.name}</span>
+                    <span style={{ fontWeight: 700, color: '#1B2B4B', flexShrink: 0 }}>{it.qty}</span>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </div>
+
+          {disbursed?.otherItems && (
+            <div style={{ marginTop: '14px', paddingTop: '14px', borderTop: '1px solid #EDE9E1' }}>
+              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: EDIT_ACCENT, marginBottom: '6px' }}>Other Items</div>
+              <div style={{ fontSize: '13px', color: '#2C3A4A', whiteSpace: 'pre-wrap', lineHeight: 1.6 }}>{disbursed.otherItems}</div>
+            </div>
+          )}
+
+          <div style={{ marginTop: '12px', paddingTop: '10px', borderTop: '1px solid #EDE9E1', fontSize: '11.5px', color: '#7A8899' }}>
+            <strong style={{ color: '#1B2B4B' }}>{unitCount}</strong> item{unitCount === 1 ? '' : 's'} across{' '}
+            <strong style={{ color: '#1B2B4B' }}>{groups.length}</strong> categor{groups.length === 1 ? 'y' : 'ies'}
+          </div>
+        </>
+      )}
+    </Card>
+  )
+}
+
+function DocLink({ href, label, color }: { href: string; label: string; color: string }) {
+  return (
+    <a href={href} target="_blank" rel="noreferrer"
+      style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color, textDecoration: 'none' }}>
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+      </svg>
+      {label}
+    </a>
+  )
+}
+
+// ------------------------------------------------------------------- page
+
 export default function ReferralDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const router = useRouter()
   const [referral, setReferral] = useState<Referral | null>(null)
+  const [referralId, setReferralId] = useState('')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({ open: false, type: null, id: '', name: '' })
+  const [rescheduleModal, setRescheduleModal] = useState<RescheduleModalState>({ open: false, id: '', name: '' })
+  const [actionLoading, setActionLoading] = useState(false)
+  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
+
   useEffect(() => {
     params.then(({ id }) => {
-      fetch(`/api/referrals/${id}`)
+      setReferralId(id)
+      fetch(`/api/referrals/${id}`, { cache: 'no-store' })
         .then(async r => {
           if (!r.ok) {
-            const data = await r.json()
+            const data = await r.json().catch(() => ({}))
             setError(data.error ?? 'Failed to load referral')
             setLoading(false)
             return
@@ -94,7 +705,56 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         })
         .then(data => { if (data) { setReferral(data); setLoading(false) } })
     })
+    // Saturdays for the reschedule picker. leadDays=14 matches ReferralTable —
+    // agencies need more notice than Dawson does.
+    //
+    // Must be the AGENCY endpoint. /api/dawson/schedule/available is behind
+    // the staff allowlist and answers an agency session with 403, which is
+    // what left this picker empty. The agency route also enforces the 50-per-
+    // Saturday limit, which the Dawson one deliberately does not.
+    fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => setAvailableDates(Array.isArray(data) ? data : []))
+      .catch(() => {})
   }, [params])
+
+  function refetch() {
+    if (!referralId) return
+    fetch(`/api/referrals/${referralId}`, { cache: 'no-store' })
+      .then(r => r.json())
+      .then(data => setReferral(data))
+      .catch(() => {})
+  }
+
+  async function handleConfirmAction() {
+    setActionLoading(true)
+    try {
+      await fetch(`/api/referrals/${confirmModal.id}/${confirmModal.type}`, { method: 'POST' })
+    } finally {
+      setActionLoading(false)
+      setConfirmModal({ open: false, type: null, id: '', name: '' })
+      refetch()
+    }
+  }
+
+  async function handleRescheduleConfirm(preferredDate: string | null, flexible: boolean) {
+    setActionLoading(true)
+    try {
+      await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferredDate, flexible }),
+      })
+    } finally {
+      setActionLoading(false)
+      setRescheduleModal({ open: false, id: '', name: '' })
+      refetch()
+    }
+  }
+
+  function applyUpdate(u: Partial<Referral>) {
+    setReferral(prev => prev ? { ...prev, ...u } : prev)
+  }
 
   if (loading) return (
     <div className="min-h-screen bg-[#F7F5F1] flex items-center justify-center text-[#7A8899]">
@@ -113,12 +773,36 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const status = getPortalStatus(referral.referralReview, referral.appointmentStatus)
   const colors = STATUS_COLORS[status] ?? { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' }
 
+  const editWindow = agencyEditWindow({
+    portalStatus: status,
+    appointmentDate: referral.appointmentDate,
+  })
+  const locked = !editWindow.editable
+
+  // Same gating ReferralTable uses for its row actions, so the two surfaces
+  // offer an agency user the same thing for the same referral.
+  const isWithdrawable = status === 'Submitted'
+  const isCancellable = status === 'Scheduling' || status === 'Scheduled'
+  const isReschedulable = status === 'Scheduling' || status === 'Scheduled'
+  const showActions = isWithdrawable || isCancellable || isReschedulable
+
+  const showItemsReceived = status === 'Completed'
+
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
-
-      {/* The navy top bar this page used to hand-roll now lives in
-          AgencyPortalShell, so there is one copy of it and it carries the
-          nav. The status badge it held moves into the body below. */}
+      <ConfirmModal
+        modal={confirmModal}
+        onConfirm={handleConfirmAction}
+        onClose={() => setConfirmModal({ open: false, type: null, id: '', name: '' })}
+        loading={actionLoading}
+      />
+      <RescheduleModal
+        modal={rescheduleModal}
+        availableDates={availableDates}
+        onConfirm={handleRescheduleConfirm}
+        onClose={() => setRescheduleModal({ open: false, id: '', name: '' })}
+        loading={actionLoading}
+      />
 
       {/* Column tracks live in globals.css (.fa-referral-detail-grid) so they can stack below 1280px. */}
       <div className="fa-referral-detail-grid" style={{ padding: '28px 32px', maxWidth: '960px', margin: '0 auto', display: 'grid', gap: '20px', alignItems: 'start' }}>
@@ -126,130 +810,97 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         {/* LEFT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-          {/* Status */}
-          <div>
+          {/* Status + actions */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
               {status}
             </span>
+
+            {showActions && (
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {isReschedulable && (
+                  <button onClick={() => setRescheduleModal({ open: true, id: referral.id, name: referral.clientName })}
+                    style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(201,168,76,0.4)', background: 'rgba(201,168,76,0.12)', color: '#8B7724', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+                    Reschedule
+                  </button>
+                )}
+                {isCancellable && (
+                  <button onClick={() => setConfirmModal({ open: true, type: 'cancel', id: referral.id, name: referral.clientName })}
+                    style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+                    Cancel Appointment
+                  </button>
+                )}
+                {isWithdrawable && (
+                  <button onClick={() => setConfirmModal({ open: true, type: 'withdraw', id: referral.id, name: referral.clientName })}
+                    style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+                    Withdraw Referral
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          {/* Client Info */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ background: colors.accent, height: '4px' }} />
-            <div style={{ padding: '24px' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '11px', letterSpacing: '0.10em', textTransform: 'uppercase', color: '#7A8899', margin: '0 0 12px' }}>Client Information</h2>
-              <InfoRow label="Full Name" value={referral.clientName} />
-              <InfoRow label="Date of Birth" value={formatDate(referral.dob)} />
-              <InfoRow label="Phone" value={referral.phone} />
-              <InfoRow label="Language" value={referral.language} />
-              <InfoRow label="Address" value={
-                referral.address ? (
-                  <>{referral.address}{referral.address2 ? `, ${referral.address2}` : ''}<br />
-                  {referral.city}, {referral.state} {referral.zip}
-                  {referral.county ? ` · ${referral.county} County` : ''}</>
-                ) : null
-              } />
-              <InfoRow label="Household Size" value={referral.hhSize} />
-              <InfoRow label="Children" value={referral.children} />
+          {/* Why the Edit buttons are gone. Said once here rather than on each
+              card, and only when a cutoff actually caused it. */}
+          {locked && editWindow.reason === 'past-cutoff' && (
+            <div style={{ background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.35)', borderRadius: '10px', padding: '12px 16px', fontSize: '12.5px', color: '#7A6A28', lineHeight: 1.6 }}>
+              Editing closed on {formatDate(editWindow.cutoffDate)}, the Monday before this appointment.
+              Contact Furniture Assist if something needs to change.
             </div>
-          </div>
+          )}
 
-          {/* Items Requested */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Items Requested</h2>
-            </div>
-            <div style={{ padding: '16px 24px' }}>
-              {referral.items ? (
-                (Array.isArray(referral.items) ? referral.items : referral.items.split(',')).map((item, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
-                    <span style={{ color: '#2A7F6F', fontWeight: 700, flexShrink: 0 }}>•</span>
-                    <span style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.6 }}>{item.trim()}</span>
-                  </div>
-                ))
-              ) : (
-                <div style={{ fontSize: '13px', color: '#7A8899' }}>No items specified</div>
-              )}
-            </div>
-          </div>
-
-          {/* Agency Notes */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Your Notes</h2>
-            </div>
-            <div style={{ padding: '16px 24px' }}>
-              {referral.externalNotes ? (
-                <div style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{referral.externalNotes}</div>
-              ) : (
-                <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>No notes submitted.</div>
-              )}
-            </div>
-          </div>
-
+          <ClientInfoCard referral={referral} locked={locked} accent={colors.accent} onSaved={applyUpdate} />
+          <ItemsRequestedCard referral={referral} locked={locked} onSaved={applyUpdate} />
+          {showItemsReceived && <ItemsReceivedCard disbursed={referral.itemsDisbursed} />}
+          <YourNotesCard referral={referral} locked={locked} onSaved={applyUpdate} />
         </div>
 
         {/* RIGHT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-          {/* Referral Details */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #EDE9E1' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Referral Details</h2>
-            </div>
-            <div style={{ padding: '12px 20px' }}>
-              <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
-              <InfoRow label="Referred By" value={referral.referredBy} />
-              <InfoRow label="Review Status" value={
-                <span style={{ fontWeight: 700, color: referral.referralReview === 'Approved' ? '#2A7F6F' : referral.referralReview === 'Rejected' ? '#C0392B' : '#C9A84C' }}>
-                  {referral.referralReview}
-                </span>
-              } />
-            </div>
-          </div>
+          <Card title="Referral Details">
+            <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
+            <InfoRow label="Referred By" value={referral.referredBy} />
+            <InfoRow label="Review Status" value={
+              <span style={{ fontWeight: 700, color: referral.referralReview === 'Approved' ? '#2A7F6F' : referral.referralReview === 'Rejected' ? '#C0392B' : '#C9A84C' }}>
+                {referral.referralReview}
+              </span>
+            } />
+          </Card>
 
-          {/* Appointment */}
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #EDE9E1' }}>
-              <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>Appointment</h2>
-            </div>
-            <div style={{ padding: '12px 20px' }}>
-              <InfoRow label="Status" value={<span style={{ fontWeight: 700, color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>} />
-              <InfoRow label="Date" value={status === 'Scheduled' || status === 'Completed' ? formatDate(referral.appointmentDate) : '—'} />
-              <InfoRow label="Time" value={status === 'Scheduled' || status === 'Completed' ? referral.appointmentTime : '—'} />
-              {referral.appointmentSlipUrl && (
-                <div style={{ paddingTop: '12px' }}>
-                  <a href={referral.appointmentSlipUrl} target="_blank" rel="noreferrer"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#2A7F6F', textDecoration: 'none' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                    </svg>
-                    View Appointment Slip
-                  </a>
-                </div>
-              )}
-              {referral.dataPageUrl && status === 'Completed' && (
-                <div style={{ paddingTop: '8px' }}>
-                  <a href={referral.dataPageUrl} target="_blank" rel="noreferrer"
-                    style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', fontSize: '13px', fontWeight: 700, color: '#5B8DB8', textDecoration: 'none' }}>
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-                    </svg>
-                    View Completed Form
-                  </a>
-                </div>
-              )}
-            </div>
-          </div>
+          <Card title="Appointment">
+            <InfoRow label="Status" value={<span style={{ fontWeight: 700, color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>} />
+            <InfoRow label="Date" value={status === 'Scheduled' || status === 'Completed' ? formatDate(referral.appointmentDate) : '—'} />
+            <InfoRow label="Time" value={status === 'Scheduled' || status === 'Completed' ? referral.appointmentTime : '—'} />
 
-          {/* Duplicate warning */}
+            {referral.appointmentSlipUrl && (
+              <div style={{ paddingTop: '12px' }}>
+                <DocLink href={referral.appointmentSlipUrl} label="View Appointment Slip" color="#2A7F6F" />
+              </div>
+            )}
+
+            {/* Generated by the client-receipt cron into an Airtable
+                attachment once the visit is done. Completed-only, because
+                that is the only state in which it exists. */}
+            {status === 'Completed' && referral.clientReceiptUrl && (
+              <div style={{ paddingTop: '8px' }}>
+                <DocLink href={referral.clientReceiptUrl} label="View Client Receipt" color="#1B2B4B" />
+              </div>
+            )}
+
+            {referral.dataPageUrl && status === 'Completed' && (
+              <div style={{ paddingTop: '8px' }}>
+                <DocLink href={referral.dataPageUrl} label="View Completed Form" color="#5B8DB8" />
+              </div>
+            )}
+          </Card>
+
           {referral.possibleDuplicate && (
             <div style={{ background: 'rgba(192,57,43,0.06)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '12px', padding: '16px 20px' }}>
               <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#C0392B', marginBottom: '6px' }}>⚠ Possible Duplicate</div>
               <div style={{ fontSize: '12px', color: '#7A8899', lineHeight: 1.6 }}>Our team has flagged this as a possible duplicate and will review before processing.</div>
             </div>
           )}
-
         </div>
       </div>
     </div>
