@@ -51,12 +51,110 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ---------- Card grids (5) ---------- */
 
+/* Active client cards.
+   Aug 2026: retuned from `130px 130px 160px 180px 140px 120px 1fr`.
+
+   THE PROBLEM. Those six fixed tracks total 860px. At a 1280px viewport the
+   row has 880px to work with (1280 − 240 sidebar − 64 page padding − 4 accent
+   − 32 card padding − 60 gaps), which left 20px for the actions cell. Two
+   icons need 60 and three need 96, so the page scrolled sideways from 1280 up
+   to about 1360 — before the appointment-slip icon was added, which made it
+   worse. Letting the last track shrink was tried and rejected: it removes the
+   scrollbar by letting the icons slide left over the appointment date.
+
+   THE CAUSE. The widths were mis-assigned rather than merely too big. Measured
+   against real Lato, the columns holding fixed-format data were the roomiest
+   and the two holding variable-length text were the tightest:
+
+     column        had    needs (longest realistic)   header floor
+     Client Name   130    246 (wraps by design)        82
+     Address       130    181                          59
+     Phone         160     74                          43
+     Referred By   180    130                          87
+     Submitted     140     70                          70
+     Appointment   120    106                          88
+     actions       1fr     96 (slip + reschedule + cancel)
+
+   THE FIX. Give each column a floor at or above its header width — so no label
+   ever wraps — and let the three text columns share what is left in proportion
+   rather than sitting at a fixed size. Floors total 594 + 120, well inside the
+   880 available at 1280, so nothing is dropped or truncated: the long client
+   name still wraps exactly as it was already designed to, and every other
+   column now fits its longest realistic value on one line at 1280.
+
+   The actions track is FIXED, not auto or 1fr. Auto would size to each card's
+   own icon count and the columns would jog between rows; 1fr was what starved
+   it. 120px holds the worst case (96px, a Scheduled row) and the 24px of slack
+   is what the slip icon's margin-right:auto spends pushing itself away from
+   Reschedule and towards Appointment. */
 .fa-referral-card-grid {
-  grid-template-columns: 130px 130px 160px 180px 140px 120px 1fr;
+  grid-template-columns:
+    minmax(120px, 1.5fr)   /* Client Name  */
+    minmax(130px, 1.6fr)   /* Address      */
+    minmax(80px, 0.8fr)    /* Phone        */
+    minmax(92px, 1.1fr)    /* Referred By  */
+    minmax(76px, 0.7fr)    /* Submitted    */
+    minmax(96px, 1fr)      /* Appointment  */
+    120px;                 /* Actions      */
 }
 
+/* A single unbroken 40-character token — an import artefact, or a staff email
+   pasted into a name field — is wider than any column here and spills sideways
+   across the next one. This only engages when a word genuinely cannot fit;
+   ordinary names and addresses have spaces and hyphens to break at and render
+   identically (verified: same line counts before and after).
+
+   It has to be `anywhere`, not `break-word`. The client name sits inside the
+   Tooltip wrapper, which is display:inline-flex and therefore shrink-to-fits to
+   its own min-content — so with `break-word`, which by definition does not
+   reduce min-content, the box just grows to the word and nothing ever wraps.
+   `anywhere` does reduce it, which is what lets the wrapper come back down to
+   the column. Safe against the tracks above because those minimums are fixed
+   pixels, not min-content, so a smaller min-content cannot resize them. */
+.fa-referral-card-grid > div,
+.fa-history-card-grid > div {
+  overflow-wrap: anywhere;
+}
+
+/* History cards. The same bug as the active card above, in miniature, on the
+   page right next to it — so retuned the same way rather than left to scroll.
+
+   Aug 2026: was `160px 180px 130px 110px 110px 150px 60px`. Those seven total
+   900px and the gaps another 60, against the same 940px a row has at a 1280px
+   viewport: 20px over, so the page scrolled sideways at 1280 and 1281 and came
+   good at 1300. Smaller than the active card's 76px, identical in kind.
+
+   Measured against real Lato, the same mis-assignment:
+
+     column        had    needs (longest realistic)   header floor
+     Client Name   160    246 (wraps by design)        82
+     Address       180    181  (one pixel short)       59
+     Referred By   130    130                          87
+     Submitted     110     70                          70
+     Appointment   110     88                          88
+     Outcome       150    119 ("Missed appointment")   62
+     action         60     32 (receipt icon)            0
+
+   Submitted, Appointment, Outcome and the action cell were holding 125px they
+   never used, against a 20px shortfall — so nothing is dropped or truncated to
+   fix this. Floors are each at or above their own heading, and Outcome's is
+   above the widest pill so "Missed appointment" cannot wrap inside its own
+   badge. The three text columns share the remainder, in the same proportions
+   the active card uses, so the two pages' cards stay recognisably one design.
+
+   The action track is fixed for the same reason as the active card's: it is
+   empty on every row that is not a completed referral with a receipt, so an
+   auto track would collapse on those rows and the columns would jog. 40px is
+   the 32px icon plus a little separation from the outcome pill. */
 .fa-history-card-grid {
-  grid-template-columns: 160px 180px 130px 110px 110px 150px 60px;
+  grid-template-columns:
+    minmax(120px, 1.5fr)   /* Client Name */
+    minmax(130px, 1.6fr)   /* Address     */
+    minmax(92px, 1.1fr)    /* Referred By */
+    minmax(76px, 0.7fr)    /* Submitted   */
+    minmax(92px, 0.8fr)    /* Appointment */
+    minmax(120px, 1fr)     /* Outcome     */
+    40px;                  /* Receipt     */
 }
 
 .fa-staff-row-invite {
@@ -85,9 +183,45 @@ h1, h2, h3, h4, h5, h6 {
    auto, so once the left column held edit forms instead of plain text it
    refused to shrink below its widest row and pushed the whole page into
    horizontal scroll. Same guard the other tracks in this file already use.
-   Identical rendering whenever the content fits. */
+   Identical rendering whenever the content fits.
+
+   Aug 2026: tracks changed from `minmax(0, 1fr) 380px` inside a 960px cap to
+   the internal detail page's 2fr / 1fr across the full content width. The cap
+   was leaving roughly a third of a laptop screen empty on both sides while the
+   cards themselves ran off the bottom. The 960px cap is NOT gone — it moves
+   into the below-1280 block below, so the stacked phone/tablet layout renders
+   byte-identically to what it did before. */
 .fa-referral-detail-grid {
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  max-width: none;
+}
+
+/* Sticky page header on the agency referral detail page, matching the internal
+   detail page. Sticky ONLY at 1280 and up: below that the portal shell already
+   has its own sticky navy top bar at top: 0, and a second sticky element there
+   would ride over it. */
+.fa-detail-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+/* Read-mode Client Information: two InfoRows per line, so the card is half as
+   tall in the widened left column. The Address row opts out via inline
+   gridColumn — it carries two lines of value and reads badly in half width.
+   Edit mode deliberately does NOT do this; see the note on that card. */
+.fa-inforow-pairs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 24px;
+}
+
+/* Read-mode Items Requested: six bullets in one column left the card mostly
+   empty once the left track widened. */
+.fa-items-requested-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 24px;
 }
 
 .fa-new-referral-grid {
@@ -218,8 +352,21 @@ h1, h2, h3, h4, h5, h6 {
   .fa-form-three-col,
   .fa-form-items-grid,
   .fa-profile-row,
+  .fa-inforow-pairs,
+  .fa-items-requested-grid,
   .fa-profile-citystatezip {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The 960px cap the referral detail page used to carry inline. Kept here so
+     the stacked layout below 1280 is unchanged by the desktop widening. */
+  .fa-referral-detail-grid {
+    max-width: 960px;
+  }
+
+  /* The shell's navy top bar is the only sticky header on a phone. */
+  .fa-detail-header {
+    position: static;
   }
 
   /* Populated referral and history cards: stacking every cell into its own

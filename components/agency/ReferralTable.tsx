@@ -11,6 +11,10 @@ import {
   type ConfirmModalState,
   type RescheduleModalState,
 } from './ReferralActionModals'
+// One definition, shared with the referral detail page and with PATCH
+// /api/referrals/[id]. This file used to carry a byte-for-byte copy, which is
+// how a status added in one place could go missing in the other.
+import { getPortalStatus } from '@/lib/referrals/edit-window'
 
 type Referral = {
   id: string
@@ -20,8 +24,8 @@ type Referral = {
   appointmentTime: string | null
   referralReview: string
   appointmentStatus: string
-  appointmentSlipUrl: string
-  dataPageUrl: string
+  appointmentSlipUrl: string | null
+  dataPageUrl: string | null
   referredBy: string | null
   address: string | null
   address2: string | null
@@ -37,18 +41,8 @@ function formatDate(dateStr: string | null) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-function getPortalStatus(referralReview: string, appointmentStatus: string) {
-  if (referralReview === 'Rejected') return 'Rejected'
-  if (appointmentStatus === 'Cancelled') return 'Cancelled'
-  if (appointmentStatus === 'Completed') return 'Completed'
-  if (referralReview === 'Pending') return 'Submitted'
-  if (appointmentStatus === 'Pending Schedule') return 'Scheduling'
-  if (appointmentStatus === 'Scheduled') return 'Scheduled'
-  return appointmentStatus
-}
-
 function sortReferrals(referrals: Referral[], key: string): Referral[] {
-  const byAppt = ['Scheduled', 'Completed', 'Cancelled', 'Rejected']
+  const byAppt = ['Scheduled', 'Reschedule', 'Completed', 'Cancelled', 'Rejected']
   if (byAppt.includes(key)) {
     return [...referrals].sort((a, b) => {
       const da = a.appointmentDate ?? '9999'
@@ -65,6 +59,8 @@ const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText
   Submitted:  { accent: '#C9A84C', badgeBg: '#FEF9EC', badgeText: '#C9A84C' },
   Scheduling: { accent: '#5B8DB8', badgeBg: '#EBF3FB', badgeText: '#5B8DB8' },
   Scheduled:  { accent: '#2A7F6F', badgeBg: '#EAF4F2', badgeText: '#2A7F6F' },
+  // Gold, the colour reschedule already carries everywhere else in the portal.
+  Reschedule: { accent: '#C9A84C', badgeBg: '#FEF9EC', badgeText: '#C9A84C' },
   Completed:  { accent: '#1B2B4B', badgeBg: '#E8ECF2', badgeText: '#1B2B4B' },
   Cancelled:  { accent: '#C0392B', badgeBg: '#FDEDEC', badgeText: '#C0392B' },
   Rejected:   { accent: '#C0392B', badgeBg: '#FDEDEC', badgeText: '#C0392B' },
@@ -193,17 +189,27 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
 
         {/* ACTIONS */}
 <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px', paddingTop: '14px' }}>
-  {(false && isScheduled || isCompleted) && (
-    <Tooltip label="Appointment Slip">
-      <a href={r.appointmentSlipUrl || 'Appt Slip'} target="_blank" rel="noreferrer"
-        style={{ width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2A7F6F', textDecoration: 'none' }}>
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
-          <polyline points="14 2 14 8 20 8"/>
-          <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
-        </svg>
-      </a>
-    </Tooltip>
+  {/* Appointment slip. Shown whenever a slip actually exists on the record —
+      it used to be gated `false && isScheduled || isCompleted`, i.e. completed
+      only, so scheduled clients had no way to reach their own slip from this
+      list.
+
+      marginRight: auto pins it to the LEFT edge of the actions cell, which puts
+      it hard against the Appointment column rather than bunched up with
+      Reschedule at the right — what Ben asked for. */}
+  {r.appointmentSlipUrl && (
+    <div style={{ display: 'flex', marginRight: 'auto' }}>
+      <Tooltip label="Appointment Slip">
+        <a href={r.appointmentSlipUrl} target="_blank" rel="noreferrer"
+          style={{ width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#2A7F6F', textDecoration: 'none' }}>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
+            <polyline points="14 2 14 8 20 8"/>
+            <line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+        </a>
+      </Tooltip>
+    </div>
   )}
   {isCompleted && r.dataPageUrl && (
     <Tooltip label="Completed Form">
@@ -294,14 +300,18 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
     }
   }
 
-  // Reschedule — JSON body { preferredDate, flexible }
-  const handleRescheduleConfirm = async (preferredDate: string | null, flexible: boolean) => {
+  // Reschedule — JSON body { preferredDate, preferredTime, flexible }
+  const handleRescheduleConfirm = async (
+    preferredDate: string | null,
+    flexible: boolean,
+    preferredTime: string | null,
+  ) => {
     setLoading(true)
     try {
       await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferredDate, flexible }),
+        body: JSON.stringify({ preferredDate, preferredTime, flexible }),
       })
       // Refresh availability — the previous slot is now open, the new one is taken.
       fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
@@ -319,6 +329,11 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
     { key: 'Submitted',  sectionTitle: 'Awaiting Approval',        referrals: sortReferrals(filteredReferrals.filter(r => getPortalStatus(r.referralReview, r.appointmentStatus) === 'Submitted'),  'Submitted') },
     { key: 'Scheduling', sectionTitle: 'Awaiting Appointment Date', referrals: sortReferrals(filteredReferrals.filter(r => getPortalStatus(r.referralReview, r.appointmentStatus) === 'Scheduling'), 'Scheduling') },
     { key: 'Scheduled',  sectionTitle: 'Appointment Scheduled',     referrals: sortReferrals(filteredReferrals.filter(r => getPortalStatus(r.referralReview, r.appointmentStatus) === 'Scheduled'),  'Scheduled') },
+    // A client whose reschedule request is with Furniture Assist. Without this
+    // group the card matched no section and vanished from the agency's Active
+    // list the moment they asked for a new date — the request looked like it
+    // had deleted the client.
+    { key: 'Reschedule', sectionTitle: 'Reschedule Requested',      referrals: sortReferrals(filteredReferrals.filter(r => getPortalStatus(r.referralReview, r.appointmentStatus) === 'Reschedule'), 'Reschedule') },
     { key: 'Completed',  sectionTitle: 'Completed Clients',         referrals: sortReferrals(filteredReferrals.filter(r => getPortalStatus(r.referralReview, r.appointmentStatus) === 'Completed'),  'Completed'),  collapsible: true },
     { key: 'Cancelled',  sectionTitle: 'Cancelled Appointments',    referrals: sortReferrals(filteredReferrals.filter(r => getPortalStatus(r.referralReview, r.appointmentStatus) === 'Cancelled'),  'Cancelled'),  collapsible: true },
     { key: 'Rejected',   sectionTitle: 'Rejected Referrals',        referrals: sortReferrals(filteredReferrals.filter(r => getPortalStatus(r.referralReview, r.appointmentStatus) === 'Rejected'),   'Rejected'),   collapsible: true },

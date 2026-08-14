@@ -18,6 +18,16 @@ import {
   HEADERS,
 } from './client'
 
+// 'Appt Slip' and 'Client Receipt' are Airtable ATTACHMENT fields, so they come
+// back as an array of attachment objects, not a URL. Reading .url off the first
+// one is the whole job; this exists so the three read sites cannot disagree
+// about it (the list shapes used to cast the array straight to string, which
+// put "[object Object]" in an href).
+type AirtableAttachment = { url?: string }
+function attachmentUrl(value: unknown): string | null {
+  return (value as AirtableAttachment[] | undefined)?.[0]?.url ?? null
+}
+
 // Internal helper: shape a Client Referrals record into the list-view object.
 // Pulls staff / agency / agency-email / staff-phone from the Referring Staff
 // Link lookups (post-migration) rather than the deleted plaintext fields.
@@ -31,7 +41,7 @@ function shapeReferralListItem(record: any) {
     appointmentTime: (f['Appointment Time'] as string) ?? null,
     referralReview: f['Referral Review'] as string,
     appointmentStatus: f['Appointment Status'] as string,
-    appointmentSlipUrl: f['Appt Slip'] as string,
+    appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
     referredBy: safeLookupString(f['Referring Staff']),
     dataPageUrl: f['Data Page URL'] as string,
     address: (f['Address'] as string) ?? null,
@@ -188,9 +198,17 @@ export async function getAllReferrals(filters?: {
       appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
       saturdayDate: (f['Appointment Date'] as string[])?.[0] ?? null,
       appointmentTime: (f['Appointment Time'] as string) ?? null,
+      // What the agency ASKED for, as opposed to what is currently booked.
+      // Only meaningful while Appointment Status is 'Reschedule'; the Awaiting
+      // Review page reads these to offer Dawson "accept as requested".
+      // Preferred Time's select options are identical to Appointment Time's,
+      // so this value needs no translation on the way back out.
+      preferredDate: (f['Preferred Date'] as string) ?? null,
+      preferredTime: (f['Preferred Time'] as string) ?? null,
+      schedulingFlexibility: (f['Scheduling Flexibility'] as string) ?? null,
       referralReview: f['Referral Review'] as string,
       appointmentStatus: f['Appointment Status'] as string,
-      appointmentSlipUrl: (f['Appt Slip'] as string) ?? null,
+      appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
       referredBy: staffName,
       staffName,
       staffPhone,
@@ -326,11 +344,11 @@ export async function getReferralById(referralId: string) {
     appointmentStatus: f['Appointment Status'] as string,
     appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
     appointmentTime: (f['Appointment Time'] as string) ?? null,
-    appointmentSlipUrl: (f['Appt Slip'] as any[])?.[0]?.url ?? null,
+    appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
     // Written by the client-receipt cron (lib/notifications/client-receipt.ts)
     // into the "Client Receipt" attachment field once the visit is done. Read
     // only — the portal surfaces the PDF, it never generates it.
-    clientReceiptUrl: (f['Client Receipt'] as any[])?.[0]?.url ?? null,
+    clientReceiptUrl: attachmentUrl(f['Client Receipt']),
     dataPageUrl: (f['Data Page URL'] as string) ?? null,
     referredBy: safeLookupString(f['Referring Staff']),
     referringAgency: safeLookupString(f['Referring Agency']),
@@ -346,6 +364,21 @@ export async function getReferralById(referralId: string) {
     // `boolean` type the page expects.
     readyForPostApptEmail: (f['Ready for Post-Appt Email'] as boolean) ?? false,
     postApptEmailSent: (f['Post Appt Email Sent'] as boolean) ?? false,
+    // Aug 2026: the five "when did this email go out" stamps, written by the
+    // notification modules as each one fires. Surfaced on the internal detail
+    // page's Email History card.
+    //
+    // 'Cancellation Email Sent At' was misspelled in Airtable until 2026-08-14,
+    // so nothing was ever written to it. Every referral cancelled before that
+    // date reads null here and that is correct, not a lookup failure — do not
+    // add a fallback for it.
+    emailSentAt: {
+      confirmation: (f['Confirm Email Sent At'] as string) ?? null,
+      reschedule:   (f['Reschedule Email Sent At'] as string) ?? null,
+      reminder:     (f['Reminder Sent At'] as string) ?? null,
+      completed:    (f['Post Appt Email Sent At'] as string) ?? null,
+      cancellation: (f['Cancellation Email Sent At'] as string) ?? null,
+    },
     itemsDisbursed,
   }
 }

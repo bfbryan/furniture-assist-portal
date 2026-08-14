@@ -149,6 +149,10 @@ const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText
   Submitted:  { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)',  badgeText: '#C9A84C' },
   Scheduling: { accent: '#5B8DB8', badgeBg: 'rgba(91,141,184,0.12)',  badgeText: '#5B8DB8' },
   Scheduled:  { accent: '#2A7F6F', badgeBg: 'rgba(42,127,111,0.12)',  badgeText: '#2A7F6F' },
+  // Gold, the colour reschedule already carries everywhere else in the portal.
+  // Reached once an agency has asked for a new date and Furniture Assist has
+  // not acted on it yet.
+  Reschedule: { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)',  badgeText: '#C9A84C' },
   Completed:  { accent: '#1B2B4B', badgeBg: 'rgba(27,43,75,0.08)',    badgeText: '#1B2B4B' },
   Cancelled:  { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',    badgeText: '#C0392B' },
   Rejected:   { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',    badgeText: '#C0392B' },
@@ -156,14 +160,21 @@ const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText
 
 // ---------------------------------------------------------------- UI atoms
 
-function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
+// `fullWidth` makes a row span both columns of .fa-inforow-pairs. Only Address
+// uses it — it is the one row whose value runs to two lines. Below 1280px the
+// pairs grid collapses to a single column and the flag stops mattering.
+function InfoRow({ label, value, fullWidth }: {
+  label: string
+  value: React.ReactNode
+  fullWidth?: boolean
+}) {
   return (
-    <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1' }}>
+    <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1', gridColumn: fullWidth ? '1 / -1' : undefined }}>
       {/* Label width lives in globals.css (.fa-inforow-label) so it can narrow below 1280px. */}
       <div className="fa-inforow-label" style={{ flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em', paddingTop: '1px' }}>
         {label}
       </div>
-      <div style={{ fontSize: '14px', color: '#1B2B4B', flex: 1 }}>
+      <div style={{ fontSize: '14px', color: '#1B2B4B', flex: 1, minWidth: 0 }}>
         {value || '—'}
       </div>
     </div>
@@ -329,19 +340,23 @@ function ClientInfoCard({ referral, locked, accent, onSaved }: {
         title="Client Information"
         headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
       >
-        <InfoRow label="Full Name" value={referral.clientName} />
-        <InfoRow label="Date of Birth" value={referral.dob} />
-        <InfoRow label="Phone" value={referral.phone} />
-        <InfoRow label="Language" value={referral.language} />
-        <InfoRow label="Address" value={
-          referral.address ? (
-            <>{referral.address}{referral.address2 ? `, ${referral.address2}` : ''}<br />
-            {referral.city}, {referral.state} {referral.zip}
-            {referral.county ? ` · ${referral.county} County` : ''}</>
-          ) : null
-        } />
-        <InfoRow label="Household Size" value={referral.hhSize} />
-        <InfoRow label="Children" value={referral.children} />
+        {/* Two rows per line above 1280px, one below. Column count lives in
+            globals.css (.fa-inforow-pairs). */}
+        <div className="fa-inforow-pairs">
+          <InfoRow label="Full Name" value={referral.clientName} />
+          <InfoRow label="Date of Birth" value={referral.dob} />
+          <InfoRow label="Phone" value={referral.phone} />
+          <InfoRow label="Language" value={referral.language} />
+          <InfoRow label="Address" fullWidth value={
+            referral.address ? (
+              <>{referral.address}{referral.address2 ? `, ${referral.address2}` : ''}<br />
+              {referral.city}, {referral.state} {referral.zip}
+              {referral.county ? ` · ${referral.county} County` : ''}</>
+            ) : null
+          } />
+          <InfoRow label="Household Size" value={referral.hhSize} />
+          <InfoRow label="Children" value={referral.children} />
+        </div>
       </Card>
     )
   }
@@ -486,12 +501,18 @@ function ItemsRequestedCard({ referral, locked, onSaved }: {
         title="Items Requested"
         headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
       >
-        {list.length > 0 ? list.map((item, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
-            <span style={{ color: '#2A7F6F', fontWeight: 700, flexShrink: 0 }}>•</span>
-            <span style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.6 }}>{item}</span>
+        {list.length > 0 ? (
+          // Two bullets per line above 1280px, one below. Column count lives in
+          // globals.css (.fa-items-requested-grid).
+          <div className="fa-items-requested-grid">
+            {list.map((item, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', marginBottom: '6px' }}>
+                <span style={{ color: '#2A7F6F', fontWeight: 700, flexShrink: 0 }}>•</span>
+                <span style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.6 }}>{item}</span>
+              </div>
+            ))}
           </div>
-        )) : (
+        ) : (
           <div style={{ fontSize: '13px', color: '#7A8899' }}>No items specified</div>
         )}
       </Card>
@@ -737,13 +758,17 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  async function handleRescheduleConfirm(preferredDate: string | null, flexible: boolean) {
+  async function handleRescheduleConfirm(
+    preferredDate: string | null,
+    flexible: boolean,
+    preferredTime: string | null,
+  ) {
     setActionLoading(true)
     try {
       await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferredDate, flexible }),
+        body: JSON.stringify({ preferredDate, preferredTime, flexible }),
       })
     } finally {
       setActionLoading(false)
@@ -784,7 +809,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const isWithdrawable = status === 'Submitted'
   const isCancellable = status === 'Scheduling' || status === 'Scheduled'
   const isReschedulable = status === 'Scheduling' || status === 'Scheduled'
-  const showActions = isWithdrawable || isCancellable || isReschedulable
 
   const showItemsReceived = status === 'Completed'
 
@@ -804,41 +828,69 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         loading={actionLoading}
       />
 
-      {/* Column tracks live in globals.css (.fa-referral-detail-grid) so they can stack below 1280px. */}
-      <div className="fa-referral-detail-grid" style={{ padding: '28px 32px', maxWidth: '960px', margin: '0 auto', display: 'grid', gap: '20px', alignItems: 'start' }}>
+      {/* ------------------------------------------------------------------
+          Page header.
+
+          Status and the action buttons used to sit at the top of the LEFT
+          column, i.e. inside the scrolling body and competing with the cards
+          for attention. They live up here now, the way the internal detail
+          page does it, so "what state is this in and what can I do about it"
+          is answered before anything else on the page.
+
+          Sticky at 1280 and up only — see .fa-detail-header in globals.css.
+          Below that the shell's own navy top bar is the sticky one, and this
+          header scrolls with the page. Everything wraps, so on a phone the
+          name takes the first line and the status + buttons the next.
+      ------------------------------------------------------------------- */}
+      <header className="fa-detail-header" style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '12px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+          <button
+            type="button"
+            onClick={() => {
+              if (window.history.length > 1) router.back()
+              else router.push('/referrals/active')
+            }}
+            style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
+            Back
+          </button>
+          <span style={{ color: '#EDE9E1', flexShrink: 0 }}>→</span>
+          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B', minWidth: 0 }}>{referral.clientName}</div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
+            {status}
+          </span>
+
+          {isReschedulable && (
+            <button onClick={() => setRescheduleModal({ open: true, id: referral.id, name: referral.clientName })}
+              style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(201,168,76,0.4)', background: 'rgba(201,168,76,0.12)', color: '#8B7724', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+              Reschedule
+            </button>
+          )}
+          {isCancellable && (
+            <button onClick={() => setConfirmModal({ open: true, type: 'cancel', id: referral.id, name: referral.clientName })}
+              style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+              Cancel Appointment
+            </button>
+          )}
+          {isWithdrawable && (
+            <button onClick={() => setConfirmModal({ open: true, type: 'withdraw', id: referral.id, name: referral.clientName })}
+              style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+              Withdraw Referral
+            </button>
+          )}
+        </div>
+      </header>
+
+      {/* Column tracks and the width cap live in globals.css
+          (.fa-referral-detail-grid) so they can stack below 1280px. */}
+      <div className="fa-referral-detail-grid" style={{ padding: '28px 32px', margin: '0 auto', display: 'grid', gap: '20px', alignItems: 'start' }}>
 
         {/* LEFT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-          {/* Status + actions */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
-              {status}
-            </span>
-
-            {showActions && (
-              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                {isReschedulable && (
-                  <button onClick={() => setRescheduleModal({ open: true, id: referral.id, name: referral.clientName })}
-                    style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(201,168,76,0.4)', background: 'rgba(201,168,76,0.12)', color: '#8B7724', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
-                    Reschedule
-                  </button>
-                )}
-                {isCancellable && (
-                  <button onClick={() => setConfirmModal({ open: true, type: 'cancel', id: referral.id, name: referral.clientName })}
-                    style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
-                    Cancel Appointment
-                  </button>
-                )}
-                {isWithdrawable && (
-                  <button onClick={() => setConfirmModal({ open: true, type: 'withdraw', id: referral.id, name: referral.clientName })}
-                    style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
-                    Withdraw Referral
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
 
           {/* Why the Edit buttons are gone. Said once here rather than on each
               card, and only when a cutoff actually caused it. */}
@@ -884,7 +936,11 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
                 that is the only state in which it exists. */}
             {status === 'Completed' && referral.clientReceiptUrl && (
               <div style={{ paddingTop: '8px' }}>
-                <DocLink href={referral.clientReceiptUrl} label="View Client Receipt" color="#1B2B4B" />
+                {/* Teal, matching the appointment slip link directly above it.
+                    These two are the same kind of thing — a PDF about this
+                    appointment — and the navy made the receipt read as a
+                    different class of link. */}
+                <DocLink href={referral.clientReceiptUrl} label="View Client Receipt" color="#2A7F6F" />
               </div>
             )}
 

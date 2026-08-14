@@ -69,7 +69,29 @@ type Referral = {
   // this page needs to map both through; see bottom-of-file note.
   readyForPostApptEmail: boolean
   postApptEmailSent: boolean
+  // Aug 2026: the five milestone stamps behind the Email History card.
+  // `cancellation` is null on every referral cancelled before 2026-08-14 —
+  // the Airtable field was misspelled until then and never written to.
+  emailSentAt: {
+    confirmation: string | null
+    reschedule: string | null
+    reminder: string | null
+    completed: string | null
+    cancellation: string | null
+  } | null
   itemsDisbursed: ItemsDisbursed | null
+}
+
+
+// One row of the Email Log table, as /api/dawson/referrals/[id]/emails
+// returns it. Mirrors EmailLogEntry in lib/airtable/email-log.ts.
+type EmailLogEntry = {
+  id: string
+  type: string | null
+  status: string | null
+  sentAt: string | null
+  recipient: string | null
+  bounceReason: string | null
 }
 
 
@@ -1169,9 +1191,9 @@ function InternalNotesCard({
         title="Internal Notes"
         headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} label={referral.internalNotes ? 'Edit' : '+ Add'} />}
       >
-        {/* Aug 2026: notes-left / outbound-emails-right two-column split is a
-            later-date idea Ben raised — not implemented yet. Revisit once the
-            post-appt email batch is built and there's real send history to show. */}
+        {/* The notes-left / outbound-emails-right split Ben asked for is built:
+            this card is now half-width, with EmailHistoryCard beside it. See
+            the two-column wrapper in the page body. */}
         {referral.internalNotes ? (
           <div style={{ fontSize: '13px', color: '#1B2B4B', whiteSpace: 'pre-wrap', lineHeight: 1.6, padding: '4px 0' }}>{referral.internalNotes}</div>
         ) : (
@@ -1211,6 +1233,133 @@ function InternalNotesCard({
 
 
 // ---------------------------------------------------------------------------
+// Email History
+// ---------------------------------------------------------------------------
+
+
+// Sits beside Internal Notes and answers "has this client been told?".
+//
+// Two sources, because they answer two different questions:
+//
+//   MILESTONES come off the referral row itself — the five "…Sent At" stamps
+//   the notification modules write as each email fires. They are the checklist:
+//   all five are always listed, including the ones that have not happened, so
+//   a missing confirmation is visible rather than absent.
+//
+//   DELIVERY LOG is the Email Log table, one row per send attempt, carrying
+//   what Resend said afterwards. This is where a bounce shows up — a milestone
+//   stamp only records that we tried.
+const EMAIL_MILESTONES = [
+  { key: 'confirmation', label: 'Appointment Confirmation' },
+  { key: 'reschedule',   label: 'Reschedule Notice' },
+  { key: 'reminder',     label: 'Appointment Reminder' },
+  { key: 'completed',    label: 'Post-Appointment' },
+  { key: 'cancellation', label: 'Cancellation Notice' },
+] as const
+
+
+// Airtable datetimes are full ISO timestamps, unlike the date-only appointment
+// fields formatDate() handles, so this one keeps the time of day.
+function formatSentAt(iso: string | null): string | null {
+  if (!iso) return null
+  const d = new Date(iso)
+  if (isNaN(d.getTime())) return null
+  return d.toLocaleString('en-US', {
+    month: 'short', day: 'numeric', year: 'numeric',
+    hour: 'numeric', minute: '2-digit',
+  })
+}
+
+
+const EMAIL_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
+  Sent:       { bg: 'rgba(42,127,111,0.10)',  fg: '#2A7F6F' },
+  Delivered:  { bg: 'rgba(42,127,111,0.10)',  fg: '#2A7F6F' },
+  Bounced:    { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
+  Complained: { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
+  Failed:     { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
+}
+
+
+function EmailStatusPill({ status }: { status: string | null }) {
+  if (!status) return null
+  const c = EMAIL_STATUS_COLORS[status] ?? { bg: 'rgba(122,136,153,0.12)', fg: '#7A8899' }
+  return (
+    <span style={{
+      fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em',
+      padding: '2px 8px', borderRadius: '12px',
+      background: c.bg, color: c.fg, flexShrink: 0,
+    }}>
+      {status}
+    </span>
+  )
+}
+
+
+function EmailHistoryCard({ referral, entries, loading }: {
+  referral: Referral
+  entries: EmailLogEntry[]
+  loading: boolean
+}) {
+  const stamps = referral.emailSentAt
+
+  return (
+    <Card accent={READ_ACCENT} title="Email History">
+      <div style={{ padding: '4px 0' }}>
+        {EMAIL_MILESTONES.map(m => {
+          const when = formatSentAt(stamps?.[m.key] ?? null)
+          return (
+            <div key={m.key} style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', alignItems: 'baseline', padding: '7px 0', borderBottom: '1px solid #F7F5F1' }}>
+              <span style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em' }}>{m.label}</span>
+              <span style={{
+                fontSize: '13px', textAlign: 'right',
+                color: when ? '#1B2B4B' : '#C9CFD6',
+                fontStyle: when ? 'normal' : 'italic',
+              }}>
+                {when ?? 'Not sent'}
+              </span>
+            </div>
+          )
+        })}
+      </div>
+
+      <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #EDE9E1' }}>
+        <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: READ_ACCENT, marginBottom: '8px' }}>
+          Delivery Log
+        </div>
+
+        {loading ? (
+          <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>Loading…</div>
+        ) : entries.length === 0 ? (
+          <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>
+            No emails logged against this client yet.
+          </div>
+        ) : (
+          entries.map(e => (
+            <div key={e.id} style={{ padding: '7px 0', borderBottom: '1px solid #F7F5F1' }}>
+              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
+                <span style={{ fontSize: '13px', fontWeight: 600, color: '#1B2B4B', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {e.type ?? 'Unknown email'}
+                </span>
+                <EmailStatusPill status={e.status} />
+              </div>
+              <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {[formatSentAt(e.sentAt), e.recipient].filter(Boolean).join(' · ') || '—'}
+              </div>
+              {e.bounceReason && (
+                <div style={{ fontSize: '11px', color: '#C0392B', marginTop: '3px', lineHeight: 1.5 }}>
+                  {e.bounceReason}
+                </div>
+              )}
+            </div>
+          ))
+        )}
+      </div>
+    </Card>
+  )
+}
+
+
+// ---------------------------------------------------------------------------
 // Main page
 // ---------------------------------------------------------------------------
 
@@ -1233,11 +1382,22 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // see completedLocked below).
   const [readyForPostApptEmail, setReadyForPostApptEmail] = useState(false)
   const [emailToggleSaving, setEmailToggleSaving] = useState(false)
+  // Outbound email history. Loaded alongside the referral rather than as part
+  // of it — see the note on /api/dawson/referrals/[id]/emails.
+  const [emailLog, setEmailLog] = useState<EmailLogEntry[]>([])
+  const [emailLogLoading, setEmailLogLoading] = useState(true)
 
 
   useEffect(() => {
     params.then(({ id }) => {
       setReferralId(id)
+
+      fetch(`/api/dawson/referrals/${id}/emails`, { cache: 'no-store' })
+        .then(r => (r.ok ? r.json() : []))
+        .then(data => setEmailLog(Array.isArray(data) ? data : []))
+        .catch(() => {})
+        .finally(() => setEmailLogLoading(false))
+
       fetch(`/api/dawson/referrals/${id}`, { cache: 'no-store' })
         .then(async r => {
           if (!r.ok) {
@@ -1649,7 +1809,18 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       <div style={{ padding: '20px 32px 32px', display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '20px', alignItems: 'start' }}>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <InternalNotesCard referral={referral} locked={recordLocked} onSaved={applyUpdate} />
+          {/* Notes left, outbound email history right, in the space Internal
+              Notes used to have to itself. Ben asked for this pairing: the two
+              questions he has in front of a record are "what do I know about
+              this one" and "what has this client already been told", and the
+              second one used to mean opening Airtable.
+
+              alignItems: start so a long Delivery Log does not stretch the
+              notes card to match it. */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
+            <InternalNotesCard referral={referral} locked={recordLocked} onSaved={applyUpdate} />
+            <EmailHistoryCard referral={referral} entries={emailLog} loading={emailLogLoading} />
+          </div>
           <ItemsRequestedCard referral={referral} locked={recordLocked} onSaved={applyUpdate} />
           {/* Completed only. Cancelled / No Show / Scheduled mean nothing was
               handed out, so the card would be an empty box asking to be
