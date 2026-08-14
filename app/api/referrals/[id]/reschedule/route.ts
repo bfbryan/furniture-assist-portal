@@ -1,8 +1,17 @@
 // app/api/referrals/[id]/reschedule/route.ts
 // Agency-facing reschedule: accepts { flexible: true } OR { flexible: false, preferredDate: 'YYYY-MM-DD' }
+//
+// This is a REQUEST, not a booking: it sets Appointment Status to
+// 'Reschedule' and records the preferred date for Furniture Assist to confirm.
+// Dawson's own /api/dawson/referrals/[id]/reschedule is the one that actually
+// moves an appointment and emails the agency.
+//
+// Ownership is checked with the shared guard — it previously only verified
+// that someone was signed in, which let any agency user reschedule any
+// referral in the base.
 
-import { auth } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
 
 function isSaturday(isoDate: string): boolean {
   const [y, m, d] = isoDate.split('-').map(Number)
@@ -14,10 +23,10 @@ export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { id } = await params
+  const access = await requireAgencyReferralAccess(id)
+  if (access.denied) return access.denied
+
   const body = await request.json().catch(() => ({}))
   const { preferredDate, flexible } = body
 
