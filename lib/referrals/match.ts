@@ -26,6 +26,8 @@
 // there completely hid the client rather than just costing a few
 // scoring points.
 
+import { differenceInDaysISO, easternTodayISO } from '../dates'
+
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
 const HEADERS = { Authorization: `Bearer ${API_KEY}` }
@@ -160,15 +162,11 @@ function normalizeDob(s: string | undefined | null): string {
   return ''
 }
 
+// Measured against the Eastern calendar day. Against the runtime clock the
+// count ticked over at 8pm Eastern, so on Vercel a No Show could age out of
+// the reschedule window an evening early.
 function daysAgo(dateStr: string): number | null {
-  if (!dateStr) return null
-  const datePart = dateStr.split('T')[0]
-  const [y, m, d] = datePart.split('-').map(Number)
-  if (!y || !m || !d) return null
-  const then = new Date(y, m - 1, d)
-  const now = new Date()
-  const diffMs = now.getTime() - then.getTime()
-  return Math.floor(diffMs / (1000 * 60 * 60 * 24))
+  return differenceInDaysISO(dateStr, easternTodayISO())
 }
 
 // Damerau-Levenshtein (optimal string alignment variant) -- edit distance

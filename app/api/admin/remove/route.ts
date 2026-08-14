@@ -4,6 +4,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { easternTodayISO } from '@/lib/dates'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -36,7 +37,7 @@ async function deactivateAgencyUser(clerkUserId: string) {
     body: JSON.stringify({
       fields: {
         'Status': 'Inactive',
-        'Removed Date': new Date().toISOString().split('T')[0],
+        'Removed Date': easternTodayISO(),
       },
     }),
   })

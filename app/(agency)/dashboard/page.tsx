@@ -18,48 +18,36 @@ import {
   getReferralsByAgencyId,
 } from '@/lib/airtable'
 import AgencyPageHeader from '@/components/agency/AgencyPageHeader'
+import {
+  differenceInDaysISO,
+  easternTodayISO,
+  formatDateOnly,
+  parseDateOnly,
+} from '@/lib/dates'
 
 
 // ---------- helpers ----------
 
 
-// Airtable date-only fields come back as 'YYYY-MM-DD'. `new Date("YYYY-MM-DD")`
-// parses as UTC midnight, which is the previous day in Eastern time.
-// Parse the parts manually so the date stays in local time.
-function parseLocalDate(iso: string | null | undefined): Date | null {
-  if (!iso) return null
-  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
-  if (!match) {
-    const d = new Date(iso)
-    return Number.isNaN(d.getTime()) ? null : d
-  }
-  const [, y, m, d] = match
-  return new Date(Number(y), Number(m) - 1, Number(d))
+// "Today" is the Eastern calendar day, passed in from the render so the whole
+// page agrees on one date. Deriving it from the runtime clock meant that on
+// Vercel (UTC) everything rolled over at 8pm Eastern: the evening's remaining
+// appointments dropped out of Upcoming and "Tomorrow" was labelled "Today".
+function isTodayOrFuture(iso: string | null | undefined, todayISO: string): boolean {
+  const diff = differenceInDaysISO(todayISO, iso)
+  return diff !== null && diff >= 0
 }
 
 
-function isTodayOrFuture(iso: string | null | undefined): boolean {
-  const then = parseLocalDate(iso)
-  if (!then) return false
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  return then.getTime() >= now.getTime()
-}
-
-
-function daysUntil(iso: string): number {
-  const then = parseLocalDate(iso)
-  if (!then) return 0
-  const now = new Date()
-  now.setHours(0, 0, 0, 0)
-  return Math.round((then.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))
+function daysUntil(iso: string, todayISO: string): number {
+  return differenceInDaysISO(todayISO, iso) ?? 0
 }
 
 
 function formatSaturday(iso: string): string {
-  const d = parseLocalDate(iso)
-  if (!d) return iso
-  return d.toLocaleDateString('en-US', {
+  // Unparseable dates fall back to the raw string, as before.
+  if (!parseDateOnly(iso)) return iso
+  return formatDateOnly(iso, {
     weekday: 'long',
     month: 'short',
     day: 'numeric',
@@ -139,17 +127,22 @@ export default async function DashboardPage() {
   ).length
 
 
+  // One Eastern "today" for the whole render, so the filter below and the
+  // day labels further down cannot straddle midnight.
+  const todayISO = easternTodayISO()
+
+
   // Upcoming appointments — future Saturdays, not cancelled/rejected/completed
   const upcoming = scopedReferrals
     .filter((r: any) => {
       if (r.referralReview === 'Rejected') return false
       const s = r.appointmentStatus
       if (s === 'Completed' || s === 'Cancelled' || s === 'No Show') return false
-      return isTodayOrFuture(r.appointmentDate)
+      return isTodayOrFuture(r.appointmentDate, todayISO)
     })
     .sort((a: any, b: any) => {
-      const ta = parseLocalDate(a.appointmentDate)?.getTime() ?? 0
-      const tb = parseLocalDate(b.appointmentDate)?.getTime() ?? 0
+      const ta = parseDateOnly(a.appointmentDate)?.getTime() ?? 0
+      const tb = parseDateOnly(b.appointmentDate)?.getTime() ?? 0
       return ta - tb
     })
 
@@ -283,7 +276,7 @@ export default async function DashboardPage() {
             </div>
           ) : (
             groupedList.map(([date, refs]) => {
-              const days = daysUntil(date)
+              const days = daysUntil(date, todayISO)
               const dayLabel =
                 days === 0
                   ? 'Today'
@@ -391,23 +384,58 @@ export default async function DashboardPage() {
                           }}
                         />
                         <div style={{ padding: '12px 14px', minWidth: 0 }}>
-                          <Link
-                            href={`/referrals/${r.id}`}
+                          {/* Client name and appointment time share the first
+                              line, the time right-aligned against the end of
+                              it. Baseline alignment does the work when the name
+                              runs long: flexbox aligns first baselines, so the
+                              time stays level with the name's FIRST line and
+                              the rest of the name wraps beneath it. */}
+                          <div
                             style={{
-                              fontFamily: 'var(--font-montserrat)',
-                              fontWeight: 700,
-                              fontSize: '14px',
-                              color: '#2A7F6F',
-                              textDecoration: 'none',
-                              whiteSpace: 'nowrap',
-                              overflow: 'hidden',
-                              textOverflow: 'ellipsis',
-                              display: 'block',
+                              display: 'flex',
+                              alignItems: 'baseline',
+                              justifyContent: 'space-between',
+                              gap: '8px',
                             }}
-                            className="hover:underline"
                           >
-                            {fullName}
-                          </Link>
+                            <Link
+                              href={`/referrals/${r.id}`}
+                              style={{
+                                fontFamily: 'var(--font-montserrat)',
+                                fontWeight: 700,
+                                fontSize: '14px',
+                                color: '#2A7F6F',
+                                textDecoration: 'none',
+                                display: 'block',
+                                // The name wraps rather than ellipsing: on a
+                                // phone the time leaves it ~176px, which cut
+                                // real names mid-surname. It wraps inside its
+                                // own flex column, so no line runs under the
+                                // time. minWidth:0 lets the column narrow to
+                                // the space the time leaves it; break-word is
+                                // the backstop for a surname too long to fit
+                                // one line on its own.
+                                flex: 1,
+                                minWidth: 0,
+                                overflowWrap: 'break-word',
+                              }}
+                              className="hover:underline"
+                            >
+                              {fullName}
+                            </Link>
+                            <div
+                              style={{
+                                fontFamily: 'var(--font-montserrat)',
+                                fontWeight: 700,
+                                fontSize: '13px',
+                                color: '#1B2B4B',
+                                whiteSpace: 'nowrap',
+                                flexShrink: 0,
+                              }}
+                            >
+                              {r.appointmentTime || '—'}
+                            </div>
+                          </div>
                           {(address || cityStateZip) && (
                             <div
                               style={{
@@ -441,18 +469,6 @@ export default async function DashboardPage() {
                               )}
                             </div>
                           )}
-                        </div>
-                        <div
-                          style={{
-                            fontFamily: 'var(--font-montserrat)',
-                            fontWeight: 700,
-                            fontSize: '13px',
-                            color: '#1B2B4B',
-                            textAlign: 'center',
-                            paddingRight: '8px',
-                          }}
-                        >
-                          {r.appointmentTime || '—'}
                         </div>
                         <div style={{ textAlign: 'center', paddingRight: '14px' }}>
                           <span

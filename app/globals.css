@@ -91,9 +91,12 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ---------- Fixed column tracks inside cards and forms ---------- */
 
-/* Dashboard appointment row: accent bar + name + time + status. */
+/* Dashboard appointment row: accent bar + name/time block + status. The time
+   used to hold its own 90px track between the name and the status; it now sits
+   on the client-name line inside the second track, right-aligned there, so
+   only three tracks remain. */
 .fa-dash-appt-row {
-  grid-template-columns: 4px 1fr 90px 130px;
+  grid-template-columns: 4px 1fr 130px;
 }
 
 /* New referral form. The address row declares four tracks for three inputs;
@@ -237,8 +240,14 @@ h1, h2, h3, h4, h5, h6 {
   /* The appointment row carries no labels. Kept on one line the time and the
      status pill ate ~190px of a 278px card, leaving the client name about 58px
      and truncating it to "Vande…" — you could not tell whose appointment it
-     was. The name and address now take the full first row and the time and
-     status sit beneath as a footer row, with the accent bar spanning both. */
+     was. The name and address take the full first row, and the status sits
+     beneath as a footer row with the accent bar spanning both.
+
+     The time is no longer part of that footer — it rides on the client-name
+     line now — but the footer row still has to stay. Folding the lone status
+     pill back up alongside the name would cost ~130px of a 278px card, and the
+     name, which wraps rather than truncates, would spend most rows stacked
+     three or four lines deep. */
   .fa-dash-appt-row {
     grid-template-columns: 4px minmax(0, 1fr) auto;
   }
@@ -249,6 +258,13 @@ h1, h2, h3, h4, h5, h6 {
 
   .fa-dash-appt-row > :nth-child(2) {
     grid-column: 2 / -1;
+  }
+
+  /* Pin the status to the last track. Left to auto-placement it would drop into
+     the 1fr track and drift into the middle of the footer row; the badge is
+     meant to stay at the right edge where it has always been. */
+  .fa-dash-appt-row > :nth-child(3) {
+    grid-column: 3;
   }
 
   /* Hero stat tiles: three tiles at their natural width overflow a phone and

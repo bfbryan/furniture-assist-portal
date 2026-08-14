@@ -4,6 +4,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { easternTodayISO } from '@/lib/dates'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -29,7 +30,7 @@ async function createAgencyUserRecord(data: {
     'Role':          data.role === 'org:admin' ? 'Admin' : 'Staff',
     'Clerk User ID': data.clerkUserId,
     'Status':        'Pending',
-    'Invited Date':  new Date().toISOString().split('T')[0],
+    'Invited Date':  easternTodayISO(),
     'Phone Number':  data.phone ??'',
     'Invited By':    data.invitedByName,
     // Linked record — Airtable expects an array of record IDs

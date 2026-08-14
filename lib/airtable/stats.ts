@@ -5,6 +5,7 @@
 // would silently under-count.
 
 import { airtableFetchAll, safeLookupString } from './client'
+import { easternTodayISO } from '../dates'
 
 export async function getDashboardStats() {
   // Both tables need the FULL row set to compute accurate totals; a single
@@ -14,8 +15,10 @@ export async function getDashboardStats() {
     airtableFetchAll('Client Referrals', '?sort[0][field]=Referral%20Date&sort[0][direction]=desc'),
   ])
 
-  const now = new Date()
-  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]
+  // The Eastern month, not the runtime's. Read off the server clock, "this
+  // month" flipped over on the last evening of the month, so those referrals
+  // were counted against the month that had not started yet.
+  const startOfMonth = `${easternTodayISO().slice(0, 7)}-01`
 
   const agencyRecords = agencies.records
   const referralRecords = referrals.records

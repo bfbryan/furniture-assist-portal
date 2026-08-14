@@ -23,6 +23,8 @@
 // Constants (ported verbatim from Apps Script)
 // ============================================================
 
+import { easternYear } from '../dates'
+
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY
 const GEMINI_API_KEY = process.env.GEMINI_API_KEY
@@ -299,7 +301,7 @@ async function extractWithGemini(pdfBytes: Buffer): Promise<GeminiOcrResult> {
 
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-pro:generateContent?key=${GEMINI_API_KEY}`
 
-  const currentYear = new Date().getFullYear()
+  const currentYear = easternYear()
 
   const prompt = `You are reading a filled-out Furniture Assist Client Pickup Sheet.
 
@@ -684,7 +686,7 @@ function parseRescheduleDate(raw: string): string | null {
   // M/D or MM/DD with no year — assume current year
   const md = s.match(/^(\d{1,2})[\/\-](\d{1,2})$/)
   if (md) {
-    const y = new Date().getFullYear()
+    const y = easternYear()
     const m = String(parseInt(md[1], 10)).padStart(2, '0')
     const day = String(parseInt(md[2], 10)).padStart(2, '0')
     return `${y}-${m}-${day}`

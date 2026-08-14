@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from "react";
 import Link from "next/link";
+import { formatDateOnly } from "@/lib/dates";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 // July 2026: statuses now match the six Airtable Appointment Status values
@@ -90,8 +91,11 @@ const FILTER_OPTIONS: Array<{ value: ReferralStatus | "All"; label: string }> =
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Appointment Date / Referral Date are Airtable date-only fields; parsing them
+// with `new Date()` anchors at UTC midnight and prints the previous day in any
+// US zone.
 function formatDate(iso: string): string {
-  return new Date(iso).toLocaleDateString("en-US", {
+  return formatDateOnly(iso, {
     month: "short",
     day: "numeric",
     year: "numeric",
