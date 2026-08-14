@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { differenceInDaysISO, easternTodayISO } from '@/lib/dates'
 
 type Saturday = {
   id: string
@@ -34,11 +35,12 @@ function formatMonthYear(date: Date) {
   return date.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })
 }
 
+// Eastern, not the browser's or the server's clock. This page is a client
+// component but still renders on the server first, so an ambient-zone "today"
+// disagreed between the two passes as well as being wrong on Vercel.
 function isUpcoming(dateStr: string) {
-  const d = new Date(dateStr + 'T12:00:00')
-  const today = new Date()
-  today.setHours(0, 0, 0, 0)
-  return d >= today
+  const diff = differenceInDaysISO(easternTodayISO(), dateStr)
+  return diff !== null && diff >= 0
 }
 
 function isPast(dateStr: string) {
@@ -273,10 +275,12 @@ export default function SchedulePage() {
     }
   }, [])
 
-  const now = new Date()
-  const m0 = { year: now.getFullYear(), month: now.getMonth() }
-  const m1 = { year: now.getMonth() === 11 ? now.getFullYear() + 1 : now.getFullYear(), month: (now.getMonth() + 1) % 12 }
-  const m2 = { year: now.getMonth() >= 10 ? now.getFullYear() + 1 : now.getFullYear(), month: (now.getMonth() + 2) % 12 }
+  const todayISO = easternTodayISO()
+  const curYear = Number(todayISO.slice(0, 4))
+  const curMonth = Number(todayISO.slice(5, 7)) - 1
+  const m0 = { year: curYear, month: curMonth }
+  const m1 = { year: curMonth === 11 ? curYear + 1 : curYear, month: (curMonth + 1) % 12 }
+  const m2 = { year: curMonth >= 10 ? curYear + 1 : curYear, month: (curMonth + 2) % 12 }
 
   const thisMonth  = saturdays.filter(s => inMonth(s.date, m0.year, m0.month))
   const nextMonth  = saturdays.filter(s => inMonth(s.date, m1.year, m1.month))

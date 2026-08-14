@@ -27,6 +27,7 @@
 
 import { NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
+import { addDaysISO, easternTodayISO } from '@/lib/dates'
 
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
@@ -46,11 +47,10 @@ const LEAD_DAYS_MIN = 0
 const LEAD_DAYS_MAX = 60
 
 
-function addDays(d: Date, days: number): string {
-  const out = new Date(d)
-  out.setDate(out.getDate() + days)
-  return out.toISOString().split('T')[0]
-}
+// addDays lived here and shifted a Date via toISOString, i.e. the UTC day. On
+// Vercel that made the lead-day window start a day early every evening after
+// 8pm Eastern, offering a Saturday that was inside the lead time. addDaysISO
+// works on the Eastern calendar date instead.
 
 
 // Missing or non-numeric -> DEFAULT_LEAD_DAYS; otherwise clamped into range.
@@ -74,9 +74,9 @@ export async function GET(request: Request) {
     const leadDays = parseLeadDays(searchParams.get('leadDays'))
 
 
-    const today = new Date()
-    const minDate = addDays(today, leadDays) // inclusive lower bound
-    const endDate = addDays(today, weeksAhead * 7) // exclusive upper bound
+    const today = easternTodayISO()
+    const minDate = addDaysISO(today, leadDays) // inclusive lower bound
+    const endDate = addDaysISO(today, weeksAhead * 7) // exclusive upper bound
 
 
     // IS_SAME_OR_AFTER doesn't exist in Airtable formulas; use

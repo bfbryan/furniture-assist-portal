@@ -8,6 +8,7 @@
 'use client'
 
 import { useState, useMemo } from 'react'
+import { addDaysISO, easternTodayISO } from '@/lib/dates'
 
 type Referral = {
   id: string
@@ -266,12 +267,12 @@ export default function HistoryClient({
   // Apply search + status + staff + date range.
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
-    const now = new Date()
-    let cutoff: Date | null = null
-    if (dateRange !== 'all') {
-      cutoff = new Date(now)
-      cutoff.setDate(cutoff.getDate() - parseInt(dateRange, 10))
-    }
+    // Cutoff as an Eastern calendar date. It used to be a wall-clock instant on
+    // the ambient zone, which both put the boundary in the wrong place on
+    // Vercel and made the oldest day fall in or out depending on the time of
+    // day you happened to look.
+    const cutoffISO =
+      dateRange === 'all' ? null : addDaysISO(easternTodayISO(), -parseInt(dateRange, 10))
     return referrals.filter(r => {
       if (q && !r.clientName.toLowerCase().includes(q)) return false
       if (staffFilter !== 'all' && r.referredBy !== staffFilter) return false
@@ -279,12 +280,9 @@ export default function HistoryClient({
       if (statusFilter !== 'all' && o !== statusFilter) return false
 
       // date range checks appointment date (or referral date for rejected).
-      if (cutoff) {
+      if (cutoffISO) {
         const dateStr = r.appointmentDate ?? r.referralDate
-        if (dateStr) {
-          const d = new Date(dateStr + 'T12:00:00')
-          if (d < cutoff) return false
-        }
+        if (dateStr && dateStr.slice(0, 10) < cutoffISO) return false
       }
       return true
     })

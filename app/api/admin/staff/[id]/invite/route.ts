@@ -8,6 +8,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { auth, clerkClient } from '@clerk/nextjs/server'
+import { easternTodayISO } from '@/lib/dates'
 import {
   getAgencyUserById,
   getAgencyUserByClerkId,
@@ -125,7 +126,7 @@ export async function POST(
   }
 
   // Update the AT row
-  const today = new Date().toISOString().slice(0, 10)
+  const today = easternTodayISO()
   await updateAgencyUserPortalInvite(recordId, {
     status: 'Invited',
     portalInviteStatus: 'Invite Sent',

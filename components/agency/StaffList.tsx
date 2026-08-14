@@ -4,6 +4,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import InviteStaffModal from '../InviteStaffModal'
+import { formatDateOnly, formatEasternTimestamp } from '@/lib/dates'
 
 
 type Member = {
@@ -116,9 +117,11 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
 }
 
 
+// Invited Date is an Airtable date-only field. `new Date('YYYY-MM-DD')` parses
+// as UTC midnight, which renders as the previous day in Eastern — staff saw an
+// invite they had just sent dated yesterday.
 function formatDate(d: string | null | undefined): string {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('en-US', {
+  return formatDateOnly(d, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -388,7 +391,7 @@ function ActiveOrInactiveRow({
           <div style={COL_HEADER}>Last Login</div>
           <div style={COL_SUB_NOWRAP}>
             {member.lastSignInAt
-              ? new Date(member.lastSignInAt).toLocaleDateString('en-US', {
+              ? formatEasternTimestamp(member.lastSignInAt, {
                   month: 'short',
                   day: 'numeric',
                   year: 'numeric',

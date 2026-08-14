@@ -3,6 +3,7 @@
 
 
 import { useState, useEffect, useMemo } from 'react'
+import { addDaysISO, differenceInDaysISO, easternTodayISO } from '@/lib/dates'
 import CancelModal from '@/components/internal/modals/CancelModal'
 import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
 
@@ -56,10 +57,10 @@ function formatSatHeader(dateStr: string) {
 }
 
 
+// Counted back from the Eastern calendar day. toISOString() gave the UTC day,
+// so every evening after 8pm Eastern the window started a day early.
 function daysAgo(days: number) {
-  const d = new Date()
-  d.setDate(d.getDate() - days)
-  return d.toISOString().split('T')[0]
+  return addDaysISO(easternTodayISO(), -days)
 }
 
 
@@ -70,13 +71,7 @@ function daysAgo(days: number) {
 // record) is treated as NOT eligible, matching that same file's
 // daysAgo()-returns-null-so-skip-it behavior.
 function daysSince(dateStr: string | null): number | null {
-  if (!dateStr) return null
-  const datePart = dateStr.split('T')[0]
-  const [y, m, d] = datePart.split('-').map(Number)
-  if (!y || !m || !d) return null
-  const then = new Date(y, m - 1, d)
-  const now = new Date()
-  return Math.floor((now.getTime() - then.getTime()) / (1000 * 60 * 60 * 24))
+  return differenceInDaysISO(dateStr, easternTodayISO())
 }
 
 

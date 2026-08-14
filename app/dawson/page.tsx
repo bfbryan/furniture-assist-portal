@@ -1,5 +1,6 @@
 
 import { currentUser } from '@clerk/nextjs/server'
+import { easternHour, easternTodayISO, formatDateOnly } from '@/lib/dates'
 
 // PHASED ROLLOUT (2026-07-06): Simplified dashboard for Dawson's day-1 view.
 // Only surfaces shortcuts for the 4 nav items he currently uses:
@@ -17,9 +18,11 @@ function greetingFor(hour: number) {
 export default async function DawsonDashboard() {
   const user = await currentUser()
   const firstName = user?.firstName ?? ''
-  const now = new Date()
-  const greeting = greetingFor(now.getHours())
-  const dateStr = now.toLocaleDateString('en-US', {
+  // Eastern, not the runtime's clock: this renders on Vercel, where local time
+  // is UTC, so after 8pm Eastern the greeting read "Good morning" and the date
+  // line showed tomorrow.
+  const greeting = greetingFor(easternHour())
+  const dateStr = formatDateOnly(easternTodayISO(), {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
 
