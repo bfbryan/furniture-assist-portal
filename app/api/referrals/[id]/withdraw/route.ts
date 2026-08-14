@@ -1,14 +1,18 @@
-import { auth } from '@clerk/nextjs/server'
+// app/api/referrals/[id]/withdraw/route.ts
+//
+// Agency-facing withdraw. Same ownership gap as cancel — it only checked that
+// someone was signed in — now closed with the shared check.
+
 import { NextRequest, NextResponse } from 'next/server'
+import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
-  const { userId } = await auth()
-  if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
   const { id } = await params
+  const access = await requireAgencyReferralAccess(id)
+  if (access.denied) return access.denied
 
   const res = await fetch(
     `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/Client%20Referrals/${id}`,
