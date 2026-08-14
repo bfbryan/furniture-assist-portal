@@ -111,12 +111,50 @@ h1, h2, h3, h4, h5, h6 {
    `anywhere` does reduce it, which is what lets the wrapper come back down to
    the column. Safe against the tracks above because those minimums are fixed
    pixels, not min-content, so a smaller min-content cannot resize them. */
-.fa-referral-card-grid > div {
+.fa-referral-card-grid > div,
+.fa-history-card-grid > div {
   overflow-wrap: anywhere;
 }
 
+/* History cards. The same bug as the active card above, in miniature, on the
+   page right next to it — so retuned the same way rather than left to scroll.
+
+   Aug 2026: was `160px 180px 130px 110px 110px 150px 60px`. Those seven total
+   900px and the gaps another 60, against the same 940px a row has at a 1280px
+   viewport: 20px over, so the page scrolled sideways at 1280 and 1281 and came
+   good at 1300. Smaller than the active card's 76px, identical in kind.
+
+   Measured against real Lato, the same mis-assignment:
+
+     column        had    needs (longest realistic)   header floor
+     Client Name   160    246 (wraps by design)        82
+     Address       180    181  (one pixel short)       59
+     Referred By   130    130                          87
+     Submitted     110     70                          70
+     Appointment   110     88                          88
+     Outcome       150    119 ("Missed appointment")   62
+     action         60     32 (receipt icon)            0
+
+   Submitted, Appointment, Outcome and the action cell were holding 125px they
+   never used, against a 20px shortfall — so nothing is dropped or truncated to
+   fix this. Floors are each at or above their own heading, and Outcome's is
+   above the widest pill so "Missed appointment" cannot wrap inside its own
+   badge. The three text columns share the remainder, in the same proportions
+   the active card uses, so the two pages' cards stay recognisably one design.
+
+   The action track is fixed for the same reason as the active card's: it is
+   empty on every row that is not a completed referral with a receipt, so an
+   auto track would collapse on those rows and the columns would jog. 40px is
+   the 32px icon plus a little separation from the outcome pill. */
 .fa-history-card-grid {
-  grid-template-columns: 160px 180px 130px 110px 110px 150px 60px;
+  grid-template-columns:
+    minmax(120px, 1.5fr)   /* Client Name */
+    minmax(130px, 1.6fr)   /* Address     */
+    minmax(92px, 1.1fr)    /* Referred By */
+    minmax(76px, 0.7fr)    /* Submitted   */
+    minmax(92px, 0.8fr)    /* Appointment */
+    minmax(120px, 1fr)     /* Outcome     */
+    40px;                  /* Receipt     */
 }
 
 .fa-staff-row-invite {
