@@ -245,8 +245,9 @@ h1, h2, h3, h4, h5, h6 {
 
      The time is no longer part of that footer — it rides on the client-name
      line now — but the footer row still has to stay. Folding the lone status
-     pill back up alongside the name would cost ~130px of a 278px card and put
-     the name straight back to truncating. */
+     pill back up alongside the name would cost ~130px of a 278px card, and the
+     name, which wraps rather than truncates, would spend most rows stacked
+     three or four lines deep. */
   .fa-dash-appt-row {
     grid-template-columns: 4px minmax(0, 1fr) auto;
   }

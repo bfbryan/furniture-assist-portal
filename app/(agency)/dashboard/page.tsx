@@ -386,9 +386,10 @@ export default async function DashboardPage() {
                         <div style={{ padding: '12px 14px', minWidth: 0 }}>
                           {/* Client name and appointment time share the first
                               line, the time right-aligned against the end of
-                              it. Baseline alignment so the 13px time sits on
-                              the same line as the 14px name rather than
-                              floating against its box. */}
+                              it. Baseline alignment does the work when the name
+                              runs long: flexbox aligns first baselines, so the
+                              time stays level with the name's FIRST line and
+                              the rest of the name wraps beneath it. */}
                           <div
                             style={{
                               display: 'flex',
@@ -405,15 +406,18 @@ export default async function DashboardPage() {
                                 fontSize: '14px',
                                 color: '#2A7F6F',
                                 textDecoration: 'none',
-                                whiteSpace: 'nowrap',
-                                overflow: 'hidden',
-                                textOverflow: 'ellipsis',
                                 display: 'block',
-                                // minWidth:0 is what lets the ellipsis engage:
-                                // a flex item otherwise refuses to shrink below
-                                // its text width.
+                                // The name wraps rather than ellipsing: on a
+                                // phone the time leaves it ~176px, which cut
+                                // real names mid-surname. It wraps inside its
+                                // own flex column, so no line runs under the
+                                // time. minWidth:0 lets the column narrow to
+                                // the space the time leaves it; break-word is
+                                // the backstop for a surname too long to fit
+                                // one line on its own.
                                 flex: 1,
                                 minWidth: 0,
+                                overflowWrap: 'break-word',
                               }}
                               className="hover:underline"
                             >
