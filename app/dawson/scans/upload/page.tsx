@@ -43,6 +43,9 @@ interface PageResult {
   outcome: 'Completed' | 'No Show' | 'Cancelled' | 'Reschedule' | null
   appointmentDate: string
   errorMessage: string | null
+  // Set on a page that succeeded but still wants reading — e.g. a reschedule
+  // booked into a slot that was already full.
+  notice: string | null
 }
 
 interface SplitFailure {
@@ -514,7 +517,7 @@ function ResultScreen({
                   <td style={tdStyle}>{r.appointmentDate || '—'}</td>
                   <td style={tdStyle}>{r.outcome || '—'}</td>
                   <td style={{ ...tdStyle, color: r.success ? TEXT_MUTED : ERROR, maxWidth: 320 }}>
-                    {r.success ? '' : (r.errorMessage || '')}
+                    {r.success ? (r.notice || '') : (r.errorMessage || '')}
                   </td>
                 </tr>
               ))}

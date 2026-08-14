@@ -24,6 +24,11 @@
 // ============================================================
 
 import { easternYear } from '../dates'
+import {
+  rescheduleReferral,
+  VALID_TIMES,
+  type TimeSlot,
+} from '@/lib/referrals/reschedule'
 
 const AIRTABLE_BASE_ID = process.env.AIRTABLE_BASE_ID
 const AIRTABLE_API_KEY = process.env.AIRTABLE_API_KEY
@@ -67,6 +72,7 @@ interface GeminiOcrResult {
   checkout_time: string
   notes: string
   reschedule_date: string
+  reschedule_time: string
   other_items: string
   items: Record<string, number>
 }
@@ -85,6 +91,10 @@ export interface ProcessPageResult {
   clientName: string           // "First Last" from OCR (may be empty)
   appointmentDate: string      // ISO YYYY-MM-DD from OCR (may be empty)
   errorMessage: string | null
+  // Something worth Dawson's eye on a page that still SUCCEEDED — a capacity
+  // override, an allocated slot, an email that didn't send. Distinct from
+  // errorMessage, which means the page did not do its job.
+  notice: string | null
   ocrDiagnostic: string        // human-readable OCR summary
 }
 
@@ -344,6 +354,11 @@ Extract the following and return ONLY valid JSON (no markdown, no commentary):
    Faint marks, shadows, print artifacts, JPEG noise, printed grid lines,
    or single stray strokes do NOT count.
 
+   The box may ALSO contain a time next to the date (e.g. "7/28 10am").
+   The DATE is what makes it a reschedule — a time on its own, with no
+   date, is not a reschedule. Capture any time separately in
+   reschedule_time (see field 10 below).
+
    COMPLETION SIGNALS (evidence the client was actually here):
      - The CHECK-IN TIME box at the bottom is filled with handwriting, OR
      - The CHECK-OUT TIME box at the bottom is filled with handwriting, OR
@@ -400,13 +415,29 @@ Extract the following and return ONLY valid JSON (no markdown, no commentary):
    year is omitted assume current year. If outcome is not "Reschedule", or you
    cannot confidently parse a date, return empty string "".
 
-10. other_items: any handwritten text in the "OTHER" box in the right column,
+10. reschedule_time: ONLY populate if outcome is "Reschedule". The volunteer may
+    write a TIME alongside the date in the "RESCH / DATE" box — the new
+    appointment slot. It is often written loosely: "9", "9a", "9 am", "9:00",
+    "10AM", "12", "12 noon", "1", "1p", "1 pm". Appointments only ever run at
+    five slots, so map whatever is written onto EXACTLY ONE of these strings:
+      "9am", "10am", "11am", "12pm", "1pm"
+    Mapping rules: a bare hour of 9, 10 or 11 means the morning slot; a bare
+    12 means "12pm" (noon); a bare 1 means "1pm" (there is no 1am pickup).
+    A time is OPTIONAL and frequently absent — the box very often holds a date
+    and nothing else. Return empty string "" when no time is written, when the
+    box holds only a date, when outcome is not "Reschedule", or when what is
+    written does not clearly map to one of the five slots (for example "9:30",
+    "2pm" or an illegible scrawl). Do NOT guess a slot to fill the field, and
+    do NOT read the printed appointment time from the client info box at the
+    top-left — that is the OLD appointment, not the new one.
+
+11. other_items: any handwritten text in the "OTHER" box in the right column,
     directly below the BABY/KIDS section (string, verbatim as written, may be a
     comma-separated list or a description). Only capture if outcome is
     "Completed", otherwise return empty string. The label "OTHER" and the box
     border are printed — only handwritten text counts.
 
-11. items: object with the 30 EXACT keys below (integers, use 0 if blank).
+12. items: object with the 30 EXACT keys below (integers, use 0 if blank).
     ONLY fill in real quantities if outcome is "Completed". If outcome is
     "No Show", "Cancelled", or "Reschedule", set every item to 0.
 
@@ -570,6 +601,7 @@ Example output (completed):
   "checkout_time": "10:45",
   "notes": "",
   "reschedule_date": "",
+  "reschedule_time": "",
   "other_items": "microwave, small side table",
   "items": {
     "LR Bookcase/Storage": 0,
@@ -616,6 +648,23 @@ Example output (reschedule):
   "checkout_time": "",
   "notes": "",
   "reschedule_date": "2026-07-12",
+  "reschedule_time": "10am",
+  "other_items": "",
+  "items": { "LR Bookcase/Storage": 0, "LR Chair": 0, ... all 30 keys, all 0 ... }
+}
+
+Example output (reschedule, date written but no time — this is common and fine):
+{
+  "record_id": "recABC123XYZ4567",
+  "outcome": "Reschedule",
+  "client_first_name": "Mahie",
+  "client_last_name": "Past",
+  "appointment_date": "2026-07-11",
+  "check_in_time": "",
+  "checkout_time": "",
+  "notes": "",
+  "reschedule_date": "2026-07-12",
+  "reschedule_time": "",
   "other_items": "",
   "items": { "LR Bookcase/Storage": 0, "LR Chair": 0, ... all 30 keys, all 0 ... }
 }`
@@ -697,6 +746,80 @@ function parseRescheduleDate(raw: string): string | null {
 
 
 // ============================================================
+// Reschedule time parser
+//
+// Gemini is asked to return one of the five canonical slots, but this is
+// the backstop: the field is handwriting read by a model, so it can come
+// back as "9", "9 AM", "09:00", "1p", "12 noon". Pickups only ever run at
+// 9am/10am/11am/12pm/1pm, so a bare hour is unambiguous — there is no 1am
+// or 9pm slot to confuse it with.
+//
+// Deliberately strict about everything else. A time that does not land
+// cleanly on a slot ("9:30", "2pm", a scrawl) returns null, which is
+// treated exactly like "no time written": the allocator picks the first
+// slot under cap. Guessing here would silently book a client into a slot
+// nobody chose, and the reschedule email would then confirm it.
+// ============================================================
+
+const CANONICAL_SLOTS: Record<number, TimeSlot> = {
+  9: '9am',
+  10: '10am',
+  11: '11am',
+  12: '12pm',
+  1: '1pm',
+}
+
+export function parseRescheduleTime(raw: string | null | undefined): TimeSlot | null {
+  if (!raw) return null
+
+  // Normalize: lowercase, strip spaces, dots and "o'clock".
+  const s = String(raw).trim().toLowerCase().replace(/o'?clock/g, '').replace(/[.\s]/g, '')
+  if (!s) return null
+
+  // Already canonical.
+  if (VALID_TIMES.has(s)) return s as TimeSlot
+
+  // "noon" and "12noon" both mean the 12pm slot.
+  if (s === 'noon' || s === '12noon') return '12pm'
+
+  // hour, optional :minutes, optional meridiem. "0900" style is handled by
+  // the 4-digit branch below rather than here.
+  const m = s.match(/^(\d{1,2})(?::(\d{2}))?(am?|pm?)?$/)
+  if (!m) {
+    // "0900" / "1300" — 24-hour-ish, no separator.
+    const four = s.match(/^(\d{2})(\d{2})$/)
+    if (!four) return null
+    const h24 = parseInt(four[1], 10)
+    if (four[2] !== '00') return null
+    // 13:00 -> 1pm; 09:00 -> 9am.
+    const hour = h24 > 12 ? h24 - 12 : h24
+    return CANONICAL_SLOTS[hour] ?? null
+  }
+
+  const hour = parseInt(m[1], 10)
+  const minutes = m[2]
+  const meridiem = m[3]
+
+  // Only on-the-hour slots exist. "9:30" is not a slot — refuse to round it.
+  if (minutes !== undefined && minutes !== '00') return null
+
+  const slot = CANONICAL_SLOTS[hour]
+  if (!slot) return null
+
+  // If a meridiem was written, it has to agree with the only slot that hour
+  // can mean. "9pm" and "1am" are not pickup slots, so they are rejected
+  // rather than silently coerced to 9am / 1pm.
+  if (meridiem) {
+    const isPm = meridiem.startsWith('p')
+    const slotIsPm = slot === '12pm' || slot === '1pm'
+    if (isPm !== slotIsPm) return null
+  }
+
+  return slot
+}
+
+
+// ============================================================
 // Airtable write (ported from Apps Script writeToAirtable)
 //
 // Writes the OCR result to the resolved Client Referrals record.
@@ -761,7 +884,6 @@ async function writeToAirtable(
       }
     }
   } else if (outcome === 'Reschedule') {
-    // Hand off to the existing Airtable "Reschedule" automation.
     // Reschedule means no items were disbursed — clear all item fields
     // and any stale check-in/check-out/other/initials data from prior scans.
     for (const fieldName of ITEM_FIELDS) {
@@ -772,17 +894,18 @@ async function writeToAirtable(
     fields['Check-out Time'] = null
     fields['Other Items'] = null
 
-    const newDate = parseRescheduleDate(result.reschedule_date)
-    if (newDate) {
-      fields['Scheduling Flexibility'] = 'Specific Date'
-      fields['Preferred Date'] = newDate
-      fields['Manual Review Needed'] = false
-    } else {
-      fields['Scheduling Flexibility'] = 'Flexible'
-      fields['Preferred Date'] = null
-      fields['Manual Review Needed'] = false
-      fields['OCR Notes'] = 'Reschedule marked — no date read from RESCH/DATE box, using next available'
-    }
+    // NOTE: this write deliberately leaves the record mid-reschedule —
+    // 'Appointment Status' is 'Reschedule' and the old Saturday Schedule
+    // link and Appointment Time are still in place. applyScanReschedule()
+    // runs straight after and moves it the rest of the way, and it needs
+    // those old values intact to snapshot them into the Original fields.
+    //
+    // This used to write 'Preferred Date' and hand off to an Airtable
+    // "Reschedule" automation. That automation is switched off, which is
+    // why rescheduled clients sat at status Reschedule forever and never
+    // got an email. The reschedule now happens in code, through the same
+    // lib/referrals/reschedule.ts that Dawson's manual portal action uses.
+    fields['Manual Review Needed'] = false
   } else {
     // No Show: status-only update, but clear items/times/other/initials defensively
     // so a stale prior scan does not leave phantom data behind.
@@ -873,6 +996,164 @@ export async function flagManualReview(
 
 
 // ============================================================
+// Apply the reschedule a scanned sheet asked for
+//
+// Runs after the OCR field write has committed, and routes through the very
+// same lib/referrals/reschedule.ts that Dawson's manual portal reschedule
+// uses. Nothing about the reschedule is reimplemented here — this function
+// only decides what to feed it and how to report back to a human who is not
+// at the keyboard.
+//
+// Two judgement calls, both made because this is an unattended batch:
+//
+//   MISSING SATURDAY. If the written date has no Saturday Schedule row (or
+//   is not a Saturday at all), we do NOT quietly pick a nearby date or fall
+//   back to "next available". Moving a client to a date nobody chose — and
+//   emailing them to confirm it — is worse than not moving them. The record
+//   is left visibly mid-reschedule (status stays 'Reschedule') and flagged
+//   Manual Review Needed with the date we read, so it lands in the review
+//   queue Dawson already works from.
+//
+//   FULL SLOT. In the portal, booking into a slot that is already at cap is
+//   a deliberate click Dawson makes. On a scanned sheet the handwritten time
+//   IS that instruction, so it is honoured the same way — but never
+//   silently: the override is written to OCR Notes on the referral and
+//   surfaced on the batch result screen.
+//
+// Never throws. A page that got this far has already written its OCR fields.
+// ============================================================
+
+interface ScanRescheduleOutcome {
+  applied: boolean
+  notice: string | null
+  errorMessage: string | null
+}
+
+async function setOcrNotes(recordId: string, note: string): Promise<void> {
+  if (!AIRTABLE_BASE_ID || !AIRTABLE_API_KEY) return
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}/${recordId}`
+  try {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+      },
+      body: JSON.stringify({
+        fields: { 'OCR Notes': note.slice(0, 500) },
+        typecast: true,
+      }),
+    })
+    if (!res.ok) {
+      console.error(`setOcrNotes PATCH ${res.status} for ${recordId}: ${await res.text()}`)
+    }
+  } catch (e) {
+    console.error('setOcrNotes failed:', e)
+  }
+}
+
+async function applyScanReschedule(
+  result: GeminiOcrResult,
+  recordId: string,
+): Promise<ScanRescheduleOutcome> {
+  const rawDate = (result.reschedule_date || '').trim()
+  const newDate = parseRescheduleDate(result.reschedule_date)
+
+  if (!newDate) {
+    return {
+      applied: false,
+      notice: null,
+      errorMessage:
+        'Sheet is marked as a reschedule but no usable date could be read from the ' +
+        `RESCH/DATE box${rawDate ? ` (read: "${rawDate}")` : ''}. Appointment left at ` +
+        'status Reschedule — set the new date in the portal to reschedule and notify the agency.',
+    }
+  }
+
+  const rawTime = (result.reschedule_time || '').trim()
+  const newTime = parseRescheduleTime(result.reschedule_time)
+  // A time was written but did not land on one of the five slots. Not a
+  // failure — the allocator takes over — but say so, because it means the
+  // client may not get the hour the volunteer intended.
+  const timeUnreadable = rawTime !== '' && newTime === null
+
+  const outcome = await rescheduleReferral({
+    referralId: recordId,
+    preferredDate: newDate,
+    appointmentTime: newTime,
+  })
+
+  if (!outcome.ok) {
+    const explanation =
+      outcome.reason === 'no-schedule-row'
+        ? `No Saturday Schedule row exists for ${newDate}. Create that Saturday, then reschedule in the portal.`
+        : outcome.reason === 'not-saturday'
+        ? `The date read from the sheet (${newDate}) is not a Saturday.`
+        : outcome.reason === 'all-slots-full'
+        ? `Every time slot on ${newDate} is full and the sheet gave no time to override with.`
+        : outcome.message
+    return {
+      applied: false,
+      notice: null,
+      errorMessage:
+        `Reschedule to ${newDate} could not be applied: ${explanation} ` +
+        'Appointment left at status Reschedule.',
+    }
+  }
+
+  // Applied. Assemble anything a human should still know about.
+  const notes: string[] = []
+
+  if (outcome.capacityOverride) {
+    const { slot, booked, cap } = outcome.capacityOverride
+    notes.push(
+      `Capacity override: booked into ${slot} on ${newDate}, which was already at ` +
+      `${booked}/${cap}. The time written on the sheet was taken as the override.`
+    )
+  }
+
+  if (timeUnreadable) {
+    notes.push(
+      `Time "${rawTime}" on the sheet did not match a pickup slot; ` +
+      `allocated ${outcome.appointmentTime} instead.`
+    )
+  } else if (!newTime) {
+    notes.push(`No time on the sheet; allocated ${outcome.appointmentTime}.`)
+  }
+
+  if (!outcome.snapshotTaken) {
+    // The sheet came off a printed Saturday roster, so the referral should
+    // have had an appointment to move. If it didn't, no previous date was
+    // recorded and no reschedule email was sent.
+    notes.push(
+      'No previous appointment was on the record, so nothing was written to the ' +
+      'Original Appointment fields and no reschedule email was sent.'
+    )
+  } else if (outcome.rescheduleNotice && outcome.rescheduleNotice.skipped) {
+    notes.push(
+      `Rescheduled, but the reschedule email was not sent (${outcome.rescheduleNotice.reason}).`
+    )
+  } else if (
+    outcome.rescheduleNotice &&
+    !outcome.rescheduleNotice.skipped &&
+    !outcome.rescheduleNotice.sent
+  ) {
+    notes.push(
+      `Rescheduled, but the reschedule email failed: ${outcome.rescheduleNotice.error}`
+    )
+  }
+
+  const notice = notes.length
+    ? `Rescheduled to ${newDate} ${outcome.appointmentTime}. ${notes.join(' ')}`
+    : null
+
+  if (notice) await setOcrNotes(recordId, notice)
+
+  return { applied: true, notice, errorMessage: null }
+}
+
+
+// ============================================================
 // Main orchestrator — process one split page
 //
 // Called by the upload route once per split page. Encapsulates the whole
@@ -901,6 +1182,10 @@ export async function processPage({
   let lastError = ''
   let lastResult: GeminiOcrResult | null = null
 
+  // Set once the OCR field write has committed. Everything after that point
+  // deliberately runs OUTSIDE the retry loop — see the note below.
+  let committed: { result: GeminiOcrResult; recordId: string } | null = null
+
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     try {
       const result = await extractWithGemini(pdfBytes)
@@ -925,24 +1210,50 @@ export async function processPage({
 
       await writeToAirtable(result, batchAirtableUrl, scanBatchRecordId)
 
-      return {
-        pageNumber,
-        success: true,
-        recordId: resolvedId,
-        outcome: (VALID_OUTCOMES as readonly string[]).includes(result.outcome)
-          ? (result.outcome as Outcome)
-          : 'Completed',
-        clientName: `${result.client_first_name || ''} ${result.client_last_name || ''}`.trim(),
-        appointmentDate: result.appointment_date || '',
-        errorMessage: null,
-        ocrDiagnostic,
-      }
+      committed = { result, recordId: resolvedId }
+      break
     } catch (err) {
       lastError = err instanceof Error ? err.message : String(err)
       console.error(`Page ${pageNumber} attempt ${attempt}/${MAX_RETRIES} failed: ${lastError}`)
       // No backoff between attempts — Gemini failures are usually not rate-limit related
       // at our volume; retry is for transient JSON parse or network hiccups
     }
+  }
+
+  if (committed) {
+    const { result, recordId } = committed
+    const outcome: Outcome = (VALID_OUTCOMES as readonly string[]).includes(result.outcome)
+      ? (result.outcome as Outcome)
+      : 'Completed'
+
+    const base: ProcessPageResult = {
+      pageNumber,
+      success: true,
+      recordId,
+      outcome,
+      clientName: `${result.client_first_name || ''} ${result.client_last_name || ''}`.trim(),
+      appointmentDate: result.appointment_date || '',
+      errorMessage: null,
+      notice: null,
+      ocrDiagnostic,
+    }
+
+    // A reschedule is NOT retryable. It emails the agency and overwrites the
+    // Original Appointment fields, so a second run would double-notify and
+    // replace the genuine previous appointment with the one we just set.
+    // That is why it sits out here, after the loop has been broken out of,
+    // and why applyScanReschedule never throws.
+    if (outcome === 'Reschedule') {
+      const applied = await applyScanReschedule(result, recordId)
+      if (!applied.applied) {
+        const message = applied.errorMessage ?? 'Reschedule could not be applied.'
+        await flagManualReview(recordId, message, batchAirtableUrl, scanBatchRecordId)
+        return { ...base, success: false, errorMessage: message }
+      }
+      return { ...base, notice: applied.notice }
+    }
+
+    return base
   }
 
   // All retries exhausted — flag manual review
@@ -961,6 +1272,7 @@ export async function processPage({
       : '',
     appointmentDate: lastResult ? (lastResult.appointment_date || '') : '',
     errorMessage: fullMsg,
+    notice: null,
     ocrDiagnostic,
   }
 }
