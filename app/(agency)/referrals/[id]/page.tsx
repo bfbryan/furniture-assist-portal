@@ -708,12 +708,11 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     // Saturdays for the reschedule picker. leadDays=14 matches ReferralTable —
     // agencies need more notice than Dawson does.
     //
-    // KNOWN: this endpoint is currently Dawson-only and answers an agency
-    // session with 403, so the list arrives empty and the picker shows no
-    // Saturdays. That is being fixed separately; nothing is worked around
-    // here. The modal's "I'm flexible" path still submits a valid reschedule
-    // request in the meantime.
-    fetch('/api/dawson/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
+    // Must be the AGENCY endpoint. /api/dawson/schedule/available is behind
+    // the staff allowlist and answers an agency session with 403, which is
+    // what left this picker empty. The agency route also enforces the 50-per-
+    // Saturday limit, which the Dawson one deliberately does not.
+    fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => setAvailableDates(Array.isArray(data) ? data : []))
       .catch(() => {})
