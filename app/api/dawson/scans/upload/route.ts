@@ -177,6 +177,13 @@ export async function POST(req: NextRequest) {
 
   const batchUrl = batchRecordUrl(batch.id)
 
+  // Things that did not fail the batch but that Dawson should still see on
+  // the batch record — e.g. a reschedule booked into a slot that was already
+  // at capacity. Collected here and written to Error Log at finalize, which
+  // is also where the attachment warning below has to be re-stated, since
+  // that field is overwritten rather than appended.
+  const batchWarnings: string[] = []
+
   // From here on, always update batch status on failure — never leave orphaned records
   try {
     // ============================================================
@@ -187,9 +194,10 @@ export async function POST(req: NextRequest) {
     } catch (e) {
       // Non-fatal — batch record exists, OCR can still proceed. Log to Error Log.
       console.warn('attachOriginalPdf failed (non-fatal):', e)
-      await updateScanBatch(batch.id, {
-        errorLog: `Warning: Original PDF attachment failed: ${e instanceof Error ? e.message : String(e)}`,
-      })
+      const msg = `Warning: Original PDF attachment failed: ${e instanceof Error ? e.message : String(e)}`
+      batchWarnings.push(msg)
+      // Written immediately as well as collected, so it survives a later crash.
+      await updateScanBatch(batch.id, { errorLog: msg })
     }
 
     // ============================================================
@@ -279,6 +287,7 @@ export async function POST(req: NextRequest) {
             clientName: '',
             appointmentDate: '',
             errorMessage: `Unexpected processPage error: ${err}`,
+            notice: null,
             ocrDiagnostic: '',
           })
         }
@@ -307,6 +316,19 @@ export async function POST(req: NextRequest) {
 
     const failedPagesLog = [...splitFailurePages, ...ocrFailurePages].join('\n')
 
+    // Pages that succeeded but carried something worth reading — today that
+    // means a reschedule that overrode a full slot, allocated its own time,
+    // or could not send its email.
+    const noticePages = ocrResults
+      .filter((r) => r.success && r.notice)
+      .map((r) => {
+        const name = r.clientName || '(no name)'
+        const rec = r.recordId ? ` [${r.recordId}]` : ''
+        return `Page ${r.pageNumber} — ${name}${rec}: ${r.notice}`
+      })
+
+    const errorLogLines = [...batchWarnings, ...noticePages]
+
     let finalStatus: BatchStatus
     if (splitFailureCount === 0 && ocrFailureCount === 0) {
       finalStatus = 'Complete'
@@ -321,6 +343,9 @@ export async function POST(req: NextRequest) {
       ocrSuccessCount,
       ocrFailureCount,
       failedPages: failedPagesLog || undefined,
+      // undefined leaves the field untouched, so a batch with nothing to warn
+      // about does not blank out whatever was already there.
+      errorLog: errorLogLines.length ? errorLogLines.join('\n') : undefined,
     })
 
     // ============================================================
