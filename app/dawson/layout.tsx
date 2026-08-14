@@ -1,7 +1,7 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
 import { SignOutButton } from '@clerk/nextjs'
 import { redirect } from 'next/navigation'
-import { isDawsonPortalUser } from '@/lib/auth/dawson-access'
+import { isDawsonPortalUser, isPortalAdmin } from '@/lib/auth/dawson-access'
 
 export default async function DawsonLayout({
   children,
@@ -10,6 +10,9 @@ export default async function DawsonLayout({
 }) {
     const { userId } = await auth()
   if (!isDawsonPortalUser(userId)) redirect('/sign-in')
+
+  // Ben only. Dawson, Ray and Chase do not see the Admin section below.
+  const showAdmin = isPortalAdmin(userId)
 
   const user = await currentUser()
   const email = user?.emailAddresses?.[0]?.emailAddress ?? ''
@@ -43,10 +46,15 @@ export default async function DawsonLayout({
           PHASED ROLLOUT (2026-07-06): only surface what Dawson needs day-1.
           Hidden nav sections below are commented out — pages/routes still live
           for admin (Ben) use. Uncomment blocks as each phase ships:
-            - Overview → when Dashboard is built
-            - Agencies (all 4) → when agency portal invites go out
-            - Referrals → Awaiting Review → when agencies start submitting
+            - Overview → when Dashboard is built                     [SHIPPED]
+            - Agencies (all 4) → when agency portal invites go out    [SHIPPED 2026-08-14]
+            - Referrals → Awaiting Review → when agencies start
+              submitting                                             [SHIPPED 2026-08-14]
             - Reports → Statistics → when Statistics page is built
+
+          Restoring a link does not change the page behind it: the four agency
+          pages and Awaiting Review have been live and reachable by URL the
+          whole time, they simply had no way in from the sidebar.
         */}
         <nav style={{ flex: 1, padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }}>
 
@@ -59,7 +67,6 @@ export default async function DawsonLayout({
           </a>
           
 
-          {/* --- HIDDEN: Agencies (unlock when agency portal invites go out) ---
           <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Agencies</div>
 
 <a href="/dawson/agencies/active" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
@@ -81,16 +88,13 @@ export default async function DawsonLayout({
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
   Inactive & Rejected
 </a>
-          --- END HIDDEN: Agencies --- */}
 
           <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Referrals</div>
 
-          {/* --- HIDDEN: Awaiting Review (unlock when agencies start submitting) ---
 <a href="/dawson/referrals/review" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
   Awaiting Review
 </a>
-          --- END HIDDEN: Awaiting Review --- */}
 
 <a href="/dawson/referrals/scheduled" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -113,6 +117,26 @@ export default async function DawsonLayout({
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             Saturday Schedule
           </a>
+
+          {/* Admin — Ben only, gated on isPortalAdmin. Everything in here is
+              back-office tooling the day-to-day scheduling job never needs, so
+              it stays off Dawson's sidebar rather than being one more thing to
+              scroll past. */}
+          {showAdmin && (
+            <>
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Admin</div>
+
+              <a href="/dawson/scans/upload" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                Scan Upload
+              </a>
+
+              <a href="/dawson/reports/email-log" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22 6 12 13 2 6"/></svg>
+                Email Log
+              </a>
+            </>
+          )}
 
           {/* --- HIDDEN: Reports (Statistics page not built yet) ---
           <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Reports</div>

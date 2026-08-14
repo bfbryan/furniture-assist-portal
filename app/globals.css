@@ -85,9 +85,45 @@ h1, h2, h3, h4, h5, h6 {
    auto, so once the left column held edit forms instead of plain text it
    refused to shrink below its widest row and pushed the whole page into
    horizontal scroll. Same guard the other tracks in this file already use.
-   Identical rendering whenever the content fits. */
+   Identical rendering whenever the content fits.
+
+   Aug 2026: tracks changed from `minmax(0, 1fr) 380px` inside a 960px cap to
+   the internal detail page's 2fr / 1fr across the full content width. The cap
+   was leaving roughly a third of a laptop screen empty on both sides while the
+   cards themselves ran off the bottom. The 960px cap is NOT gone — it moves
+   into the below-1280 block below, so the stacked phone/tablet layout renders
+   byte-identically to what it did before. */
 .fa-referral-detail-grid {
-  grid-template-columns: minmax(0, 1fr) 380px;
+  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
+  max-width: none;
+}
+
+/* Sticky page header on the agency referral detail page, matching the internal
+   detail page. Sticky ONLY at 1280 and up: below that the portal shell already
+   has its own sticky navy top bar at top: 0, and a second sticky element there
+   would ride over it. */
+.fa-detail-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+}
+
+/* Read-mode Client Information: two InfoRows per line, so the card is half as
+   tall in the widened left column. The Address row opts out via inline
+   gridColumn — it carries two lines of value and reads badly in half width.
+   Edit mode deliberately does NOT do this; see the note on that card. */
+.fa-inforow-pairs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 24px;
+}
+
+/* Read-mode Items Requested: six bullets in one column left the card mostly
+   empty once the left track widened. */
+.fa-items-requested-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: 24px;
 }
 
 .fa-new-referral-grid {
@@ -218,8 +254,21 @@ h1, h2, h3, h4, h5, h6 {
   .fa-form-three-col,
   .fa-form-items-grid,
   .fa-profile-row,
+  .fa-inforow-pairs,
+  .fa-items-requested-grid,
   .fa-profile-citystatezip {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* The 960px cap the referral detail page used to carry inline. Kept here so
+     the stacked layout below 1280 is unchanged by the desktop widening. */
+  .fa-referral-detail-grid {
+    max-width: 960px;
+  }
+
+  /* The shell's navy top bar is the only sticky header on a phone. */
+  .fa-detail-header {
+    position: static;
   }
 
   /* Populated referral and history cards: stacking every cell into its own

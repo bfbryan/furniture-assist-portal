@@ -19,6 +19,7 @@
 //   - app/(agency)/referrals/[id]/page.tsx       (detail page action bar)
 
 import { useEffect, useState } from 'react'
+import { TIME_ORDER } from '@/lib/schedule/capacity'
 
 export type AvailableDate = {
   date: string           // 'YYYY-MM-DD'
@@ -90,16 +91,17 @@ export type RescheduleModalState = {
 export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading }: {
   modal: RescheduleModalState
   availableDates: AvailableDate[]
-  onConfirm: (preferredDate: string | null, flexible: boolean) => void
+  onConfirm: (preferredDate: string | null, flexible: boolean, preferredTime: string | null) => void
   onClose: () => void
   loading: boolean
 }) {
   const [preferredDate, setPreferredDate] = useState('')
+  const [preferredTime, setPreferredTime] = useState('')
   const [flexible, setFlexible] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (modal.open) { setPreferredDate(''); setFlexible(false); setError(null) }
+    if (modal.open) { setPreferredDate(''); setPreferredTime(''); setFlexible(false); setError(null) }
   }, [modal.open])
 
   // Close on Esc — same as InviteStaffModal.
@@ -119,7 +121,11 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
     if (!flexible && !preferredDate) {
       setError('Pick a Saturday or check Flexible.'); return
     }
-    onConfirm(flexible ? null : preferredDate, flexible)
+    onConfirm(
+      flexible ? null : preferredDate,
+      flexible,
+      flexible || !preferredTime ? null : preferredTime,
+    )
   }
 
   return (
@@ -155,8 +161,28 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
           })}
         </select>
 
+        {/* Preferred time — optional, and deliberately a plain select rather
+            than the internal modal's row of five capacity pills. Dawson picks
+            from live per-slot counts because he owns the schedule; an agency is
+            only stating a preference, and five pills across a phone screen is
+            about 60px each. Same control as the Saturday picker above it. */}
+        <label style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block' }}>
+          Preferred Time (optional)
+        </label>
+        <select
+          value={preferredTime}
+          onChange={e => setPreferredTime(e.target.value)}
+          disabled={flexible}
+          style={{ width: '100%', padding: '9px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '14px', color: '#2C3A4A', background: 'white', outline: 'none', opacity: flexible ? 0.5 : 1, cursor: flexible ? 'not-allowed' : 'pointer', marginBottom: '12px' }}
+        >
+          <option value="">No preference</option>
+          {TIME_ORDER.map(t => (
+            <option key={t} value={t}>{t}</option>
+          ))}
+        </select>
+
         <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '9px 14px', borderRadius: '7px', border: `1px solid ${flexible ? '#2A7F6F' : '#EDE9E1'}`, background: flexible ? '#EAF4F2' : 'white', marginBottom: '20px' }}>
-          <input type="checkbox" checked={flexible} onChange={e => { setFlexible(e.target.checked); if (e.target.checked) setPreferredDate('') }} style={{ display: 'none' }} />
+          <input type="checkbox" checked={flexible} onChange={e => { setFlexible(e.target.checked); if (e.target.checked) { setPreferredDate(''); setPreferredTime('') } }} style={{ display: 'none' }} />
           <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: `2px solid ${flexible ? '#2A7F6F' : '#EDE9E1'}`, background: flexible ? '#2A7F6F' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
             {flexible && (
               <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">

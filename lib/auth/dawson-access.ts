@@ -13,8 +13,16 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 
+/**
+ * Ben. Named separately because a few surfaces are his alone rather than
+ * everyone's with portal access — currently the Admin section of the Dawson
+ * sidebar. He is still listed in DAWSON_PORTAL_USER_IDS below, through this
+ * constant, so there is one copy of the ID and the two can never disagree.
+ */
+export const PORTAL_ADMIN_USER_ID = 'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj'
+
 export const DAWSON_PORTAL_USER_IDS = [
-  'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj', // Ben
+  PORTAL_ADMIN_USER_ID,               // Ben
   'user_3BodwTW4I7Vamt4t7wD3qeA7boM', // Ray
   'user_3BtKn01OMXSmi7eSsWvzvnEroCg', // Dawson
   'user_3H6FGzH6riZZ3W4JCFe5UXBAEc1', // Chase
@@ -29,6 +37,16 @@ export type DawsonUserId = typeof DAWSON_PORTAL_USER_IDS[number]
 export function isDawsonPortalUser(userId: string | null | undefined): boolean {
   if (!userId) return false
   return (DAWSON_PORTAL_USER_IDS as readonly string[]).includes(userId)
+}
+
+/**
+ * Narrower than isDawsonPortalUser: true only for Ben, not for everyone else
+ * with Dawson-portal access. Presentation only so far — it hides the Admin nav
+ * section. The pages it links to are behind requireDawsonAccess like the rest,
+ * so treat this as "don't show it to Dawson", not as access control.
+ */
+export function isPortalAdmin(userId: string | null | undefined): boolean {
+  return userId === PORTAL_ADMIN_USER_ID
 }
 
 /**

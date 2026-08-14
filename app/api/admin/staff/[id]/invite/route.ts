@@ -105,8 +105,22 @@ export async function POST(
     )
   }
 
+  // Clerk returns a ready-made sign-in URL alongside the raw token. Use it.
+  //
+  // This used to hand-build the link out of NEXT_PUBLIC_APP_URL, which has
+  // never been set in any environment — so every invite email went out with a
+  // link starting "undefined/sign-in?...". `tokenData.url` is the same link
+  // Clerk would build itself, already pointing at the right instance, and it
+  // is what app/api/admin/invite/route.ts has always used.
   const tokenData = await tokenRes.json()
-  const magicLink = `${process.env.NEXT_PUBLIC_APP_URL}/sign-in?__clerk_ticket=${tokenData.token}`
+  const magicLink: string | null = tokenData.url ?? null
+
+  if (!magicLink) {
+    return NextResponse.json(
+      { error: 'Failed to generate invite link' },
+      { status: 500 }
+    )
+  }
 
   // Fire Zapier webhook for email delivery
   const webhook = process.env.ZAPIER_STAFF_INVITE_WEBHOOK

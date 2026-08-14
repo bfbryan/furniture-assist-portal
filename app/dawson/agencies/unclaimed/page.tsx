@@ -2,6 +2,13 @@
 
 import { useState, useEffect } from 'react'
 
+// The "Invite Admin" button is parked, not removed. It posts to
+// /api/dawson/agencies/[id]/invite, which does not exist yet — so the button
+// currently 404s. Ben is inviting agency admins one at a time by hand for now;
+// flip this to true once that endpoint is built and the modal below goes live
+// again unchanged.
+const SHOW_INVITE_ADMIN: boolean = false
+
 type Agency = {
   id: string
   name: string
@@ -22,9 +29,12 @@ type Agency = {
   approvalDate: string | null
   invitedDate: string | null
   rejectedDate: string | null
-  source: string | null
   possibleDuplicate: boolean
 }
+
+// Agency name column. Wider than it was (270px) because long agency names were
+// truncating mid-word; the width the Source column gave up covers it.
+const NAME_COL_WIDTH = '360px'
 
 type SortKey = 'name' | 'created'
 type SortDir = 'asc' | 'desc'
@@ -33,16 +43,6 @@ function formatDate(dateStr: string | null) {
   if (!dateStr) return '—'
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
-
-function sourceBadgeColors(source: string | null): { bg: string; fg: string } {
-  switch (source) {
-    case 'Created via Referral': return { bg: 'rgba(58,160,141,0.12)', fg: '#2A7F6F' }
-    case 'Created via Import':   return { bg: 'rgba(201,168,76,0.15)', fg: '#C9A84C' }
-    case 'Manual Entry':         return { bg: 'rgba(122,136,153,0.15)', fg: '#7A8899' }
-    case 'Self Registration':    return { bg: 'rgba(27,43,75,0.10)',   fg: '#1B2B4B' }
-    default:                     return { bg: 'rgba(122,136,153,0.12)', fg: '#7A8899' }
-  }
 }
 
 function SortHeader({ label, sortKey, current, dir, onClick, width }: {
@@ -184,7 +184,6 @@ function InviteModal({ agency, onClose, onInvited }: {
 
 function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: string) => void }) {
   const [modalOpen, setModalOpen] = useState(false)
-  const src = sourceBadgeColors(agency.source)
 
   return (
     <>
@@ -202,7 +201,7 @@ function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: 
       }}>
         <div style={{ width: '4px', alignSelf: 'stretch', background: '#7A8899', flexShrink: 0 }} />
 
-        <div style={{ width: '270px', flexShrink: 0, padding: '14px 20px', alignSelf: 'flex-start' }}>
+        <div style={{ width: NAME_COL_WIDTH, flexShrink: 0, padding: '14px 20px', alignSelf: 'flex-start' }}>
           <a href={`/dawson/agencies/${agency.id}?from=unclaimed`} style={{ textDecoration: 'none' }}>
             <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#2A7F6F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {agency.name}
@@ -228,16 +227,6 @@ function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: 
           <div style={{ width: '190px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
             <div style={{ fontSize: '12px', fontWeight: 600, color: '#7A8899' }}>{agency.phone || '—'}</div>
           </div>
-          <div style={{ width: '190px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
-            <span style={{
-              display: 'inline-block', fontSize: '10px', fontWeight: 700,
-              padding: '3px 8px', borderRadius: '12px',
-              background: src.bg, color: src.fg,
-              letterSpacing: '0.04em',
-            }}>
-              {agency.source || 'Unknown'}
-            </span>
-          </div>
           <div style={{ width: '150px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
             <div style={{ fontSize: '12px', fontWeight: 600, color: '#7A8899' }}>{formatDate(agency.registrationDate)}</div>
           </div>
@@ -249,10 +238,12 @@ function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: 
               ⚠
             </div>
           )}
-          <button onClick={() => setModalOpen(true)}
-            style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', flex: 1 }}>
-            Invite Admin
-          </button>
+          {SHOW_INVITE_ADMIN && (
+            <button onClick={() => setModalOpen(true)}
+              style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', flex: 1 }}>
+              Invite Admin
+            </button>
+          )}
         </div>
       </div>
     </>
@@ -290,8 +281,7 @@ export default function UnclaimedAgenciesPage() {
     .filter(a =>
       a.name.toLowerCase().includes(search.toLowerCase()) ||
       a.city.toLowerCase().includes(search.toLowerCase()) ||
-      (a.officeName ?? '').toLowerCase().includes(search.toLowerCase()) ||
-      (a.source ?? '').toLowerCase().includes(search.toLowerCase())
+      (a.officeName ?? '').toLowerCase().includes(search.toLowerCase())
     )
     .sort((a, b) => {
       let val = 0
@@ -334,11 +324,10 @@ export default function UnclaimedAgenciesPage() {
         {!loading && filtered.length > 0 && (
           <div style={{ display: 'flex', alignItems: 'center', paddingLeft: '4px', marginBottom: '6px' }}>
             <div style={{ width: '4px', flexShrink: 0 }} />
-            <SortHeader label="Agency" sortKey="name" current={sortKey} dir={sortDir} onClick={handleSort} width="270px" />
+            <SortHeader label="Agency" sortKey="name" current={sortKey} dir={sortDir} onClick={handleSort} width={NAME_COL_WIDTH} />
             <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
               <div style={{ width: '190px', flexShrink: 0, fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1B2B4B', paddingRight: '20px' }}>Location</div>
               <div style={{ width: '190px', flexShrink: 0, fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1B2B4B', paddingRight: '20px' }}>Main Phone</div>
-              <div style={{ width: '190px', flexShrink: 0, fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1B2B4B', paddingRight: '20px' }}>Source</div>
               <SortHeader label="Created" sortKey="created" current={sortKey} dir={sortDir} onClick={handleSort} width="150px" />
             </div>
             <div style={{ width: '160px', flexShrink: 0, paddingRight: '20px' }} />
