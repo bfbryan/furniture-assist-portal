@@ -268,7 +268,7 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
   // Load available Saturdays for the reschedule modal.
   // 2-week lead time enforced via leadDays=14 (Dawson defaults to 7).
   useEffect(() => {
-    fetch('/api/dawson/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
+    fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
       .then(r => r.json())
       .then(data => setAvailableDates(Array.isArray(data) ? data : []))
       .catch(() => {})
@@ -304,7 +304,7 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
         body: JSON.stringify({ preferredDate, flexible }),
       })
       // Refresh availability — the previous slot is now open, the new one is taken.
-      fetch('/api/dawson/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
+      fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
         .then(r => r.json())
         .then(data => setAvailableDates(Array.isArray(data) ? data : []))
         .catch(() => {})

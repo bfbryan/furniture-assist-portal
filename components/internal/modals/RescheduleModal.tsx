@@ -22,26 +22,20 @@
 
 
 import { useEffect, useState } from 'react'
+import { TIME_CAPS, TIME_ORDER, describeDayLoad, type TimeSlot } from '@/lib/schedule/capacity'
 
 
 
-// Per-slot capacities — MUST match at-auto-schedule-script.js TIME_CAPS
-// and the SLOT_MAX constant on app/dawson/schedule/page.tsx.
-const SLOT_CAP: Record<TimeSlot, number> = {
-  '9am': 5,
-  '10am': 14,
-  '11am': 14,
-  '12pm': 14,
-  '1pm': 3,
-}
+// Per-slot capacities come from lib/schedule/capacity.ts.
+const SLOT_CAP = TIME_CAPS
 
 
 
-const TIME_SLOTS: TimeSlot[] = ['9am', '10am', '11am', '12pm', '1pm']
+const TIME_SLOTS = TIME_ORDER
 
 
 
-export type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'
+export type { TimeSlot } from '@/lib/schedule/capacity'
 
 
 
@@ -53,6 +47,11 @@ export type AvailableDate = {
   slots11am?: number
   slots12pm?: number
   slots1pm?: number
+  // Day-level load from the availability endpoint, so a full Saturday can be
+  // labelled rather than hidden.
+  totalBooked?: number
+  dayCapacity?: number
+  isFull?: boolean
 }
 
 
@@ -214,7 +213,9 @@ export default function RescheduleModal({
             })
             return (
               <option key={d.date} value={d.date}>
-                {label} — {d.slotsRemaining} slot{d.slotsRemaining === 1 ? '' : 's'} open
+                {label} — {d.totalBooked !== undefined
+                  ? describeDayLoad(d.totalBooked, d.dayCapacity)
+                  : `${d.slotsRemaining} slot${d.slotsRemaining === 1 ? '' : 's'} open`}
               </option>
             )
           })}
