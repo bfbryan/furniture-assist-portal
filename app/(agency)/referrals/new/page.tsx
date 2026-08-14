@@ -1,7 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById } from '@/lib/airtable'
-import { UserButton } from '@clerk/nextjs'
 import NewReferralForm from '@/components/agency/NewReferralForm'
 
 export default async function NewReferralPage() {
@@ -16,13 +15,8 @@ export default async function NewReferralPage() {
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
 
-      {/* Nav */}
-      <header className="bg-[#1B2B4B] h-16 flex items-center justify-between px-8 sticky top-0 z-50 shadow-lg">
-        <span className="font-extrabold text-sm text-white tracking-wide">
-          Furniture Assist <span className="text-[#3AA08D]">| Agency Portal</span>
-        </span>
-        <UserButton />
-      </header>
+      {/* The navy top bar this page used to hand-roll now lives in
+          AgencyPortalShell, so there is one copy of it and it carries the nav. */}
 
       {/* Hero */}
       <div className="bg-[#1B2B4B] border-b-4 border-[#2A7F6F] px-8 py-9">
@@ -49,7 +43,8 @@ export default async function NewReferralPage() {
       </div>
 
       {/* Content */}
-      <div className="max-w-6xl mx-auto px-8 py-9 grid gap-7" style={{ gridTemplateColumns: '1fr 300px' }}>
+      {/* Column tracks live in globals.css (.fa-new-referral-grid) so they can stack below 1280px. */}
+      <div className="fa-new-referral-grid max-w-6xl mx-auto px-8 py-9 grid gap-7">
 
         {/* Form */}
         <NewReferralForm agencyName={agency.name} staffName={agencyUser.name} />

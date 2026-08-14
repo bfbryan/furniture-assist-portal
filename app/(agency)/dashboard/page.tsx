@@ -124,6 +124,10 @@ export default async function DashboardPage() {
 
   // Stats — same shape as Profile/Active/History
   const totalCount = scopedReferrals.length
+  // Pending uses the same definition as the Active page: awaiting our review.
+  const pendingCount = scopedReferrals.filter(
+    (r: any) => r.referralReview === 'Pending'
+  ).length
   const activeCount = scopedReferrals.filter((r: any) => {
     if (r.referralReview === 'Rejected') return false
     const s = r.appointmentStatus
@@ -175,16 +179,18 @@ export default async function DashboardPage() {
         userPhone={agencyUser.phone ?? 'No phone on file'}
         userRole={agencyUser.role}
         stats={[
-          { label: 'Total', value: totalCount },
+          { label: 'Pending', value: pendingCount },
           { label: 'Active', value: activeCount, emphasized: true },
           { label: 'Completed', value: completedCount },
+          { label: 'Total', value: totalCount },
         ]}
       />
 
 
+      {/* Column tracks live in globals.css (.fa-dashboard-grid) so they can stack below 1280px. */}
       <main
-        className="max-w-7xl mx-auto px-8 py-9 grid gap-7"
-        style={{ gridTemplateColumns: 'minmax(0, 1fr) 300px', alignItems: 'start' }}
+        className="fa-dashboard-grid max-w-7xl mx-auto px-8 py-9 grid gap-7"
+        style={{ alignItems: 'start' }}
       >
         {/* ============ LEFT: Upcoming Appointments ============ */}
         <div
@@ -290,7 +296,11 @@ export default async function DashboardPage() {
 
               return (
                 <div key={date} style={{ marginBottom: '20px' }}>
+                  {/* Wrapping lives in globals.css (.fa-dash-day-header) so the
+                      referral count pill gets clear of the date line below 1280px
+                      instead of being pushed hard against it. */}
                   <div
+                    className="fa-dash-day-header"
                     style={{
                       display: 'flex',
                       alignItems: 'center',
@@ -363,9 +373,9 @@ export default async function DashboardPage() {
                     return (
                       <div
                         key={r.id}
+                        className="fa-dash-appt-row"
                         style={{
                           display: 'grid',
-                          gridTemplateColumns: '4px 1fr 90px 130px',
                           alignItems: 'center',
                           background: '#FBFAF7',
                           border: '1px solid #EDE9E1',

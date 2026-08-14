@@ -9,11 +9,325 @@
 }
 
 body {
-  font-family: var(--font-dm-sans), sans-serif;
+  font-family: var(--font-lato), sans-serif;
 }
 h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-montserrat), sans-serif;
 }
 .font-montserrat {
   font-family: var(--font-montserrat), sans-serif;
+}
+
+/* ==========================================================================
+   AGENCY PORTAL — LAYOUT ONLY
+   ==========================================================================
+   Every rule below is a layout declaration lifted out of an inline style
+   object so it can respond to a media query (inline styles win on
+   specificity, so the property has to physically leave the object).
+   Nothing cosmetic lives here: no colour, font, radius, shadow or padding
+   was moved, and the values above 1280px are byte-identical to what the
+   inline styles used to say.
+
+   ONE breakpoint: 1280px.
+   The card grids need ~1000px and the sidebar takes 240, so a 1024px
+   viewport still leaves the content area ~40px short. Below 1280 we stack;
+   at 1280 and up nothing changes.
+   ========================================================================== */
+
+/* ---------- Shell: fixed sidebar + offset main ---------- */
+
+.fa-shell-main {
+  margin-left: 240px;
+}
+
+/* Mobile top bar and drawer backdrop are desktop-invisible. */
+.fa-shell-topbar {
+  display: none;
+}
+
+.fa-shell-backdrop {
+  display: none;
+}
+
+/* ---------- Card grids (5) ---------- */
+
+.fa-referral-card-grid {
+  grid-template-columns: 130px 130px 160px 180px 140px 120px 1fr;
+}
+
+.fa-history-card-grid {
+  grid-template-columns: 160px 180px 130px 110px 110px 150px 60px;
+}
+
+.fa-staff-row-invite {
+  grid-template-columns: 200px minmax(200px, 1fr) 100px 240px;
+}
+
+.fa-staff-row-awaiting {
+  grid-template-columns: 200px minmax(180px, 1fr) 130px 110px 200px;
+}
+
+.fa-staff-row-active {
+  grid-template-columns: 210px minmax(200px, 1fr) 90px 130px 220px;
+}
+
+/* ---------- Page shells (4) ---------- */
+
+.fa-dashboard-grid {
+  grid-template-columns: minmax(0, 1fr) 300px;
+}
+
+.fa-profile-grid {
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+}
+
+.fa-referral-detail-grid {
+  grid-template-columns: 1fr 380px;
+}
+
+.fa-new-referral-grid {
+  grid-template-columns: 1fr 300px;
+}
+
+/* ---------- Fixed column tracks inside cards and forms ---------- */
+
+/* Dashboard appointment row: accent bar + name + time + status. */
+.fa-dash-appt-row {
+  grid-template-columns: 4px 1fr 90px 130px;
+}
+
+/* New referral form. The address row declares four tracks for three inputs;
+   that phantom 160px column is a pre-existing desktop bug and is deliberately
+   preserved here rather than fixed as a drive-by. */
+.fa-form-address-row {
+  grid-template-columns: 1fr 80px 120px 160px;
+}
+
+.fa-form-two-col {
+  grid-template-columns: 1fr 1fr;
+}
+
+.fa-form-three-col {
+  grid-template-columns: 1fr 1fr 1fr;
+}
+
+.fa-form-items-grid {
+  grid-template-columns: 1fr 1fr;
+}
+
+/* Profile cards: fixed label column, and the City/State/Zip edit row. */
+.fa-profile-row {
+  grid-template-columns: 140px 1fr;
+}
+
+.fa-profile-citystatezip {
+  grid-template-columns: 2fr 80px 100px;
+}
+
+/* Referral detail: the fixed label column used ~15 times by InfoRow. */
+.fa-inforow-label {
+  width: 160px;
+}
+
+/* History filter chips lay out on desktop exactly as they did inline; display
+   lives here too so the below-1280 rule can swap them out. Their replacement
+   is hidden here. */
+.fa-history-chips {
+  display: flex;
+  flex-wrap: wrap;
+}
+
+.fa-history-selects {
+  display: none;
+}
+
+.fa-history-staff-select {
+  min-width: 200px;
+}
+
+/* ==========================================================================
+   Below 1280px — stack
+   ========================================================================== */
+
+@media (max-width: 1279.98px) {
+
+  /* Sidebar becomes an off-canvas drawer. Same navy, same 240px, same order,
+     same nav — it just starts off-screen instead of occupying 62% of a phone.
+     visibility keeps the closed drawer out of the tab order. */
+  .fa-shell-sidebar {
+    transform: translateX(-100%);
+    visibility: hidden;
+    transition: transform 0.25s ease, visibility 0.25s ease;
+  }
+
+  .fa-shell-sidebar[data-open='true'] {
+    transform: translateX(0);
+    visibility: visible;
+  }
+
+  /* The single change that stops content sliding under the fixed sidebar
+     on every page at once.
+
+     min-width matters as much as the margin. <main> is a flex item, and a flex
+     item's default min-width:auto refuses to shrink below its widest child, so
+     one wide descendant stretched <main> past the viewport and every
+     width:100% / minmax(0,1fr) below it then resolved against that inflated
+     width instead of the screen. Pinning it to 0 makes the whole subtree
+     measure against the phone. */
+  .fa-shell-main {
+    margin-left: 0;
+    min-width: 0;
+  }
+
+  .fa-shell-topbar {
+    display: flex;
+  }
+
+  .fa-shell-backdrop {
+    display: block;
+  }
+
+  /* Card grids and page shells collapse to one column. */
+  .fa-referral-card-grid,
+  .fa-history-card-grid,
+  .fa-staff-row-invite,
+  .fa-staff-row-awaiting,
+  .fa-staff-row-active,
+  .fa-dashboard-grid,
+  .fa-profile-grid,
+  .fa-referral-detail-grid,
+  .fa-new-referral-grid,
+  .fa-form-address-row,
+  .fa-form-two-col,
+  .fa-form-three-col,
+  .fa-form-items-grid,
+  .fa-profile-row,
+  .fa-profile-citystatezip {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Populated referral and history cards: stacking every cell into its own
+     full-width block turned a card into ~16 lines of label-over-value, which
+     read as a jumble once there was real data in it. Instead each cell becomes
+     a label column plus a value column — the same shape the Profile and client
+     detail pages already use, which is what makes those two read cleanly on a
+     phone. Cells with several value lines (address, appointment date + time)
+     keep every line in the value column. */
+  .fa-referral-card-grid > div,
+  .fa-history-card-grid > div {
+    display: grid;
+    grid-template-columns: 104px minmax(0, 1fr);
+    align-items: start;
+    justify-items: start;
+    gap: 10px;
+  }
+
+  .fa-referral-card-grid > div > :not(:first-child),
+  .fa-history-card-grid > div > :not(:first-child) {
+    grid-column: 2;
+  }
+
+  /* The actions cell renders empty when a row has no available action, and
+     stacked that left a band of dead space at the foot of the card. */
+  .fa-referral-card-grid > div:empty,
+  .fa-history-card-grid > div:empty {
+    display: none;
+  }
+
+  /* The appointment row carries no labels. Kept on one line the time and the
+     status pill ate ~190px of a 278px card, leaving the client name about 58px
+     and truncating it to "Vande…" — you could not tell whose appointment it
+     was. The name and address now take the full first row and the time and
+     status sit beneath as a footer row, with the accent bar spanning both. */
+  .fa-dash-appt-row {
+    grid-template-columns: 4px minmax(0, 1fr) auto;
+  }
+
+  .fa-dash-appt-row > :first-child {
+    grid-row: span 2;
+  }
+
+  .fa-dash-appt-row > :nth-child(2) {
+    grid-column: 2 / -1;
+  }
+
+  /* Hero stat tiles: three tiles at their natural width overflow a phone and
+     wrap 2 + 1, leaving an orphan. An even two-up grid wraps deliberately
+     instead, with an odd last tile spanning the full width. */
+  .fa-hero-stats {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    width: 100%;
+  }
+
+  .fa-hero-stats > :last-child:nth-child(odd) {
+    grid-column: 1 / -1;
+  }
+
+  /* Section title and its action button compressed into each other; let the
+     button drop to its own line. */
+  .fa-staff-section-header {
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* Same problem on the dashboard's Saturday line: space-between with nothing
+     left to distribute pushed the referral count pill hard against the date. */
+  .fa-dash-day-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  /* History filters: ten chips wrapped to four rows owned most of the screen
+     before a single result. Swapped below 1280 for two selects carrying the
+     same state — compact, and nothing is cut off at the right edge. Search
+     stays full width and always visible; on a flat, newest-first list it is
+     the primary way to find a client. */
+  .fa-history-chips {
+    display: none;
+  }
+
+  .fa-history-selects {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  /* Label plus a 200px select overflowed a 390px screen and reintroduced
+     sideways scroll; the select takes its own line instead. */
+  .fa-history-staff-select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* Same on the Active page's staff filter, which is a non-wrapping flex row
+     whose select is sized by its widest staff name. */
+  .fa-filter-row {
+    flex-wrap: wrap;
+  }
+
+  .fa-filter-row > select {
+    width: 100%;
+    min-width: 0;
+  }
+
+  /* InfoRow keeps its label column, narrowed so the value has room. */
+  .fa-inforow-label {
+    width: 110px;
+  }
+
+  /* iOS Safari zooms the page whenever a field under 16px takes focus, and
+     does not zoom back out. Scoped to the agency portal shell so the Dawson
+     side is untouched; !important because every one of these fields sets its
+     font-size inline. */
+  .fa-portal input,
+  .fa-portal select,
+  .fa-portal textarea {
+    font-size: 16px !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .fa-shell-sidebar {
+    transition: none;
+  }
 }

@@ -133,7 +133,8 @@ export default function NewReferralForm({ agencyName, staffName }: { agencyName:
 
       {/* Client Info */}
       <div style={SECTION}>Client Information</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+      {/* Column tracks for every row below live in globals.css (.fa-form-*) so they can stack below 1280px. */}
+      <div className="fa-form-two-col" style={{ display: 'grid', gap: '16px', marginBottom: '16px' }}>
         <div>
           <label style={LABEL}>First Name *</label>
           <input style={INPUT} value={form.firstName} onChange={e => set('firstName', e.target.value)} placeholder="First name" />
@@ -143,7 +144,7 @@ export default function NewReferralForm({ agencyName, staffName }: { agencyName:
           <input style={INPUT} value={form.lastName} onChange={e => set('lastName', e.target.value)} placeholder="Last name" />
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+      <div className="fa-form-three-col" style={{ display: 'grid', gap: '16px', marginBottom: '16px' }}>
         <div>
           <label style={LABEL}>Date of Birth *</label>
           <input style={INPUT} type="date" value={form.dob} onChange={e => set('dob', e.target.value)} />
@@ -178,7 +179,7 @@ export default function NewReferralForm({ agencyName, staffName }: { agencyName:
         <label style={LABEL}>Address Line 2</label>
         <input style={INPUT} value={form.address2} onChange={e => set('address2', e.target.value)} placeholder="Apt, Suite, Unit (optional)" />
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px 160px', gap: '16px', marginBottom: '16px' }}>
+      <div className="fa-form-address-row" style={{ display: 'grid', gap: '16px', marginBottom: '16px' }}>
         <div>
           <label style={LABEL}>City *</label>
           <input style={INPUT} value={form.city} onChange={e => set('city', e.target.value)} placeholder="City" />
@@ -195,7 +196,7 @@ export default function NewReferralForm({ agencyName, staffName }: { agencyName:
 
       {/* Household */}
       <div style={{ ...SECTION, marginTop: '24px' }}>Household</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+      <div className="fa-form-two-col" style={{ display: 'grid', gap: '16px', marginBottom: '16px' }}>
         <div>
           <label style={LABEL}>Household Size *</label>
           <input style={INPUT} type="number" min="1" value={form.hhSize} onChange={e => set('hhSize', e.target.value)} placeholder="Total people in household" />
@@ -208,7 +209,7 @@ export default function NewReferralForm({ agencyName, staffName }: { agencyName:
 
       {/* Items */}
       <div style={{ ...SECTION, marginTop: '24px' }}>Items Requested *</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginBottom: '24px' }}>
+      <div className="fa-form-items-grid" style={{ display: 'grid', gap: '10px', marginBottom: '24px' }}>
         {ITEMS.map(item => (
           <label key={item} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '10px 14px', borderRadius: '8px', border: `1px solid ${form.items.includes(item) ? '#2A7F6F' : '#EDE9E1'}`, background: form.items.includes(item) ? '#EAF4F2' : 'white', transition: 'all 0.15s' }}>
             <input type="checkbox" checked={form.items.includes(item)} onChange={() => toggleItem(item)} style={{ display: 'none' }} />

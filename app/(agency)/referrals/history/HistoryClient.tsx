@@ -1,9 +1,9 @@
 // app/(agency)/referrals/history/HistoryClient.tsx
-// Agency history — Dawson outer layout (Saturday groups, chips, collapse)
-// with ClientCard-style rows inside each group (same visual as Active/Dashboard).
+// Agency history — search and filter chips over a flat list of ClientCard-style
+// rows (same visual as Active/Dashboard), most recent first.
 //
-// Rejected referrals have no appointment date; they bucket into the Saturday
-// of their referral-submission week.
+// Ordered by appointment date, falling back to the referral date for rejected
+// referrals, which never get an appointment.
 
 'use client'
 
@@ -34,17 +34,6 @@ type DateRange = '30' | '60' | '90' | '180' | 'all'
 
 // ---------- helpers ----------
 
-function formatSatDate(iso: string): string {
-  const [y, m, d] = iso.split('-').map(Number)
-  const dt = new Date(y, m - 1, d, 12, 0, 0)
-  return dt.toLocaleDateString('en-US', {
-    weekday: 'long',
-    month: 'long',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
-
 function formatShortDate(iso: string | null): string {
   if (!iso) return '—'
   const [y, m, d] = iso.split('-').map(Number)
@@ -56,14 +45,10 @@ function formatShortDate(iso: string | null): string {
   })
 }
 
-// Saturday (as ISO YYYY-MM-DD) of the week containing the given ISO date.
-function saturdayOfWeek(isoDate: string): string {
-  const [y, m, d] = isoDate.split('-').map(Number)
-  const dt = new Date(y, m - 1, d, 12, 0, 0)
-  const dow = dt.getDay() // 0=Sun ... 6=Sat
-  const daysUntilSat = 6 - dow
-  dt.setDate(dt.getDate() + daysUntilSat)
-  return dt.toISOString().split('T')[0]
+// The date a referral is filed under: when the appointment happened, or when it
+// was submitted if it never got one (rejected referrals have no appointment).
+function activityDate(r: Referral): string {
+  return r.appointmentDate ?? r.referralDate ?? ''
 }
 
 function outcomeOf(r: Referral): 'completed' | 'missed' | 'cancelled' | 'rejected' | 'other' {
@@ -92,6 +77,18 @@ const STATUS_CHIPS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'rejected',  label: 'REJECTED' },
 ]
 
+// Shared by all three filter selects so they read as one set of controls.
+const FILTER_SELECT: React.CSSProperties = {
+  padding: '7px 14px',
+  borderRadius: '7px',
+  border: '1px solid #EDE9E1',
+  fontSize: '13px',
+  color: '#2C3A4A',
+  background: 'white',
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+}
+
 const DATE_CHIPS: Array<{ key: DateRange; label: string }> = [
   { key: '30',  label: 'Last 30 days' },
   { key: '60',  label: 'Last 60 days' },
@@ -99,40 +96,6 @@ const DATE_CHIPS: Array<{ key: DateRange; label: string }> = [
   { key: '180', label: 'Last 6 months' },
   { key: 'all', label: 'All time' },
 ]
-
-// ---------- outcome breakdown pills for saturday header ----------
-function OutcomeBreakdown({ referrals }: { referrals: Referral[] }) {
-  const counts = { completed: 0, missed: 0, cancelled: 0, rejected: 0 }
-  for (const r of referrals) {
-    const o = outcomeOf(r)
-    if (o in counts) (counts as any)[o]++
-  }
-  const parts: Array<{ key: string; label: string; meta: (typeof OUTCOME_META)['completed'] }> = []
-  if (counts.completed) parts.push({ key: 'completed', label: `${counts.completed} completed`, meta: OUTCOME_META.completed })
-  if (counts.missed)    parts.push({ key: 'missed',    label: `${counts.missed} missed`,       meta: OUTCOME_META.missed })
-  if (counts.cancelled) parts.push({ key: 'cancelled', label: `${counts.cancelled} cancelled`, meta: OUTCOME_META.cancelled })
-  if (counts.rejected)  parts.push({ key: 'rejected',  label: `${counts.rejected} rejected`,   meta: OUTCOME_META.rejected })
-
-  return (
-    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
-      {parts.map(p => (
-        <span
-          key={p.key}
-          style={{
-            fontSize: '11px',
-            fontWeight: 600,
-            padding: '3px 10px',
-            borderRadius: '12px',
-            background: p.meta.pillBg,
-            color: p.meta.pillText,
-          }}
-        >
-          {p.label}
-        </span>
-      ))}
-    </div>
-  )
-}
 
 // ---------- receipt icon ----------
 function ReceiptIcon({ url }: { url: string }) {
@@ -193,10 +156,11 @@ function HistoryCard({ r }: { r: Referral }) {
       }}
     >
       <div style={{ background: meta.accent, borderTopLeftRadius: '10px', borderBottomLeftRadius: '10px' }} />
+      {/* Column tracks live in globals.css (.fa-history-card-grid) so they can stack below 1280px. */}
       <div
+        className="fa-history-card-grid"
         style={{
           display: 'grid',
-          gridTemplateColumns: '160px 180px 130px 110px 110px 150px 60px',
           alignItems: 'start',
           gap: '10px',
           padding: '14px 16px',
@@ -281,66 +245,6 @@ const valueStyle: React.CSSProperties = {
   color: '#7A8899',
 }
 
-// ---------- one saturday group ----------
-function SaturdayGroup({
-  date,
-  referrals,
-  defaultOpen,
-}: {
-  date: string
-  referrals: Referral[]
-  defaultOpen: boolean
-}) {
-  const [open, setOpen] = useState(defaultOpen)
-  if (referrals.length === 0) return null
-
-  return (
-    <div style={{ marginBottom: '14px' }}>
-      <button
-        onClick={() => setOpen(!open)}
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          padding: '16px 22px',
-          width: '100%',
-          background: 'white',
-          border: 'none',
-          borderRadius: '12px',
-          boxShadow: '0 1px 4px rgba(27,43,75,0.05)',
-          cursor: 'pointer',
-          textAlign: 'left',
-          marginBottom: '10px',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span style={{ fontSize: '14px', color: '#1B2B4B' }}>{open ? '▼' : '▶'}</span>
-          <span
-            style={{
-              fontFamily: 'var(--font-montserrat)',
-              fontWeight: 700,
-              fontSize: '15px',
-              color: '#1B2B4B',
-            }}
-          >
-            {formatSatDate(date)}
-          </span>
-          <span style={{ fontSize: '13px', color: '#7A8899' }}>({referrals.length})</span>
-        </div>
-        <OutcomeBreakdown referrals={referrals} />
-      </button>
-
-      {open && (
-        <div style={{ paddingLeft: '10px' }}>
-          {referrals.map(r => (
-            <HistoryCard key={r.id} r={r} />
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
 // ---------- main ----------
 export default function HistoryClient({
   referrals,
@@ -386,40 +290,19 @@ export default function HistoryClient({
     })
   }, [referrals, search, staffFilter, statusFilter, dateRange])
 
-  // Bucket by Saturday. Rejected uses referral submission date's Saturday.
-  const buckets = new Map<string, Referral[]>()
-  for (const r of visible) {
-    const sourceDate = r.appointmentDate ?? r.referralDate
-    if (!sourceDate) continue
-    const sat = saturdayOfWeek(sourceDate)
-    if (!buckets.has(sat)) buckets.set(sat, [])
-    buckets.get(sat)!.push(r)
-  }
-
-  // Sort each bucket's referrals: completed → missed → cancelled → rejected → other, then by name.
-  const outcomePriority: Record<string, number> = {
-    completed: 0,
-    missed: 1,
-    cancelled: 2,
-    rejected: 3,
-    other: 4,
-  }
-  for (const [, arr] of buckets) {
-    arr.sort((a, b) => {
-      const oa = outcomeOf(a)
-      const ob = outcomeOf(b)
-      if (oa !== ob) return outcomePriority[oa] - outcomePriority[ob]
+  // Flat list, most recent first. History is a lookup ("when did we refer this
+  // person, and what came of it"), not a schedule, so grouping by Saturday —
+  // which is how Dawson works week to week — buried each card under a header
+  // and, with only one or two referrals per Saturday, made the page mostly
+  // chrome. Recency plus the search box above answers both jobs directly.
+  const ordered = useMemo(() => {
+    return [...visible].sort((a, b) => {
+      const da = activityDate(a)
+      const db = activityDate(b)
+      if (da !== db) return da < db ? 1 : -1
       return a.clientName.localeCompare(b.clientName)
     })
-  }
-
-  const sortedDates = Array.from(buckets.keys()).sort().reverse()
-
-  // Auto-collapse Saturdays older than 4 weeks (28 days).
-  const now = new Date()
-  const fourWeeksAgo = new Date(now)
-  fourWeeksAgo.setDate(fourWeeksAgo.getDate() - 28)
-  const fourWeeksAgoISO = fourWeeksAgo.toISOString().split('T')[0]
+  }, [visible])
 
   return (
     <>
@@ -439,20 +322,14 @@ export default function HistoryClient({
           >
             Filter by staff:
           </label>
+          {/* Width lives in globals.css (.fa-history-staff-select): the label
+              plus a 200px select overflows a phone, so below 1280px the select
+              takes its own full-width line. */}
           <select
+            className="fa-history-staff-select"
             value={staffFilter}
             onChange={e => setStaffFilter(e.target.value)}
-            style={{
-              padding: '7px 14px',
-              borderRadius: '7px',
-              border: '1px solid #EDE9E1',
-              fontSize: '13px',
-              color: '#2C3A4A',
-              background: 'white',
-              cursor: 'pointer',
-              fontFamily: 'inherit',
-              minWidth: '200px',
-            }}
+            style={FILTER_SELECT}
           >
             <option value="all">All Staff</option>
             {staffNames.map(name => (
@@ -507,7 +384,10 @@ export default function HistoryClient({
             }}
           />
         </div>
-        <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+        {/* Wrapping lives in globals.css (.fa-history-chips): below 1280px both
+            chip rows become one-line horizontal strips instead of wrapping to
+            two rows each and pushing the results off screen. */}
+        <div className="fa-history-chips" style={{ gap: '6px' }}>
           {DATE_CHIPS.map(c => {
             const active = dateRange === c.key
             return (
@@ -533,8 +413,39 @@ export default function HistoryClient({
         </div>
       </div>
 
+      {/* Below 1280px the two chip rows are replaced by these — same state, so
+          the desktop chips are untouched. Ten chips wrapped to four rows owned
+          most of the screen; as one-line strips they were compact but clipped
+          at the right edge, which read as broken. Two selects are compact and
+          complete, and match the staff filter directly above them. Their
+          options are self-labelling, so no extra label rows are needed. */}
+      <div className="fa-history-selects" style={{ gap: '8px', marginBottom: '22px' }}>
+        <select
+          value={dateRange}
+          onChange={e => setDateRange(e.target.value as DateRange)}
+          style={FILTER_SELECT}
+        >
+          {DATE_CHIPS.map(c => (
+            <option key={c.key} value={c.key}>
+              {c.label}
+            </option>
+          ))}
+        </select>
+        <select
+          value={statusFilter}
+          onChange={e => setStatusFilter(e.target.value as StatusFilter)}
+          style={FILTER_SELECT}
+        >
+          {STATUS_CHIPS.map(c => (
+            <option key={c.key} value={c.key}>
+              {c.key === 'all' ? 'All outcomes' : c.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       {/* Row 2 — status chips */}
-      <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginBottom: '22px' }}>
+      <div className="fa-history-chips" style={{ gap: '6px', marginBottom: '22px' }}>
         {STATUS_CHIPS.map(c => {
           const active = statusFilter === c.key
           return (
@@ -560,7 +471,7 @@ export default function HistoryClient({
         })}
       </div>
 
-      {visible.length === 0 ? (
+      {ordered.length === 0 ? (
         <div
           style={{
             background: 'white',
@@ -574,14 +485,7 @@ export default function HistoryClient({
           No referrals match your filters.
         </div>
       ) : (
-        sortedDates.map(date => (
-          <SaturdayGroup
-            key={date}
-            date={date}
-            referrals={buckets.get(date)!}
-            defaultOpen={date >= fourWeeksAgoISO}
-          />
-        ))
+        ordered.map(r => <HistoryCard key={r.id} r={r} />)
       )}
     </>
   )

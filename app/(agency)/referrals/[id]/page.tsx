@@ -63,7 +63,8 @@ const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1' }}>
-      <div style={{ width: '160px', flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em', paddingTop: '1px' }}>
+      {/* Label width lives in globals.css (.fa-inforow-label) so it can narrow below 1280px. */}
+      <div className="fa-inforow-label" style={{ flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em', paddingTop: '1px' }}>
         {label}
       </div>
       <div style={{ fontSize: '14px', color: '#1B2B4B', flex: 1 }}>
@@ -115,21 +116,22 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
 
-      {/* Top bar */}
-      <header className="bg-[#1B2B4B] h-16 flex items-center justify-between px-8 sticky top-0 z-50 shadow-lg">
-        <a href="/dashboard" style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(255,255,255,0.6)', textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
-          Back to Portal
-        </a>
-        <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
-          {status}
-        </span>
-      </header>
+      {/* The navy top bar this page used to hand-roll now lives in
+          AgencyPortalShell, so there is one copy of it and it carries the
+          nav. The status badge it held moves into the body below. */}
 
-      <div style={{ padding: '28px 32px', maxWidth: '960px', margin: '0 auto', display: 'grid', gridTemplateColumns: '1fr 380px', gap: '20px', alignItems: 'start' }}>
+      {/* Column tracks live in globals.css (.fa-referral-detail-grid) so they can stack below 1280px. */}
+      <div className="fa-referral-detail-grid" style={{ padding: '28px 32px', maxWidth: '960px', margin: '0 auto', display: 'grid', gap: '20px', alignItems: 'start' }}>
 
         {/* LEFT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+          {/* Status */}
+          <div>
+            <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
+              {status}
+            </span>
+          </div>
 
           {/* Client Info */}
           <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>

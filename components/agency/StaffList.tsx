@@ -1,7 +1,7 @@
 'use client'
 
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import InviteStaffModal from '../InviteStaffModal'
 
@@ -158,10 +158,11 @@ function ReadyToInviteRow({
       }}
     >
       <div style={{ background: '#C9A84C', borderRadius: '12px 0 0 12px' }} />
+      {/* Column tracks live in globals.css (.fa-staff-row-invite) so they can stack below 1280px. */}
       <div
+        className="fa-staff-row-invite"
         style={{
           display: 'grid',
-          gridTemplateColumns: '200px minmax(200px, 1fr) 100px 240px',
           alignItems: 'center',
           gap: '14px',
           padding: '14px 16px',
@@ -232,10 +233,11 @@ function AwaitingClaimRow({
       }}
     >
       <div style={{ background: isStale ? '#C0392B' : '#4A90C9', borderRadius: '12px 0 0 12px' }} />
+      {/* Column tracks live in globals.css (.fa-staff-row-awaiting) so they can stack below 1280px. */}
       <div
+        className="fa-staff-row-awaiting"
         style={{
           display: 'grid',
-          gridTemplateColumns: '200px minmax(180px, 1fr) 130px 110px 200px',
           alignItems: 'center',
           gap: '14px',
           padding: '14px 16px',
@@ -346,10 +348,11 @@ function ActiveOrInactiveRow({
       }}
     >
       <div style={{ background: accent, borderRadius: '12px 0 0 12px' }} />
+      {/* Column tracks live in globals.css (.fa-staff-row-active) so they can stack below 1280px. */}
       <div
+        className="fa-staff-row-active"
         style={{
           display: 'grid',
-          gridTemplateColumns: '210px minmax(200px, 1fr) 90px 130px 220px',
           alignItems: 'center',
           gap: '14px',
           padding: '14px 16px',
@@ -456,7 +459,10 @@ function Section({
 
   return (
     <div style={{ marginBottom: '36px' }}>
+      {/* Wrapping lives in globals.css (.fa-staff-section-header) so the action
+          button drops to its own line below 1280px instead of compressing. */}
       <div
+        className="fa-staff-section-header"
         style={{
           display: 'flex',
           alignItems: 'center',
@@ -611,6 +617,19 @@ export default function StaffList({
   const [inviteModalOpen, setInviteModalOpen] = useState(false)
   const [loading, setLoading] = useState(false)
   const [flash, setFlash] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+
+
+  // Close the confirm modal on Esc — same as InviteStaffModal.
+  useEffect(() => {
+    if (!confirm.open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) {
+        setConfirm({ open: false, action: null, id: '', name: '' })
+      }
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [confirm.open, loading])
 
 
   // -------- section buckets --------
@@ -789,7 +808,7 @@ export default function StaffList({
       {/* Confirm modal */}
       {confirm.open && cc && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
           onClick={(e) => e.target === e.currentTarget && closeConfirm()}
         >
@@ -799,7 +818,9 @@ export default function StaffList({
               borderRadius: '16px',
               padding: '36px',
               maxWidth: '440px',
-              width: '90%',
+              width: '100%',
+              maxHeight: '90vh',
+              overflowY: 'auto',
               boxShadow: '0 20px 60px rgba(27,43,75,0.2)',
             }}
           >

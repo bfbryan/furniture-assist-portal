@@ -94,16 +94,26 @@ function ConfirmModal({ modal, onConfirm, onClose, loading }: {
   onClose: () => void
   loading: boolean
 }) {
+  // Close on Esc — same as InviteStaffModal.
+  useEffect(() => {
+    if (!modal.open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [modal.open, loading, onClose])
+
   if (!modal.open) return null
   const isCancel = modal.type === 'cancel'
   const isWithdraw = modal.type === 'withdraw'
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
-      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '440px', width: '90%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
+      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '440px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
         <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
           {isWithdraw ? 'Withdraw Referral' : 'Cancel Appointment'}
         </h3>
@@ -147,6 +157,16 @@ function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading }:
     if (modal.open) { setPreferredDate(''); setFlexible(false); setError(null) }
   }, [modal.open])
 
+  // Close on Esc — same as InviteStaffModal.
+  useEffect(() => {
+    if (!modal.open) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && !loading) onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [modal.open, loading, onClose])
+
   if (!modal.open) return null
 
   const handleConfirm = () => {
@@ -158,10 +178,10 @@ function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading }:
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center"
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '500px', width: '90%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
+      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '500px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
         <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
           Reschedule Appointment
         </h3>
@@ -273,7 +293,8 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
     <div style={{ display: 'grid', gridTemplateColumns: '4px 1fr', background: 'white', borderRadius: '12px', boxShadow: '0 2px 12px rgba(27,43,75,0.07)', marginBottom: '10px' }}>
       <div style={{ background: colors.accent }} />
 
-      <div style={{ display: 'grid', gridTemplateColumns: '130px 130px 160px 180px 140px 120px 1fr', alignItems: 'start', gap: '10px', padding: '14px 16px' }}>
+      {/* Column tracks live in globals.css (.fa-referral-card-grid) so they can stack below 1280px. */}
+      <div className="fa-referral-card-grid" style={{ display: 'grid', alignItems: 'start', gap: '10px', padding: '14px 16px' }}>
 
        {/* CLIENT NAME */}
 <div>
@@ -311,20 +332,22 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
           <div style={COL_SUB}>{formatDate(r.referralDate)}</div>
         </div>
 
-        {/* APPOINTMENT */}
+        {/* APPOINTMENT — date and time share one line under the single header,
+            so mobile reads the same way the desktop column is labelled. Wraps
+            back to two lines only where the column is too narrow to hold both. */}
 <div>
   <div style={COL_HEADER}>Appointment</div>
-  <div style={COL_SUB}>
-    {status === 'Scheduled' ? formatDate(r.appointmentDate) : '—'}
+  <div style={{ ...COL_SUB, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px 6px' }}>
+    <span>{status === 'Scheduled' ? formatDate(r.appointmentDate) : '—'}</span>
+    {status === 'Scheduled' && r.appointmentTime && (
+      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+        </svg>
+        {r.appointmentTime}
+      </span>
+    )}
   </div>
-  {status === 'Scheduled' && r.appointmentTime && (
-    <div style={{ ...COL_SUB, marginTop: '3px', display: 'flex', alignItems: 'center', gap: '4px' }}>
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-      </svg>
-      {r.appointmentTime}
-    </div>
-  )}
 </div>
 
         {/* ACTIONS */}
@@ -483,9 +506,11 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
         onClose={() => setRescheduleModal({ open: false, id: '', name: '' })}
         loading={loading}
       />
-      {/* Staff filter — admin only */}
+      {/* Staff filter — admin only. Wrapping lives in globals.css
+          (.fa-filter-row): label plus select is wider than a small phone, so
+          the select takes its own line. */}
       {isAdmin && staffNames.length > 0 && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
+        <div className="fa-filter-row" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '24px' }}>
           <label style={{ fontSize: '12px', fontWeight: 700, color: '#1B2B4B', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
             Filter by Staff
           </label>
