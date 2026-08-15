@@ -91,13 +91,23 @@ export async function markReminderSent(recordId: string): Promise<void> {
   });
 }
 
-/** Create one Email Log row for a send attempt. */
+/**
+ * Create one Email Log row for a send attempt.
+ *
+ * "Withheld" (Aug 2026) is not a delivery outcome — it means we decided not to
+ * send at all, and the row exists so that decision is on the record instead of
+ * only in a console log. It is written with the reason in `bounceReason`, which
+ * is the only free-text column on the row; the portal's Email History card
+ * renders a Withheld row in amber rather than red so it does not read as a
+ * failure. It is a new option on the Status single-select and is created by the
+ * typecast below on first use, same as any other value here.
+ */
 export async function logEmailSend(params: {
   automationRecordId: string;
   clientReferralRecordId: string;
   recipientEmail: string;
   resendMessageId?: string;
-  status: "Sent" | "Delivered" | "Bounced" | "Complained" | "Failed";
+  status: "Sent" | "Delivered" | "Bounced" | "Complained" | "Failed" | "Withheld";
   bounceReason?: string;
 }): Promise<void> {
   // typecast: true matters here specifically for `Status` — it's a single

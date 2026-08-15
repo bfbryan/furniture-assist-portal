@@ -1277,7 +1277,14 @@ const EMAIL_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
   Bounced:    { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
   Complained: { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
   Failed:     { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
+  // Gold, not red. A withheld notice is a decision the portal made on purpose,
+  // not a delivery that went wrong, and it should not read as an incident.
+  Withheld:   { bg: 'rgba(201,168,76,0.15)',  fg: '#8B7724' },
 }
+
+// Statuses whose Bounce Reason is an explanation rather than a fault. Rendered
+// in the same gold as the pill so the row reads as one thought.
+const EXPLANATORY_STATUSES = new Set(['Withheld'])
 
 
 function EmailStatusPill({ status }: { status: string | null }) {
@@ -1346,7 +1353,10 @@ function EmailHistoryCard({ referral, entries, loading }: {
                 {[formatSentAt(e.sentAt), e.recipient].filter(Boolean).join(' · ') || '—'}
               </div>
               {e.bounceReason && (
-                <div style={{ fontSize: '11px', color: '#C0392B', marginTop: '3px', lineHeight: 1.5 }}>
+                <div style={{
+                  fontSize: '11px', marginTop: '3px', lineHeight: 1.5,
+                  color: EXPLANATORY_STATUSES.has(e.status ?? '') ? '#8B7724' : '#C0392B',
+                }}>
                   {e.bounceReason}
                 </div>
               )}
@@ -1434,11 +1444,21 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // Refetch the referral after a successful mutation (cancel/reschedule) so
   // the header status badge, appointment date/time, and action buttons all
   // reflect the new state without a full page reload.
+  //
+  // The email history is refetched with it. A reschedule or a cancel is exactly
+  // the moment a new Email Log row appears — including a Withheld row when the
+  // confirmation guard suppresses a reschedule notice — and this card is where
+  // Dawson is meant to see that. Loaded once on mount, it would have gone on
+  // showing the state from before the action he just took.
   const refetchReferral = () => {
     if (!referralId) return
     fetch(`/api/dawson/referrals/${referralId}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(data => setReferral(data))
+      .catch(() => {})
+    fetch(`/api/dawson/referrals/${referralId}/emails`, { cache: 'no-store' })
+      .then(r => (r.ok ? r.json() : []))
+      .then(data => setEmailLog(Array.isArray(data) ? data : []))
       .catch(() => {})
   }
 
