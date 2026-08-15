@@ -219,7 +219,12 @@ function ReferralCard({ referral, onAction }: { referral: Referral; onAction: (i
 function RescheduleRequestCard({ referral, availableDates, onAction, onOverride, busy }: {
   referral: Referral
   availableDates: AvailableDate[]
-  onAction: (id: string, preferredDate: string, appointmentTime: string | null) => Promise<string | null>
+  onAction: (
+    id: string,
+    name: string,
+    preferredDate: string,
+    appointmentTime: string | null,
+  ) => Promise<{ ok: false; message: string } | { ok: true; notice: string | null }>
   onOverride: (referral: Referral) => void
   busy: boolean
 }) {
@@ -235,8 +240,10 @@ function RescheduleRequestCard({ referral, availableDates, onAction, onOverride,
     if (!referral.preferredDate) return
     setLoading(true)
     setError(null)
-    const message = await onAction(referral.id, referral.preferredDate, referral.preferredTime)
-    if (message) setError(message)
+    // On success the parent removes this card and, if a notice was withheld,
+    // surfaces it on the page — this card is gone by then.
+    const result = await onAction(referral.id, referral.clientName, referral.preferredDate, referral.preferredTime)
+    if (!result.ok) setError(result.message)
     setLoading(false)
   }
 
@@ -359,6 +366,11 @@ export default function AwaitingReviewPage() {
   const [overrideModal, setOverrideModal] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' })
   const [overrideLoading, setOverrideLoading] = useState(false)
   const [overrideError, setOverrideError] = useState<string | null>(null)
+  // Reschedules that went through but whose notice was withheld by the
+  // confirmation guard. Kept at page level and not auto-dismissed: the card is
+  // removed from the queue on success, so this is the only thing left on screen
+  // saying the agency was not emailed. Also on the record's Email Log.
+  const [withheldNotices, setWithheldNotices] = useState<string[]>([])
 
   useEffect(() => {
     fetch('/api/dawson/referrals?review=Pending')
@@ -387,13 +399,21 @@ export default function AwaitingReviewPage() {
    * re-arming the reminder and emailing the agency a regenerated slip.
    *
    * Then clears the record out of this queue by setting the review back to
-   * 'Approved'. Returns null on success, or a message to show on the card.
+   * 'Approved'.
+   *
+   * Returns an error to show on the card, or — on success — an optional notice
+   * to show on the page. The success notice exists for the confirmation guard:
+   * when a referral's appointment confirmation was never sent, the reschedule
+   * still happens but the agency is NOT emailed about it, and the card is gone
+   * from the queue a moment later, so this is the only chance to tell Dawson
+   * at the moment he acts. It is also written to the record's Email Log.
    */
   async function applyReschedule(
     id: string,
+    name: string,
     preferredDate: string,
     appointmentTime: string | null,
-  ): Promise<string | null> {
+  ): Promise<{ ok: false; message: string } | { ok: true; notice: string | null }> {
     try {
       const res = await fetch(`/api/dawson/referrals/${id}/reschedule`, {
         method: 'POST',
@@ -402,11 +422,16 @@ export default function AwaitingReviewPage() {
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
-        return body.error || `Reschedule failed (${res.status})`
+        return { ok: false, message: body.error || `Reschedule failed (${res.status})` }
       }
 
+      const body = await res.json().catch(() => ({}))
+      const notice = body?.rescheduleNotice
+      const withheld: string | null =
+        notice && notice.skipped && notice.message ? `${name}: ${notice.message}` : null
+
       // The reschedule has committed at this point. If this second call fails
-      // the appointment IS moved and the agency HAS been emailed — the record
+      // the appointment IS moved and any notice has already gone — the record
       // just stays in the queue, which is the safe way round.
       const reviewRes = await fetch(`/api/dawson/referrals/${id}/review`, {
         method: 'PATCH',
@@ -414,22 +439,26 @@ export default function AwaitingReviewPage() {
         body: JSON.stringify({ review: 'Approved' }),
       })
       if (!reviewRes.ok) {
-        return 'Rescheduled and the agency has been emailed, but this record could not be cleared from the queue. Reload and approve it by hand.'
+        return {
+          ok: false,
+          message: 'Rescheduled, but this record could not be cleared from the queue. Reload and approve it by hand.',
+        }
       }
 
       handleAction(id)
-      return null
+      return { ok: true, notice: withheld }
     } catch {
-      return 'Network error — please try again.'
+      return { ok: false, message: 'Network error — please try again.' }
     }
   }
 
   async function handleOverrideConfirm(preferredDate: string, appointmentTime: TimeSlot | null) {
     setOverrideLoading(true)
     setOverrideError(null)
-    const message = await applyReschedule(overrideModal.id, preferredDate, appointmentTime)
+    const result = await applyReschedule(overrideModal.id, overrideModal.name, preferredDate, appointmentTime)
     setOverrideLoading(false)
-    if (message) { setOverrideError(message); return }
+    if (!result.ok) { setOverrideError(result.message); return }
+    if (result.notice) setWithheldNotices(prev => [...prev, result.notice!])
     setOverrideModal({ open: false, id: '', name: '' })
   }
 
@@ -476,6 +505,14 @@ export default function AwaitingReviewPage() {
             {overrideError}
           </div>
         )}
+
+        {/* Gold, not red: the reschedule worked. What did not happen is the
+            email, on purpose. Stays until the page is left. */}
+        {withheldNotices.map((n, i) => (
+          <div key={i} style={{ background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.35)', borderRadius: '8px', padding: '10px 14px', marginBottom: '10px', fontSize: '12.5px', color: '#7A6A28', lineHeight: 1.6 }}>
+            {n}
+          </div>
+        ))}
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899' }}>Loading...</div>

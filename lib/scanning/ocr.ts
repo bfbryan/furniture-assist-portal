@@ -1130,8 +1130,14 @@ async function applyScanReschedule(
       'Original Appointment fields and no reschedule email was sent.'
     )
   } else if (outcome.rescheduleNotice && outcome.rescheduleNotice.skipped) {
+    // The confirmation guard supplies a full sentence explaining itself; the
+    // older skip reasons ('disabled', 'no agency email') are bare tokens. Prefer
+    // the sentence so the volunteer reading OCR Notes on the record gets the
+    // whole story rather than one word.
     notes.push(
-      `Rescheduled, but the reschedule email was not sent (${outcome.rescheduleNotice.reason}).`
+      outcome.rescheduleNotice.message
+        ? `Rescheduled. ${outcome.rescheduleNotice.message}`
+        : `Rescheduled, but the reschedule email was not sent (${outcome.rescheduleNotice.reason}).`
     )
   } else if (
     outcome.rescheduleNotice &&

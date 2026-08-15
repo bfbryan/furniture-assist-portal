@@ -17,6 +17,14 @@
 // Appointment Confirmation flow instead. The caller decides that by only
 // invoking sendRescheduleNotice() when there was a previous appointment to
 // report (see the `shouldSnapshot` check in the reschedule route).
+//
+// Aug 2026 — THE CONFIRMATION GUARD. This function will not email an agency
+// about a rescheduled appointment unless that agency was told about the
+// original appointment first, i.e. unless "Confirm Email Sent" is ticked on the
+// referral. See the block marked THE GUARD below for why it lives here and not
+// in lib/referrals/reschedule.ts. A withheld notice writes a Withheld row to
+// the Email Log so the decision is visible on the record; the reschedule
+// itself is untouched, and so is the regenerated appointment slip.
 
 import { Resend } from "resend";
 import { getAutomationSettings, logEmailSend } from "@/lib/airtable/reminders";
@@ -81,10 +89,30 @@ async function markRescheduleNoticeSent(id: string): Promise<void> {
   }
 }
 
+/**
+ * 'unconfirmed' is the deliberate guard added Aug 2026 — see THE GUARD below.
+ * The rest are the pre-existing skip cases and their strings are unchanged.
+ */
+export type RescheduleNoticeSkipReason =
+  | "no automation row"
+  | "disabled"
+  | "referral not found"
+  | "no agency email"
+  | "unconfirmed";
+
 export type RescheduleNoticeResult =
-  | { skipped: true; reason: string }
+  | {
+      skipped: true;
+      reason: RescheduleNoticeSkipReason;
+      /** Operator-facing sentence. Set for 'unconfirmed'; safe to show in UI. */
+      message?: string;
+    }
   | { skipped: false; sent: true }
   | { skipped: false; sent: false; error: string };
+
+/** Shown to Dawson/Ben wherever a withheld notice surfaces. One wording. */
+export const UNCONFIRMED_WITHHELD_MESSAGE =
+  "Reschedule notice withheld: this referral's appointment confirmation was never sent, so the agency has never been told about the original appointment. The reschedule itself went through. The confirmation email will go out on the next Wednesday run and will carry the new date.";
 
 export async function sendRescheduleNotice(
   recordId: string,
@@ -125,7 +153,80 @@ export async function sendRescheduleNotice(
     // generateAndStoreSlip only returns { buffer, blobUrl } -- no filename --
     // so build the attachment filename here the same way
     // appointment-slip-notice/route.ts does for its own slip attachment.
+    //
+    // This deliberately runs BEFORE the confirmation guard below, i.e. the slip
+    // is regenerated even when the email is withheld. The slip is a record
+    // artefact, not a notification: it is the attachment on the referral that
+    // Dawson, the warehouse, and the agency portal's "View Appointment Slip"
+    // link all read. Leaving it alone on a withheld reschedule would leave a
+    // PDF on the record showing an appointment date that is no longer true,
+    // which is a quieter version of the same bug this guard exists to fix.
+    // Nothing is emailed from here when the guard trips, so regenerating it
+    // cannot reach the agency early.
     const { buffer } = await generateAndStoreSlip(recordId, f);
+
+    // ---- THE GUARD (Aug 2026) ------------------------------------------
+    // Do not tell an agency their client's appointment MOVED if we never told
+    // them it EXISTED.
+    //
+    // Reported live by Ben: a referral whose Wednesday confirmation had never
+    // gone out was rescheduled by hand onto the right date, and the agency got
+    // "your client's appointment has been changed" for an appointment they had
+    // never heard of.
+    //
+    // The check lives here rather than in lib/referrals/reschedule.ts because
+    // rescheduleReferral() is not actually the common ancestor: POST
+    // /api/dawson/referrals/submit reschedules an existing referral through its
+    // own rescheduleExistingReferral() and calls this function directly. This
+    // function is the one choke point every path reaches, so the guard covers
+    // all four rather than three.
+    //
+    // "Confirm Email Sent" is the checkbox the Wednesday cron sets via
+    // markConfirmEmailSent(), alongside "Confirm Email Sent At". Unchecked
+    // boxes come back from Airtable as undefined rather than false, hence the
+    // truthiness check rather than === false.
+    //
+    // The reschedule itself is already committed by the time this runs — the
+    // caller wrote the dates, status and reminder re-arming before calling in.
+    // Nothing here can undo any of it; only the email is withheld.
+    if (!f["Confirm Email Sent"]) {
+      // On the record, not just in a console log nobody reads. Written with the
+      // recipient it WOULD have gone to, so the row reads the same as a real
+      // send in the Email History card and in Airtable.
+      //
+      // In its own try/catch: this is the reporting of a decision that has
+      // already been made, and it must not be able to change that decision.
+      // Without this, a failed write would throw to the outer catch and come
+      // back as { sent: false, error } — reporting a deliberate suppression as
+      // an email failure. The email is withheld either way; only the paper
+      // trail is lost, and "Reschedule Email Sent At" staying blank still shows
+      // as "Not sent" on the Email History card.
+      try {
+        await logEmailSend({
+          automationRecordId: automation.id,
+          clientReferralRecordId: recordId,
+          recipientEmail: toList.join(", "),
+          status: "Withheld",
+          bounceReason: UNCONFIRMED_WITHHELD_MESSAGE,
+        });
+      } catch (logErr) {
+        console.error(
+          `Reschedule Notice: withheld for ${recordId} (confirmation never sent), ` +
+          `but the Email Log row could not be written:`,
+          logErr
+        );
+      }
+
+      // Deliberately NOT calling markRescheduleNoticeSent: no notice went out,
+      // so "Reschedule Email Sent At" must stay empty. That blank is itself
+      // part of the signal.
+      return {
+        skipped: true,
+        reason: "unconfirmed",
+        message: UNCONFIRMED_WITHHELD_MESSAGE,
+      };
+    }
+    // --------------------------------------------------------------------
 
     const rawNewApptDate = f["Appointment Date"];
     const newApptDateStr = Array.isArray(rawNewApptDate) ? rawNewApptDate[0] : rawNewApptDate;
