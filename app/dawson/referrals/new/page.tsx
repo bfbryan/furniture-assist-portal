@@ -175,6 +175,14 @@ export default function DawsonAddReferralPage() {
   // the time he reaches Address to compare against.
   const [checkingDuplicate, setCheckingDuplicate] = useState(false)
   const [duplicateMatches, setDuplicateMatches] = useState<ClientMatch[]>([])
+  // The duplicate check is a safety net, so a failed lookup must be LOUD,
+  // not silent -- this drives an amber warning banner instead of quietly
+  // pretending there were no matches. While it's set, checkedKey is left
+  // unset, which also makes Submit tell the API route to run its own
+  // fallback duplicate check rather than skip it.
+  const [duplicateCheckFailed, setDuplicateCheckFailed] = useState(false)
+  // Bumped by the warning banner's "Try again" button to re-fire the effect.
+  const [duplicateRetryNonce, setDuplicateRetryNonce] = useState(0)
   // "Same person, do not book" or "none of these" -- hides the banner
   // without a resolution. Reset the moment identity fields change again.
   const [bannerDismissed, setBannerDismissed] = useState(false)
@@ -387,12 +395,16 @@ useEffect(() => {
     let cancelled = false
     const timer = setTimeout(() => {
       setCheckingDuplicate(true)
+      setDuplicateCheckFailed(false)
       fetch('/api/dawson/referrals/check-duplicate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ firstName: first, lastName: last, dob: form.dob, phone: form.phone }),
       })
-        .then(r => r.json())
+        .then(r => {
+          if (!r.ok) throw new Error(`check-duplicate ${r.status}`)
+          return r.json()
+        })
         .then(data => {
           if (cancelled) return
           const matches: ClientMatch[] = Array.isArray(data.matches) ? data.matches : []
@@ -401,12 +413,19 @@ useEffect(() => {
           setDuplicateMatches(matches)
         })
         .catch(() => {
-          if (!cancelled) { setCheckedKey(key); setCheckingDuplicate(false); setDuplicateMatches([]) }
+          // A failed lookup is NOT "no matches" -- leave checkedKey unset so
+          // the submit route runs its own fallback check, and surface the
+          // failure in the form instead of staying quiet.
+          if (!cancelled) {
+            setCheckingDuplicate(false)
+            setDuplicateMatches([])
+            setDuplicateCheckFailed(true)
+          }
         })
     }, 600)
 
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [form.firstName, form.lastName, form.dob, form.phone, checkedKey])
+  }, [form.firstName, form.lastName, form.dob, form.phone, checkedKey, duplicateRetryNonce])
 
 
 
@@ -1277,6 +1296,32 @@ useEffect(() => {
               onDismiss={handleDuplicateDismiss}
               onReopen={handleReopenBanner}
             />
+          )}
+
+          {/* The duplicate check failing must never look the same as "no
+              matches found" -- say so, in the banner's usual spot. Submit
+              still works; the API route runs its own fallback check because
+              checkedKey was left unset. */}
+          {duplicateCheckFailed && !checkingDuplicate && (
+            <div style={{
+              background: '#FEF9EC', border: '1px solid #C9A84C', borderRadius: '8px',
+              padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#2C3A4A',
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px',
+            }}>
+              <span>
+                ⚠️ The duplicate-client check could not run, so this client was <strong>not</strong> checked
+                against existing records. You can still submit — a second check runs automatically on submit.
+              </span>
+              <button
+                onClick={() => setDuplicateRetryNonce(n => n + 1)}
+                style={{
+                  padding: '6px 14px', borderRadius: '6px', border: '1px solid #C9A84C',
+                  background: 'white', color: '#8A6D1F', fontFamily: 'var(--font-montserrat)',
+                  fontWeight: 700, fontSize: '12px', cursor: 'pointer', flexShrink: 0,
+                }}>
+                Try again
+              </button>
+            </div>
           )}
 
 

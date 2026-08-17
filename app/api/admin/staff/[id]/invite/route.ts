@@ -3,17 +3,19 @@
 // POST — Invite an EXISTING Agency Users row.
 // - Called from "Send Invite" (Unclaimed → Invited) and "Resend" (Invited → Invited).
 // - Creates a Clerk user + org membership if one doesn't exist for this record.
-// - Generates a magic sign-in token and POSTs to the Zapier webhook.
+// - Generates a magic sign-in token and emails it via the Email Automations
+//   pattern ("Agency Staff Welcome to Portal - Invite" — the Zapier webhook
+//   this used to POST to has been retired).
 // - Updates the AT row: Status, Portal Invite Status, Invited Date, Invited By, Clerk User ID.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import { easternTodayISO } from '@/lib/dates'
 import {
   getAgencyUserById,
   getAgencyUserByClerkId,
   updateAgencyUserPortalInvite,
 } from '@/lib/airtable'
+import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
 
 export async function POST(
   req: NextRequest,
@@ -122,32 +124,28 @@ export async function POST(
     )
   }
 
-  // Fire Zapier webhook for email delivery
-  const webhook = process.env.ZAPIER_STAFF_INVITE_WEBHOOK
-  if (webhook) {
-    await fetch(webhook, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        email: staff.email,
-        firstName: staff.firstName,
-        lastName: staff.lastName,
-        agencyName: staff.agencyName,
-        magicLink,
-        invitedBy: invitedByName,
-      }),
-    })
-  }
-
-  // Update the AT row
-  const today = easternTodayISO()
+  // Update the AT row. The Airtable automation that used to stamp Invited
+  // Date is switched off — the code owns the timestamp now.
   await updateAgencyUserPortalInvite(recordId, {
     status: 'Invited',
     portalInviteStatus: 'Invite Sent',
-    invitedDate: today,
+    invitedDate: new Date().toISOString(),
     invitedBy: invitedByName,
     clerkUserId,
   })
 
-  return NextResponse.json({ ok: true })
+  // Send the invitation email. While the automation is disabled in Airtable
+  // this is skipped by design and the invite still succeeds.
+  const emailResult = await sendPortalAccountEmail({
+    automationName: 'Agency Staff Welcome to Portal - Invite',
+    to: staff.email,
+    tokens: {
+      firstName: staff.firstName,
+      agencyName: staff.agencyName ?? '',
+      magicLink,
+    },
+    agencyRecordId: staff.agencyId,
+  })
+
+  return NextResponse.json({ ok: true, email: emailResult })
 }

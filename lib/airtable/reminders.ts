@@ -128,3 +128,30 @@ export async function logEmailSend(params: {
     { typecast: true }
   );
 }
+
+/**
+ * Same as logEmailSend, but for account-lifecycle emails (portal invites,
+ * inactive/reinstate notices) that have no Client Referral to hang the row
+ * on — they link the Email Log entry to the Agency instead.
+ */
+export async function logAgencyEmailSend(params: {
+  automationRecordId: string;
+  agencyRecordId: string | null;
+  recipientEmail: string;
+  resendMessageId?: string;
+  status: "Sent" | "Delivered" | "Bounced" | "Complained" | "Failed" | "Withheld";
+  bounceReason?: string;
+}): Promise<void> {
+  await base(EMAIL_LOG_TABLE).create(
+    {
+      "Email Type": [params.automationRecordId],
+      "Agency User Email": params.recipientEmail,
+      "Sent At": new Date().toISOString(),
+      "Resend Message ID": params.resendMessageId ?? "",
+      Status: params.status,
+      "Bounce Reason": params.bounceReason ?? "",
+      ...(params.agencyRecordId ? { Agency: [params.agencyRecordId] } : {}),
+    },
+    { typecast: true }
+  );
+}

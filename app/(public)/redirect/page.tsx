@@ -1,8 +1,20 @@
 // app/redirect/page.tsx
+//
+// Every sign-in lands here (Clerk's after-sign-in URL). Besides routing the
+// person to the right portal, this is where a magic-link invite becomes a
+// claimed account: an Invited user's first sign-in flips them to Active,
+// stamps their Claimed Date, and — when they are the agency's Primary Admin —
+// cascades the agency itself to Approved with its own Claimed Date. The
+// Airtable automation that used to write those stamps is switched off; this
+// code owns them now.
 
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
-import { getAgencyUserByClerkId, updateAgencyUserStatus } from '@/lib/airtable'
+import {
+  getAgencyUserByClerkId,
+  stampFirstLogin,
+  updateAgencyUserStatus,
+} from '@/lib/airtable'
 import { isDawsonPortalUser } from '@/lib/auth/dawson-access'
 
 export default async function RedirectPage() {
@@ -10,14 +22,19 @@ export default async function RedirectPage() {
   if (!userId) redirect('/sign-in')
 
   // Dawson users go straight to /dawson
-   if (isDawsonPortalUser(userId)) {
+  if (isDawsonPortalUser(userId)) {
     redirect('/dawson')
   }
 
-  // For agency users — check AT status and flip Pending → Active on first sign in
   const agencyUser = await getAgencyUserByClerkId(userId)
-  if (agencyUser && agencyUser.status === 'Pending') {
+
+  // First sign-in after an invite ('Invited'), or a legacy pre-invite-flow
+  // account ('Pending'): activate the user and write the claim stamps.
+  // stampFirstLogin no-ops when Claimed Date is already set, so a normal
+  // repeat sign-in does nothing here.
+  if (agencyUser && (agencyUser.status === 'Invited' || agencyUser.status === 'Pending')) {
     await updateAgencyUserStatus(agencyUser.id, 'Active')
+    await stampFirstLogin(agencyUser)
   }
 
   redirect('/dashboard')
