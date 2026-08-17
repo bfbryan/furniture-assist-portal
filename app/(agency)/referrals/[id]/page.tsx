@@ -740,6 +740,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           return r.json()
         })
         .then(data => { if (data) { setReferral(data); setLoading(false) } })
+        // Without this a dropped connection leaves "Loading referral..." on
+        // screen forever — the !r.ok branch above only covers a response that
+        // actually arrived.
+        .catch(() => { setError('Could not load this referral. Check your connection and try again.'); setLoading(false) })
     })
     // Saturdays for the reschedule picker. leadDays=14 matches ReferralTable —
     // agencies need more notice than Dawson does.

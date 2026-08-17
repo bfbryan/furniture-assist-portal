@@ -16,11 +16,18 @@ import HistoryClient from './HistoryClient'
 import { cityStateZip } from '@/lib/address'
 
 // Terminal statuses only.
+//
+// 'Withdrawn' has to be here. The Withdraw button writes Referral Review =
+// 'Withdrawn', getPortalStatus returns it, and ReferralTable has no group for
+// it — so the card rendered nowhere on Active, and without this line it never
+// reached History either. One click made the referral disappear from the
+// agency's portal completely. Nothing else in the app surfaces it.
 function isTerminal(r: {
   referralReview: string
   appointmentStatus: string
-}): boolean {``
+}): boolean {
   if (r.referralReview === 'Rejected') return true
+  if (r.referralReview === 'Withdrawn') return true
   if (r.appointmentStatus === 'Completed') return true
   if (r.appointmentStatus === 'Cancelled') return true
   if (r.appointmentStatus === 'No Show') return true
