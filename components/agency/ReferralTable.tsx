@@ -15,6 +15,12 @@ import {
 // /api/referrals/[id]. This file used to carry a byte-for-byte copy, which is
 // how a status added in one place could go missing in the other.
 import { getPortalStatus } from '@/lib/referrals/edit-window'
+// Shared with the referral detail page, which fills the same blank on the same
+// referral from the same three Airtable fields.
+import { requestedSlot } from '@/lib/referrals/requested-slot'
+// Staff filter state, shared with the Pending / Scheduled counts in the page
+// hero so the two cannot disagree.
+import { useStaffFilter } from './ActiveReferralsFilter'
 
 type Referral = {
   id: string
@@ -33,6 +39,10 @@ type Referral = {
   state: string | null
   zip: string | null
   phone: string | null
+  // Reschedule requests only — what the agency asked for.
+  preferredDate?: string | null
+  preferredTime?: string | null
+  schedulingFlexibility?: string | null
 }
 
 function formatDate(dateStr: string | null) {
@@ -110,6 +120,46 @@ function IconBtn({ color, onClick, title, children }: {
   )
 }
 
+function ClockIcon() {
+  return (
+    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+    </svg>
+  )
+}
+
+// The Appointment cell on a card whose reschedule request is still with
+// Furniture Assist. Renders the three shapes a real request takes, plus the
+// one a failed scan leaves behind — see lib/referrals/requested-slot.ts for
+// why that fourth case is not hypothetical.
+function RequestedSlotValue({ r }: { r: Referral }) {
+  const slot = requestedSlot(r)
+
+  if (slot.kind === 'flexible') {
+    return <div style={{ ...COL_SUB, fontStyle: 'italic' }}>Any Saturday</div>
+  }
+
+  // Nothing on the record to show. Deliberately the same em dash the other
+  // sections use for "not set", rather than a claim about what was asked for.
+  if (slot.kind === 'unknown') {
+    return <div style={COL_SUB}>—</div>
+  }
+
+  return (
+    <div style={{ ...COL_SUB, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px 6px' }}>
+      <span>{formatDate(slot.date)}</span>
+      {slot.time ? (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          <ClockIcon />
+          {slot.time}
+        </span>
+      ) : (
+        <span style={{ fontStyle: 'italic' }}>Any time</span>
+      )}
+    </div>
+  )
+}
+
 function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
   r: Referral
   onCancel: (id: string, name: string) => void
@@ -171,20 +221,29 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
 
         {/* APPOINTMENT — date and time share one line under the single header,
             so mobile reads the same way the desktop column is labelled. Wraps
-            back to two lines only where the column is too narrow to hold both. */}
+            back to two lines only where the column is too narrow to hold both.
+
+            On a Reschedule Requested card this row showed an em dash, because
+            it was only ever filled for 'Scheduled' — so the one section where
+            the agency most wants to see what it asked for was the one section
+            showing nothing. Those cards now carry the requested date and time
+            instead, under a 'Requested' header so it cannot be misread as a
+            booking. Every other section is untouched. */}
 <div>
-  <div style={COL_HEADER}>Appointment</div>
-  <div style={{ ...COL_SUB, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px 6px' }}>
-    <span>{status === 'Scheduled' ? formatDate(r.appointmentDate) : '—'}</span>
-    {status === 'Scheduled' && r.appointmentTime && (
-      <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-        </svg>
-        {r.appointmentTime}
-      </span>
-    )}
-  </div>
+  <div style={COL_HEADER}>{status === 'Reschedule' ? 'Requested' : 'Appointment'}</div>
+  {status === 'Reschedule' ? (
+    <RequestedSlotValue r={r} />
+  ) : (
+    <div style={{ ...COL_SUB, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px 6px' }}>
+      <span>{status === 'Scheduled' ? formatDate(r.appointmentDate) : '—'}</span>
+      {status === 'Scheduled' && r.appointmentTime && (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+          <ClockIcon />
+          {r.appointmentTime}
+        </span>
+      )}
+    </div>
+  )}
 </div>
 
         {/* ACTIONS */}
@@ -269,15 +328,20 @@ type StatusGroup = {
   collapsible?: boolean
 }
 
-export default function ReferralTable({ referrals, isAdmin = false }: { referrals: Referral[], isAdmin?: boolean }) {
+// The referrals and the staff filter both come from StaffFilterProvider now,
+// rather than a prop and local state respectively. That is what lets the
+// Pending / Scheduled counts in the page hero move with the dropdown down
+// here — they read the same filtered list this table renders.
+export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }) {
   const router = useRouter()
+  const { staffFilter, setStaffFilter, staffNames, filtered: filteredReferrals } =
+    useStaffFilter<Referral>()
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({ open: false, type: null, id: '', name: '' })
   const [rescheduleModal, setRescheduleModal] = useState<RescheduleModalState>({ open: false, id: '', name: '' })
   const [loading, setLoading] = useState(false)
   // A cancel / withdraw / reschedule that did not go through. Cleared when a
   // modal opens; while it is set the modal stays open and shows it.
   const [actionError, setActionError] = useState<string | null>(null)
-  const [staffFilter, setStaffFilter] = useState<string>('all')
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
 
   // Load available Saturdays for the reschedule modal.
@@ -288,14 +352,6 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
       .then(data => setAvailableDates(Array.isArray(data) ? data : []))
       .catch(() => {})
   }, [])
-
-  // Extract unique staff names for filter dropdown
-  const staffNames = Array.from(new Set(referrals.map(r => r.referredBy).filter(Boolean))) as string[]
-
-  // Apply staff filter
-  const filteredReferrals = staffFilter === 'all'
-    ? referrals
-    : referrals.filter(r => r.referredBy === staffFilter)
 
   // Cancel / Withdraw — bare POST, no body.
   //

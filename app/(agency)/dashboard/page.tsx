@@ -186,7 +186,11 @@ export default async function DashboardPage() {
         style={{ alignItems: 'start' }}
       >
         {/* ============ LEFT: Upcoming Appointments ============ */}
+        {/* Padding narrows below 1280px via .fa-dash-panel in globals.css, so
+            the appointment cards inside get the width their first line needs
+            once the status pill joins it. */}
         <div
+          className="fa-dash-panel"
           style={{
             background: 'white',
             borderRadius: '14px',
@@ -384,20 +388,66 @@ export default async function DashboardPage() {
                           }}
                         />
                         <div style={{ padding: '12px 14px', minWidth: 0 }}>
-                          {/* Client name and appointment time share the first
-                              line, the time right-aligned against the end of
-                              it. Baseline alignment does the work when the name
-                              runs long: flexbox aligns first baselines, so the
-                              time stays level with the name's FIRST line and
-                              the rest of the name wraps beneath it. */}
-                          <div
-                            style={{
-                              display: 'flex',
-                              alignItems: 'baseline',
-                              justifyContent: 'space-between',
-                              gap: '8px',
-                            }}
-                          >
+                          {/* Client name, appointment time and status pill all
+                              share the first line. The pill used to sit alone
+                              on a footer row below the address, spending a
+                              full row of card height on one word — Ben asked
+                              for it up here, and the row it left behind is
+                              gone.
+
+                              FLOAT, not flex, and that is the whole trick.
+                              Flexed, the name gets its own column for ALL of
+                              its lines, so on a 375px phone it is boxed into
+                              ~85px and a real name stacks three lines deep —
+                              measured, and taller than the footer row it was
+                              meant to save. Floated, only the name's FIRST
+                              line is short; every line after it runs the full
+                              width of the card, under the pill. So a long name
+                              costs one extra line at most and a short one
+                              costs nothing.
+
+                              overflow:hidden makes this div a block formatting
+                              context, which keeps the float inside it — the
+                              address below must not wrap around the pill too.
+                              Time and pill stay in one nowrap group so they
+                              break together rather than the pill orphaning. */}
+                          <div style={{ overflow: 'hidden' }}>
+                            <span
+                              style={{
+                                float: 'right',
+                                display: 'inline-flex',
+                                alignItems: 'baseline',
+                                gap: '8px',
+                                marginLeft: '10px',
+                                whiteSpace: 'nowrap',
+                              }}
+                            >
+                              <span
+                                style={{
+                                  fontFamily: 'var(--font-montserrat)',
+                                  fontWeight: 700,
+                                  fontSize: '13px',
+                                  color: '#1B2B4B',
+                                }}
+                              >
+                                {r.appointmentTime || '—'}
+                              </span>
+                              <span
+                                style={{
+                                  display: 'inline-block',
+                                  padding: '3px 8px',
+                                  borderRadius: '20px',
+                                  fontSize: '10px',
+                                  fontWeight: 700,
+                                  letterSpacing: '0.06em',
+                                  textTransform: 'uppercase',
+                                  background: pill.bg,
+                                  color: pill.color,
+                                }}
+                              >
+                                {pill.label}
+                              </span>
+                            </span>
                             <Link
                               href={`/referrals/${r.id}`}
                               style={{
@@ -406,35 +456,17 @@ export default async function DashboardPage() {
                                 fontSize: '14px',
                                 color: '#2A7F6F',
                                 textDecoration: 'none',
-                                display: 'block',
-                                // The name wraps rather than ellipsing: on a
-                                // phone the time leaves it ~176px, which cut
-                                // real names mid-surname. It wraps inside its
-                                // own flex column, so no line runs under the
-                                // time. minWidth:0 lets the column narrow to
-                                // the space the time leaves it; break-word is
-                                // the backstop for a surname too long to fit
-                                // one line on its own.
-                                flex: 1,
-                                minWidth: 0,
+                                // The name wraps rather than ellipsing: real
+                                // names were being cut mid-surname and you
+                                // could not tell whose appointment it was.
+                                // break-word is the backstop for a surname too
+                                // long to fit even a full line on its own.
                                 overflowWrap: 'break-word',
                               }}
                               className="hover:underline"
                             >
                               {fullName}
                             </Link>
-                            <div
-                              style={{
-                                fontFamily: 'var(--font-montserrat)',
-                                fontWeight: 700,
-                                fontSize: '13px',
-                                color: '#1B2B4B',
-                                whiteSpace: 'nowrap',
-                                flexShrink: 0,
-                              }}
-                            >
-                              {r.appointmentTime || '—'}
-                            </div>
                           </div>
                           {(address || cityStateZip) && (
                             <div
@@ -469,24 +501,6 @@ export default async function DashboardPage() {
                               )}
                             </div>
                           )}
-                        </div>
-                        <div style={{ textAlign: 'center', paddingRight: '14px' }}>
-                          <span
-                            style={{
-                              display: 'inline-block',
-                              padding: '3px 8px',
-                              borderRadius: '20px',
-                              fontSize: '10px',
-                              fontWeight: 700,
-                              letterSpacing: '0.06em',
-                              textTransform: 'uppercase',
-                              background: pill.bg,
-                              color: pill.color,
-                              whiteSpace: 'nowrap',
-                            }}
-                          >
-                            {pill.label}
-                          </span>
                         </div>
                       </div>
                     )

@@ -26,6 +26,9 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
 import { agencyEditWindow, getPortalStatus } from '@/lib/referrals/edit-window'
+// Shared with components/agency/ReferralTable.tsx, which fills the same blank
+// on the same referral from the same three Airtable fields.
+import { requestedSlot } from '@/lib/referrals/requested-slot'
 import {
   ConfirmModal,
   RescheduleModal,
@@ -71,6 +74,10 @@ type Referral = {
   appointmentStatus: string
   appointmentDate: string | null
   appointmentTime: string | null
+  // Reschedule requests only — what the agency asked for.
+  preferredDate: string | null
+  preferredTime: string | null
+  schedulingFlexibility: string | null
   appointmentSlipUrl: string | null
   clientReceiptUrl: string | null
   dataPageUrl: string | null
@@ -697,6 +704,46 @@ function ItemsReceivedCard({ disbursed }: { disbursed: ItemsDisbursed | null }) 
   )
 }
 
+// The Appointment card's Date/Time rows while a reschedule request is open.
+// `Currently` is the appointment the client still holds; `Requested` is what
+// the agency asked for. Same helper the Reschedule Requested cards on the
+// referral list use, so the two surfaces cannot drift.
+function RequestedRows({ referral }: { referral: Referral }) {
+  const slot = requestedSlot(referral)
+
+  const requested =
+    slot.kind === 'date' ? (
+      <>
+        {formatDate(slot.date)}
+        {slot.time ? ` · ${slot.time}` : ''}
+        {!slot.time && <span style={{ color: '#7A8899' }}> · any time</span>}
+      </>
+    ) : slot.kind === 'flexible' ? (
+      <span style={{ color: '#7A8899' }}>Any Saturday</span>
+    ) : (
+      // Nothing recorded — a scanned reschedule whose date could not be read
+      // lands here. Says so rather than inventing a preference.
+      <span style={{ color: '#7A8899' }}>No date requested</span>
+    )
+
+  return (
+    <>
+      <InfoRow
+        label="Currently"
+        value={
+          referral.appointmentDate ? (
+            <>
+              {formatDate(referral.appointmentDate)}
+              {referral.appointmentTime ? ` · ${referral.appointmentTime}` : ''}
+            </>
+          ) : null
+        }
+      />
+      <InfoRow label="Requested" value={<span style={{ fontWeight: 700 }}>{requested}</span>} />
+    </>
+  )
+}
+
 function DocLink({ href, label, color }: { href: string; label: string; color: string }) {
   return (
     <a href={href} target="_blank" rel="noreferrer"
@@ -962,8 +1009,28 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
           <Card accent={READ_ACCENT} title="Appointment">
             <InfoRow label="Status" value={<span style={{ fontWeight: 700, color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>} />
-            <InfoRow label="Date" value={status === 'Scheduled' || status === 'Completed' ? formatDate(referral.appointmentDate) : '—'} />
-            <InfoRow label="Time" value={status === 'Scheduled' || status === 'Completed' ? referral.appointmentTime : '—'} />
+
+            {/* While a reschedule request is with Furniture Assist, both rows
+                showed an em dash — they were gated on 'Scheduled' or
+                'Completed'. The same blank the Reschedule Requested cards had,
+                on the same referral, which is why both are fixed here.
+
+                Two rows rather than the list card's one, because this page has
+                the room and the list card does not. A request changes nothing
+                until Dawson acts: the client still has the appointment they
+                had, and an agency reading only "Requested Oct 3" could tell
+                them not to come on Sep 26. Showing what they hold next to what
+                they asked for is the reading that cannot go wrong, and it
+                matches the internal review screen's own Currently / Requested
+                pair. */}
+            {status === 'Reschedule' ? (
+              <RequestedRows referral={referral} />
+            ) : (
+              <>
+                <InfoRow label="Date" value={status === 'Scheduled' || status === 'Completed' ? formatDate(referral.appointmentDate) : '—'} />
+                <InfoRow label="Time" value={status === 'Scheduled' || status === 'Completed' ? referral.appointmentTime : '—'} />
+              </>
+            )}
 
             {/* The slip is the "here is your appointment" document, so it is
                 shown only while there is a settled future appointment to hold:
