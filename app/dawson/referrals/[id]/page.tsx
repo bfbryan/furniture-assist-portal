@@ -83,18 +83,6 @@ type Referral = {
 }
 
 
-// One row of the Email Log table, as /api/dawson/referrals/[id]/emails
-// returns it. Mirrors EmailLogEntry in lib/airtable/email-log.ts.
-type EmailLogEntry = {
-  id: string
-  type: string | null
-  status: string | null
-  sentAt: string | null
-  recipient: string | null
-  bounceReason: string | null
-}
-
-
 // ---------------------------------------------------------------------------
 // Constants
 // ---------------------------------------------------------------------------
@@ -1239,16 +1227,27 @@ function InternalNotesCard({
 
 // Sits beside Internal Notes and answers "has this client been told?".
 //
-// Two sources, because they answer two different questions:
+// MILESTONES come off the referral row itself — the five "…Sent At" stamps the
+// notification modules write as each email fires. They are the checklist: all
+// five are always listed, including the ones that have not happened, so a
+// missing confirmation is visible rather than absent.
 //
-//   MILESTONES come off the referral row itself — the five "…Sent At" stamps
-//   the notification modules write as each email fires. They are the checklist:
-//   all five are always listed, including the ones that have not happened, so
-//   a missing confirmation is visible rather than absent.
+// Aug 2026: this card also carried a DELIVERY LOG — the Email Log table, one
+// row per send attempt, with what Resend said afterwards. Dropped at Ben's
+// request: on a normal referral it restated the milestones directly above it,
+// one row for one row, and it was the tallest thing in the right column.
 //
-//   DELIVERY LOG is the Email Log table, one row per send attempt, carrying
-//   what Resend said afterwards. This is where a bounce shows up — a milestone
-//   stamp only records that we tried.
+// WHAT THIS COSTS, stated plainly because nothing else in the UI covers it:
+// the log was the only place DELIVERY OUTCOME was visible — bounced,
+// complained, failed, withheld. A milestone stamp only records that we tried
+// to send, not that it arrived. /dawson/reports/email-log is still the empty
+// placeholder it always was, so until that rollup is built, a "the client
+// never got the email" question has to be answered from the Email Log table
+// in Airtable directly.
+//
+// Nothing was deleted to achieve this: the Email Log table still gets its row
+// per send, and /api/dawson/referrals/[id]/emails still returns the
+// per-referral rows, so restoring this block is a UI change on its own.
 const EMAIL_MILESTONES = [
   { key: 'confirmation', label: 'Appointment Confirmation' },
   { key: 'reschedule',   label: 'Reschedule Notice' },
@@ -1271,42 +1270,7 @@ function formatSentAt(iso: string | null): string | null {
 }
 
 
-const EMAIL_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
-  Sent:       { bg: 'rgba(42,127,111,0.10)',  fg: '#2A7F6F' },
-  Delivered:  { bg: 'rgba(42,127,111,0.10)',  fg: '#2A7F6F' },
-  Bounced:    { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
-  Complained: { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
-  Failed:     { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
-  // Gold, not red. A withheld notice is a decision the portal made on purpose,
-  // not a delivery that went wrong, and it should not read as an incident.
-  Withheld:   { bg: 'rgba(201,168,76,0.15)',  fg: '#8B7724' },
-}
-
-// Statuses whose Bounce Reason is an explanation rather than a fault. Rendered
-// in the same gold as the pill so the row reads as one thought.
-const EXPLANATORY_STATUSES = new Set(['Withheld'])
-
-
-function EmailStatusPill({ status }: { status: string | null }) {
-  if (!status) return null
-  const c = EMAIL_STATUS_COLORS[status] ?? { bg: 'rgba(122,136,153,0.12)', fg: '#7A8899' }
-  return (
-    <span style={{
-      fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em',
-      padding: '2px 8px', borderRadius: '12px',
-      background: c.bg, color: c.fg, flexShrink: 0,
-    }}>
-      {status}
-    </span>
-  )
-}
-
-
-function EmailHistoryCard({ referral, entries, loading }: {
-  referral: Referral
-  entries: EmailLogEntry[]
-  loading: boolean
-}) {
+function EmailHistoryCard({ referral }: { referral: Referral }) {
   const stamps = referral.emailSentAt
 
   return (
@@ -1329,41 +1293,6 @@ function EmailHistoryCard({ referral, entries, loading }: {
         })}
       </div>
 
-      <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #EDE9E1' }}>
-        <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: READ_ACCENT, marginBottom: '8px' }}>
-          Delivery Log
-        </div>
-
-        {loading ? (
-          <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>Loading…</div>
-        ) : entries.length === 0 ? (
-          <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>
-            No emails logged against this client yet.
-          </div>
-        ) : (
-          entries.map(e => (
-            <div key={e.id} style={{ padding: '7px 0', borderBottom: '1px solid #F7F5F1' }}>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#1B2B4B', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {e.type ?? 'Unknown email'}
-                </span>
-                <EmailStatusPill status={e.status} />
-              </div>
-              <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {[formatSentAt(e.sentAt), e.recipient].filter(Boolean).join(' · ') || '—'}
-              </div>
-              {e.bounceReason && (
-                <div style={{
-                  fontSize: '11px', marginTop: '3px', lineHeight: 1.5,
-                  color: EXPLANATORY_STATUSES.has(e.status ?? '') ? '#8B7724' : '#C0392B',
-                }}>
-                  {e.bounceReason}
-                </div>
-              )}
-            </div>
-          ))
-        )}
-      </div>
     </Card>
   )
 }
@@ -1392,21 +1321,11 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // see completedLocked below).
   const [readyForPostApptEmail, setReadyForPostApptEmail] = useState(false)
   const [emailToggleSaving, setEmailToggleSaving] = useState(false)
-  // Outbound email history. Loaded alongside the referral rather than as part
-  // of it — see the note on /api/dawson/referrals/[id]/emails.
-  const [emailLog, setEmailLog] = useState<EmailLogEntry[]>([])
-  const [emailLogLoading, setEmailLogLoading] = useState(true)
 
 
   useEffect(() => {
     params.then(({ id }) => {
       setReferralId(id)
-
-      fetch(`/api/dawson/referrals/${id}/emails`, { cache: 'no-store' })
-        .then(r => (r.ok ? r.json() : []))
-        .then(data => setEmailLog(Array.isArray(data) ? data : []))
-        .catch(() => {})
-        .finally(() => setEmailLogLoading(false))
 
       fetch(`/api/dawson/referrals/${id}`, { cache: 'no-store' })
         .then(async r => {
@@ -1445,20 +1364,14 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // the header status badge, appointment date/time, and action buttons all
   // reflect the new state without a full page reload.
   //
-  // The email history is refetched with it. A reschedule or a cancel is exactly
-  // the moment a new Email Log row appears — including a Withheld row when the
-  // confirmation guard suppresses a reschedule notice — and this card is where
-  // Dawson is meant to see that. Loaded once on mount, it would have gone on
-  // showing the state from before the action he just took.
+  // The referral row carries the five "…Sent At" milestone stamps the Email
+  // History card reads, so refetching it refreshes that card too — a reschedule
+  // or a cancel is exactly the moment one of those stamps lands.
   const refetchReferral = () => {
     if (!referralId) return
     fetch(`/api/dawson/referrals/${referralId}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(data => setReferral(data))
-      .catch(() => {})
-    fetch(`/api/dawson/referrals/${referralId}/emails`, { cache: 'no-store' })
-      .then(r => (r.ok ? r.json() : []))
-      .then(data => setEmailLog(Array.isArray(data) ? data : []))
       .catch(() => {})
   }
 
@@ -1839,7 +1752,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               notes card to match it. */}
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', alignItems: 'start' }}>
             <InternalNotesCard referral={referral} locked={recordLocked} onSaved={applyUpdate} />
-            <EmailHistoryCard referral={referral} entries={emailLog} loading={emailLogLoading} />
+            <EmailHistoryCard referral={referral} />
           </div>
           <ItemsRequestedCard referral={referral} locked={recordLocked} onSaved={applyUpdate} />
           {/* Completed only. Cancelled / No Show / Scheduled mean nothing was

@@ -25,6 +25,7 @@ type Referral = {
   state: string | null
   zip: string | null
   staffPhone?: string | null
+  clientReceiptUrl: string | null
 }
 
 
@@ -87,6 +88,53 @@ function displayLastFirst(clientName: string): string {
   const last = parts[parts.length - 1]
   const first = parts.slice(0, -1).join(' ')
   return `${last}, ${first}`
+}
+
+
+// Client receipt, on the far right of a completed row.
+//
+// The agency-side History card already has exactly this (the ReceiptIcon in
+// app/(agency)/referrals/history/HistoryClient.tsx) and has had since it
+// shipped; this is the internal page catching up, not a second copy of an
+// agency feature. Same teal, same document glyph, same completed-only rule, so
+// the two History pages read alike. Sized 36px/8px to match IconBtn, which is
+// the icon scale the rest of the internal portal uses.
+//
+// An anchor rather than IconBtn because it opens a PDF; IconBtn is a <button>
+// and wraps actions.
+//
+// The label is a plain `title`, matching the agency ReceiptIcon, rather than
+// the shared Tooltip component. Deliberate: this row list sits inside a
+// container with `overflow: hidden` (the rounded white panel below), and that
+// Tooltip renders its bubble ABOVE the icon — on the first row of each week it
+// would be clipped to a dark sliver, which is the exact failure its own header
+// comment warns about.
+function ReceiptLink({ url }: { url: string }) {
+  return (
+    <a
+      href={url}
+      target="_blank"
+      rel="noreferrer"
+      title="Client Receipt"
+      aria-label="Client Receipt"
+      onClick={(e) => e.stopPropagation()}
+      style={{
+        width: '36px', height: '36px', borderRadius: '8px', display: 'flex',
+        alignItems: 'center', justifyContent: 'center',
+        color: '#2A7F6F', background: 'rgba(42,127,111,0.10)',
+        textDecoration: 'none', flexShrink: 0,
+      }}
+    >
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+        strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+        <polyline points="14 2 14 8 20 8" />
+        <line x1="16" y1="13" x2="8" y2="13" />
+        <line x1="16" y1="17" x2="8" y2="17" />
+        <line x1="10" y1="9" x2="8" y2="9" />
+      </svg>
+    </a>
+  )
 }
 
 
@@ -170,7 +218,15 @@ function ReferralRow({ r, onReschedule, onCancel }: {
           No Show is just history here too -- same as the Add Referral
           flow, which stops offering "reschedule in place" at that point
           and treats it as a fresh referral instead. */}
+      {/* Completed rows carry the client receipt here instead. The two are
+          mutually exclusive — a row is either a No Show inside the window or a
+          Completed one, never both — so they share the cell without colliding.
+          Not every completed referral has a receipt on file (the cron writes it
+          after the visit), so the URL is checked, not assumed. */}
       <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+        {r.appointmentStatus === 'Completed' && r.clientReceiptUrl && (
+          <ReceiptLink url={r.clientReceiptUrl} />
+        )}
         {canManageNoShow ? (
           <>
             <button

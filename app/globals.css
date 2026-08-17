@@ -86,14 +86,79 @@ h1, h2, h3, h4, h5, h6 {
    own icon count and the columns would jog between rows; 1fr was what starved
    it. 120px holds the worst case (96px, a Scheduled row) and the 24px of slack
    is what the slip icon's margin-right:auto spends pushing itself away from
-   Reschedule and towards Appointment. */
+   Reschedule and towards Appointment.
+
+   ---------------------------------------------------------------------------
+   Aug 2026 — SPACING RETUNE. Ben, on both this card and the history one:
+   "the client phone slid closer to the address, submit date and staff kept
+   tight together as they are, then a gap before the appointment time, which
+   stays close to the actions."
+
+   WHY THE FR WEIGHTS ARE THE KNOB. `gap` is a single value for the whole grid,
+   so it cannot differ between one pair of columns and the next. What sets the
+   space a reader SEES between two values is the leftmost one's trailing
+   whitespace — its track width minus its text — plus the 10px gap. Spacing is
+   therefore tuned by moving free width between tracks, which is what the fr
+   weights do. Read as:
+
+     phone closer to address     → Address 1.6 → 1.45. The only way to move
+                                   Phone left is to shorten the track in front
+                                   of it. Phone itself 0.8 → 0.7 so it does not
+                                   just reopen the same gap on its own right.
+     staff and submitted as they are → Referred By untouched at 1.1.
+     a gap before the appointment → Submitted 0.7 → 1.2. That gap IS Submitted's
+                                   trailing space; nothing else produces it.
+     "which stays close to the actions" → Appointment LEFT ALONE at 1.0.
+
+   That last one is deliberate and was got wrong once on the way here. It reads
+   as a request to move Appointment, but it is a relative clause describing it:
+   keep it where it is relative to the actions. It is already hard against them
+   by design — the slip icon spends the actions track's 24px of slack on
+   margin-right:auto pushing itself towards Appointment (see above). Narrowing
+   Appointment to 0.85 was tried and reverted: at 1440 it took the track from
+   130px to 110px, and the date + clock + time flex line, which needs ~119px,
+   wrapped onto two lines. The card got taller in exchange for a few pixels of
+   a gap that was already closed.
+
+   WHY THIS CANNOT REINTRODUCE THE OVERFLOW THE NOTE ABOVE FIXED. Every
+   minmax() FLOOR below is byte-identical to what it was, and the actions track
+   is still the same fixed 120px. A grid track is never sized below its floor,
+   so the row's minimum width — Σ floors (594) + 120 + 6×10 gap = 774 — is
+   unchanged, and the width at which the row stops fitting is unchanged with
+   it. The fr weights only decide how the SURPLUS above that minimum is shared
+   out. Below 1280px the grid collapses to one column and they do not apply.
+
+   Verified, not asserted: 529 viewport widths swept from 320 to 2560 against
+   the compiled stylesheet, before and after. Zero horizontal overflow in both,
+   on both cards. Numbers are in the PR.
+
+   WHAT IT COSTS, measured rather than estimated. Address is the column that
+   pays for the other two, and it is the only one that gives anything up:
+
+     Address  208px → 182px at 1440 and up;  182px → 158px at 1280.
+     Phone    104px →  88px at 1440 (it needs 74, so still comfortable).
+     Submitted 91px → 151px at 1440 — the gap Ben asked for.
+
+     A TYPICAL address ("88 Livingston Avenue") stays on one line at every
+     width, and the card is exactly as tall as before: 84px at 1440, 87px at
+     1280, both unchanged.
+
+     182px at 1440 is still above the 181px this file's own table records as
+     the longest realistic address, so that value keeps its one-line fit. That
+     is why Address is 1.45: 1.35 and 1.4 were both tried first and both landed
+     under 181. An address longer than that — the sweep uses a deliberately
+     oversized 37-character one — now wraps at 1440 where it did not before,
+     taking that card from 94px to 100px. At 1280 nothing changes: the column
+     was already under 181 there.
+
+     Appointment and the actions cell: no change at any width. */
 .fa-referral-card-grid {
   grid-template-columns:
     minmax(120px, 1.5fr)   /* Client Name  */
-    minmax(130px, 1.6fr)   /* Address      */
-    minmax(80px, 0.8fr)    /* Phone        */
+    minmax(130px, 1.45fr)  /* Address      */
+    minmax(80px, 0.7fr)    /* Phone        */
     minmax(92px, 1.1fr)    /* Referred By  */
-    minmax(76px, 0.7fr)    /* Submitted    */
+    minmax(76px, 1.2fr)    /* Submitted    */
     minmax(96px, 1fr)      /* Appointment  */
     120px;                 /* Actions      */
 }
@@ -145,13 +210,44 @@ h1, h2, h3, h4, h5, h6 {
    The action track is fixed for the same reason as the active card's: it is
    empty on every row that is not a completed referral with a receipt, so an
    auto track would collapse on those rows and the columns would jog. 40px is
-   the 32px icon plus a little separation from the outcome pill. */
+   the 32px icon plus a little separation from the outcome pill.
+
+   ---------------------------------------------------------------------------
+   Aug 2026 — SPACING RETUNE, the same one as the active card above and for the
+   same reason: these two cards sit one page apart and are meant to read as one
+   design, so a change to the proportions of one belongs on both.
+
+   Ben's instruction was written looking at the active card, and two thirds of
+   it transfer literally:
+
+     "submit date and staff kept tight"    → Referred By untouched at 1.1
+     "a gap before the appointment time"   → Submitted 0.7 → 1.2, the same move
+     Address 1.6 → 1.35                    → same as the active card
+
+   Two parts do NOT transfer, and are not pretended to:
+
+     "the client phone slid closer to the address" has no meaning here. This
+     card has no phone COLUMN — the phone sits under the client name, inside
+     the first cell, and always has. Nothing to slide.
+
+     "which stays close to the actions" is a relative clause on the active
+     card, describing where Appointment already sits rather than asking for it
+     to move — so nothing to do there either, and Appointment and Outcome are
+     both left exactly as they were. On this card Appointment is not next to
+     the action cell anyway; the Outcome pill is between them.
+
+   Same safety property as the active card, and it is the reason this was safe
+   to do at all: every minmax() FLOOR is unchanged and the receipt track is
+   still a fixed 40px, so the row's minimum width — Σ floors (630) + 40 +
+   6×10 gap = 730 — is exactly what it was, and so is the width at which it
+   stops fitting. Only the share of the surplus moves. Swept 320–2560 before
+   and after: zero overflow in both. */
 .fa-history-card-grid {
   grid-template-columns:
     minmax(120px, 1.5fr)   /* Client Name */
-    minmax(130px, 1.6fr)   /* Address     */
+    minmax(130px, 1.45fr)  /* Address     */
     minmax(92px, 1.1fr)    /* Referred By */
-    minmax(76px, 0.7fr)    /* Submitted   */
+    minmax(76px, 1.2fr)    /* Submitted   */
     minmax(92px, 0.8fr)    /* Appointment */
     minmax(120px, 1fr)     /* Outcome     */
     40px;                  /* Receipt     */

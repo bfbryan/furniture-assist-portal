@@ -102,7 +102,17 @@ const LANGUAGES = ['English', 'Spanish', 'Haitian Creole', 'French', 'Arabic', '
 
 const STATES = ['NJ', 'NY', 'PA', 'CT', 'DE']
 
-const EDIT_ACCENT = '#2A7F6F'
+// Card header accents. Every box on this page carries one, so the sections
+// read as separate things rather than as one long white run — Ben's ask, and
+// the Client Information card already worked this way (it takes the status
+// colour, which is why it keeps its own accent below rather than one of these).
+//
+// The two values and their meaning are lifted from the internal detail page
+// (app/dawson/referrals/[id]/page.tsx), which uses this same Card component:
+// teal marks a card you can edit, muted grey a card that is read-only. Same
+// pattern, second portal — not a new one.
+const EDIT_ACCENT = '#2A7F6F'  // teal — editable card
+const READ_ACCENT = '#7A8899'  // muted grey — read-only card
 
 function formatDate(dateStr: string | null) {
   if (!dateStr) return '—'
@@ -498,6 +508,7 @@ function ItemsRequestedCard({ referral, locked, onSaved }: {
     const list = [...parseItemsToSet(referral.items)]
     return (
       <Card
+        accent={EDIT_ACCENT}
         title="Items Requested"
         headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
       >
@@ -593,6 +604,7 @@ function YourNotesCard({ referral, locked, onSaved }: {
   if (!editing) {
     return (
       <Card
+        accent={EDIT_ACCENT}
         title="Your Notes"
         headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} label={referral.externalNotes ? 'Edit' : '+ Add'} />}
       >
@@ -644,7 +656,7 @@ function ItemsReceivedCard({ disbursed }: { disbursed: ItemsDisbursed | null }) 
   )
 
   return (
-    <Card title="Items Received">
+    <Card accent={READ_ACCENT} title="Items Received">
       {lineCount === 0 ? (
         <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic' }}>
           No items were recorded for this appointment.
@@ -904,13 +916,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           <ClientInfoCard referral={referral} locked={locked} accent={colors.accent} onSaved={applyUpdate} />
           <ItemsRequestedCard referral={referral} locked={locked} onSaved={applyUpdate} />
           {showItemsReceived && <ItemsReceivedCard disbursed={referral.itemsDisbursed} />}
-          <YourNotesCard referral={referral} locked={locked} onSaved={applyUpdate} />
         </div>
 
         {/* RIGHT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-          <Card title="Referral Details">
+          <Card accent={READ_ACCENT} title="Referral Details">
             <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
             <InfoRow label="Referred By" value={referral.referredBy} />
             <InfoRow label="Review Status" value={
@@ -920,12 +931,24 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             } />
           </Card>
 
-          <Card title="Appointment">
+          <Card accent={READ_ACCENT} title="Appointment">
             <InfoRow label="Status" value={<span style={{ fontWeight: 700, color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>} />
             <InfoRow label="Date" value={status === 'Scheduled' || status === 'Completed' ? formatDate(referral.appointmentDate) : '—'} />
             <InfoRow label="Time" value={status === 'Scheduled' || status === 'Completed' ? referral.appointmentTime : '—'} />
 
-            {referral.appointmentSlipUrl && (
+            {/* The slip is the "here is your appointment" document, so it is
+                shown only while there is a settled future appointment to hold:
+
+                  • COMPLETED — the visit has happened. The receipt below is
+                    the record of it, and the slip is a stale instruction to
+                    turn up on a date already past.
+                  • RESCHEDULE — the agency has asked to move this date, so
+                    the slip names a time nobody intends to keep. It returns by
+                    itself once Dawson lands the request on a real date.
+
+                Nothing is deleted in either case; the attachment stays on the
+                record and the internal page still links to it. */}
+            {referral.appointmentSlipUrl && status !== 'Completed' && status !== 'Reschedule' && (
               <div style={{ paddingTop: '12px' }}>
                 <DocLink href={referral.appointmentSlipUrl} label="View Appointment Slip" color="#2A7F6F" />
               </div>
@@ -950,6 +973,18 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               </div>
             )}
           </Card>
+
+          {/* Notes sit here, under Appointment, rather than at the foot of the
+              left column. Ben: "notes on far right under the appt I think makes
+              better use of space."
+
+              The left column carries Client Information, Items Requested and —
+              on a completed referral — Items Received, which is the tallest
+              card on the page. The right column held two short cards and then
+              stopped, so notes ran off the bottom of a screen that had a column
+              of empty space beside it. Below 1280px the two columns stack into
+              one, so on a phone this only moves notes further down the page. */}
+          <YourNotesCard referral={referral} locked={locked} onSaved={applyUpdate} />
 
           {referral.possibleDuplicate && (
             <div style={{ background: 'rgba(192,57,43,0.06)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '12px', padding: '16px 20px' }}>

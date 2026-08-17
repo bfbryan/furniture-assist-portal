@@ -209,6 +209,10 @@ export async function getAllReferrals(filters?: {
       referralReview: f['Referral Review'] as string,
       appointmentStatus: f['Appointment Status'] as string,
       appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
+      // Same attachment field the detail shape already reads. Added to the
+      // list shape so History can link straight to a completed client's
+      // receipt without opening the record.
+      clientReceiptUrl: attachmentUrl(f['Client Receipt']),
       referredBy: staffName,
       staffName,
       staffPhone,

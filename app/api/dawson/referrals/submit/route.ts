@@ -68,20 +68,29 @@
 // since a no-show reopened back into a real appointment is, from the
 // referring agency's perspective, genuinely the same kind of event.
 //
-// Scheduling behavior for a brand-new referral (June 30, 2026), unchanged:
+// Scheduling behavior for a brand-new referral (Aug 2026):
 //
-//   This route creates the referral with Appointment Status = 'Unscheduled'.
-//   The Airtable auto-schedule automation handles BOTH branches:
+//   Both branches are resolved HERE, synchronously, before the record is
+//   created. Nothing is left for an automation to finish.
 //
-//     - Specific Date: script looks up the Saturday Schedule record for
-//       the Preferred Date written here, picks the first open time slot,
-//       flips status to Scheduled. Minimum lead time: 7 days.
-//     - Flexible: script finds the next Saturday >= 21 days out with
-//       Open status, Ready to Schedule = 1, and an open slot, picks it.
+//     - Specific Date: look up the Saturday Schedule record for the
+//       Preferred Date, take the explicitly picked time if there is one
+//       (Dawson's override, uncapped) or the first slot under cap if not,
+//       and create the referral already Scheduled.
+//     - Flexible: findNextFlexibleSlot() in lib/schedule/flexible.ts picks
+//       the next Saturday at least 14 days out that is under the 50-appointment
+//       day cap and still has an hour under its own cap.
 //
 //   The form's available-dates endpoint already enforces the 7-day floor
 //   on the date picker, so the specific-date path won't get a sub-7-day
 //   date in normal use.
+//
+//   HISTORY, because the numbers here were wrong for a while: this used to
+//   create the referral 'Unscheduled' and rely on the Airtable automation
+//   at-auto-schedule-script.js to assign a date — 7 days minimum on the
+//   specific-date branch, 21 on the flexible one. That automation has been
+//   switched off. The specific-date branch was moved into code first; the
+//   flexible branch followed, at the 14 days Ben confirmed. 21 is dead.
 //
 //   Item names cleaned in the form to the 6 valid select options
 //   (verified in Airtable 06/30/26):
@@ -92,7 +101,8 @@ import { NextResponse } from 'next/server'
 import { findClientMatches, createClient, clientDataDiverges } from '@/lib/referrals/match'
 import { sendRescheduleNotice } from '@/lib/notifications/reschedule-notice'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
-import { TIME_CAPS, TIME_ORDER, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
+import { pickFirstOpenSlot, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
+import { findNextFlexibleSlot, FLEXIBLE_LEAD_DAYS } from '@/lib/schedule/flexible'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -144,14 +154,6 @@ async function findScheduleRecordByDate(isoDate: string): Promise<{
       '1pm': toInt(rec.fields['1pm'] ?? rec.fields['1pm Booked']),
     },
   }
-}
-
-// First slot under cap using TIME_ORDER. Null if all 5 are at cap.
-function pickFirstOpenSlot(bookedByTime: Record<TimeSlot, number>): TimeSlot | null {
-  for (const slot of TIME_ORDER) {
-    if (bookedByTime[slot] < TIME_CAPS[slot]) return slot
-  }
-  return null
 }
 
 // Read the current referral so we can snapshot its pre-reschedule
@@ -353,16 +355,52 @@ export async function POST(req: Request) {
   // that isn't reliably happening -- referrals were landing Unscheduled
   // with no date/time ever assigned, same symptom as the no-show
   // reschedule bug. Fixed the same way: look up the Saturday Schedule row
-  // directly and write the assignment ourselves. Only covers the
-  // Specific Date path -- the only one reachable from the current UI
-  // (there's no Flexible toggle exposed on the form, so isFlexible is
-  // always false in practice today). Flexible is left on the old
-  // automation-dependent behavior since it's untested/unused right now --
-  // flagging rather than guessing at the "next Saturday >= 21 days out"
-  // allocation logic that automation was supposed to handle.
+  // directly and write the assignment ourselves.
+  //
+  // BOTH branches are now in code. Flexible used to be left on the old
+  // automation, which has since been switched off entirely -- so a flexible
+  // referral was created 'Unscheduled' and then nothing on earth moved it.
+  // See lib/schedule/flexible.ts for the rule it now follows.
   let scheduleFields: Record<string, any> = { 'Appointment Status': 'Unscheduled' }
 
-  if (!isFlexible && preferredDate) {
+  if (isFlexible) {
+    // No date was asked for, so pick one: next Saturday at least
+    // FLEXIBLE_LEAD_DAYS out that is under the 50 day cap and still has an
+    // hour under its own cap.
+    let assignment
+    try {
+      assignment = await findNextFlexibleSlot()
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err)
+      return NextResponse.json(
+        { error: `Could not look up available Saturdays: ${msg}` },
+        { status: 500 },
+      )
+    }
+    if (!assignment) {
+      // Refused rather than created-and-left-unscheduled. A referral sitting
+      // Unscheduled forever with nobody watching it is precisely the failure
+      // this replaced, so it must not be reintroduced as the error path.
+      return NextResponse.json(
+        {
+          error:
+            `No Saturday in the next six months has room for a flexible referral ` +
+            `(needs to be at least ${FLEXIBLE_LEAD_DAYS} days out, under the 50-appointment ` +
+            `day cap, and with a time slot under its own cap). Pick a specific date and time instead.`,
+        },
+        { status: 409 },
+      )
+    }
+    scheduleFields = {
+      'Saturday Schedule': [assignment.scheduleId],
+      'Appointment Time': assignment.time,
+      'Appointment Status': 'Scheduled',
+      // Deliberately NOT writing Preferred Date. Nobody preferred this date --
+      // we chose it. Scheduling Flexibility below records 'Flexible', which is
+      // what says so, and leaving Preferred Date empty keeps "what the agency
+      // asked for" honest on the Awaiting Review page.
+    }
+  } else if (preferredDate) {
     const scheduleRow = await findScheduleRecordByDate(preferredDate)
     if (!scheduleRow) {
       return NextResponse.json({ error: `No Saturday Schedule row found for ${preferredDate}.` }, { status: 400 })

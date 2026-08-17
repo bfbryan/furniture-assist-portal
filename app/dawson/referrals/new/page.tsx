@@ -48,9 +48,27 @@ const LABEL: React.CSSProperties = {
 
 
 
+// The one border colour every field box on this page draws with.
+//
+// Dawson could not see where the fields were. #EDE9E1 (--cream-dark) against
+// the white field fill is a contrast ratio of about 1.19:1 — technically a
+// border, but below the point at which an edge reads as an edge, and this form
+// is long enough that hunting for the next box is real friction.
+//
+// #CFC7B8 is the same warm cream one step down in lightness: 1.68:1, roughly
+// 40% more contrast, and still visibly the same colour family rather than a
+// new grey. Deliberately short of the 3:1 that WCAG 1.4.11 asks for UI
+// boundaries, which lands around #A9A296 and would read as a hard outline
+// against the rest of the palette — Ben asked for "a touch darker", so the
+// step is sized to that. Easy to take further if Dawson still squints.
+//
+// This is the ONLY colour changed on the page, and it is the deliberate
+// exception to leaving the palette alone.
+const FIELD_BORDER = '#CFC7B8'
+
 const INPUT: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: '7px',
-  border: '1px solid #EDE9E1', fontSize: '14px', color: '#2C3A4A',
+  border: `1px solid ${FIELD_BORDER}`, fontSize: '14px', color: '#2C3A4A',
   background: 'white', outline: 'none',
 }
 

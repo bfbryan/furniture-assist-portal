@@ -57,12 +57,40 @@ function splitName(full: string): { firstName: string; lastName: string } {
 
 // ============ shared styles ============
 
+// Card header accents, so each section on this page stands out as its own box
+// rather than the three running together as one white column — Ben's ask, the
+// same one answered on the agency referral detail page.
+//
+// Structure and both colours are taken from that page's Card component: a 4px
+// bar of colour across the top, teal where the card can be edited and muted
+// grey where it is read-only. `overflow: hidden` is what clips the bar to the
+// card's rounded top corners.
+//
+// The 22px/24px padding that used to sit on CARD has moved to CARD_BODY
+// unchanged — it has to come off the outer box or the accent bar would be
+// inset from the card's edges instead of spanning them. Every other value
+// here is exactly what it was.
+const EDIT_ACCENT = '#2A7F6F'  // teal — editable card
+const READ_ACCENT = '#7A8899'  // muted grey — read-only card
+
 const CARD: React.CSSProperties = {
   background: 'white',
   borderRadius: '12px',
   boxShadow: '0 1px 4px rgba(27,43,75,0.06)',
-  padding: '22px 24px',
+  overflow: 'hidden',
   marginBottom: '18px',
+}
+const CARD_BODY: React.CSSProperties = {
+  padding: '22px 24px',
+}
+
+function CardShell({ accent, children }: { accent: string; children: React.ReactNode }) {
+  return (
+    <div style={CARD}>
+      <div style={{ background: accent, height: '4px' }} />
+      <div style={CARD_BODY}>{children}</div>
+    </div>
+  )
 }
 const CARD_HEADER: React.CSSProperties = {
   display: 'flex',
@@ -208,7 +236,7 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
   }
 
   return (
-    <div style={CARD}>
+    <CardShell accent={EDIT_ACCENT}>
       <div style={CARD_HEADER}>
         <div style={CARD_TITLE}>Agency Information</div>
         {canEdit && !editing && (
@@ -323,7 +351,7 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
           </div>
         </div>
       )}
-    </div>
+    </CardShell>
   )
 }
 
@@ -376,7 +404,7 @@ function MyProfileCard({ user }: { user: AgencyUser }) {
   }
 
   return (
-    <div style={CARD}>
+    <CardShell accent={EDIT_ACCENT}>
       <div style={CARD_HEADER}>
         <div style={CARD_TITLE}>My Profile</div>
         {!editing && (
@@ -440,7 +468,7 @@ function MyProfileCard({ user }: { user: AgencyUser }) {
           </div>
         </div>
       )}
-    </div>
+    </CardShell>
   )
 }
 
@@ -450,7 +478,7 @@ function AdminCard({ agency, isAdmin }: { agency: Agency; isAdmin: boolean }) {
   const hasAdmin = Boolean(agency.contactName)
 
   return (
-    <div style={CARD}>
+    <CardShell accent={READ_ACCENT}>
       <div style={CARD_HEADER}>
         <div style={CARD_TITLE}>Primary Admin</div>
       </div>
@@ -531,7 +559,7 @@ function AdminCard({ agency, isAdmin }: { agency: Agency; isAdmin: boolean }) {
           No primary administrator has been assigned yet. Contact Furniture Assist to set one.
         </div>
       )}
-    </div>
+    </CardShell>
   )
 }
 
