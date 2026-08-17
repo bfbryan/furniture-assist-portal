@@ -9,12 +9,14 @@
 // row per send with type, status, recipient, sent time and bounce reason, and
 // /api/dawson/referrals/[id]/emails already serves it per referral.
 //
-// Aug 2026: this page is now the ONLY planned home for that data. The
-// per-client view of it used to sit on the client detail page (the Delivery
-// Log block inside EmailHistoryCard) and was dropped at Ben's request for
-// duplicating the milestone list beside it. Delivery outcome — bounced,
-// withheld, failed — is therefore not visible anywhere in the portal until
-// this page is built, which raises its priority rather than lowering it.
+// Aug 2026: the per-client view of that data still lives on the client detail
+// page (the Delivery Log inside EmailHistoryCard), but it now shows only rows
+// that are NOT a clean delivery — a Delivered row said the same thing as the
+// milestone beside it. So bounced / failed / withheld are still visible per
+// referral; what no view in the portal answers is the across-all-clients
+// question ("did anything bounce this week"), which is this page's job.
+//
+// Ben is watching Resend directly in the meantime.
 //
 // Header chrome matches the other Dawson list pages so it does not read as a
 // broken route.
