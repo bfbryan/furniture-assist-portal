@@ -274,6 +274,9 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({ open: false, type: null, id: '', name: '' })
   const [rescheduleModal, setRescheduleModal] = useState<RescheduleModalState>({ open: false, id: '', name: '' })
   const [loading, setLoading] = useState(false)
+  // A cancel / withdraw / reschedule that did not go through. Cleared when a
+  // modal opens; while it is set the modal stays open and shows it.
+  const [actionError, setActionError] = useState<string | null>(null)
   const [staffFilter, setStaffFilter] = useState<string>('all')
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
 
@@ -294,15 +297,30 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
     ? referrals
     : referrals.filter(r => r.referredBy === staffFilter)
 
-  // Cancel / Withdraw — bare POST, no body
+  // Cancel / Withdraw — bare POST, no body.
+  //
+  // The response used to be discarded entirely, so a 403, a 500 from a failed
+  // Airtable write, or a dropped connection on a phone looked exactly like
+  // success: the dialog closed and the list refreshed. An agency would tell a
+  // client not to come while Furniture Assist still held the appointment.
+  // These three actions are the only ones an agency has, so the modal now
+  // stays open and says so unless the write actually landed.
   const handleConfirm = async () => {
     setLoading(true)
+    setActionError(null)
     try {
-      await fetch(`/api/referrals/${confirmModal.id}/${confirmModal.type}`, { method: 'POST' })
-    } finally {
-      setLoading(false)
+      const res = await fetch(`/api/referrals/${confirmModal.id}/${confirmModal.type}`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setActionError(body.error || 'That did not go through. Please try again.')
+        return
+      }
       setConfirmModal({ open: false, type: null, id: '', name: '' })
       router.refresh()
+    } catch {
+      setActionError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -313,21 +331,29 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
     preferredTime: string | null,
   ) => {
     setLoading(true)
+    setActionError(null)
     try {
-      await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
+      const res = await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preferredDate, preferredTime, flexible }),
       })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setActionError(body.error || 'That did not go through. Please try again.')
+        return
+      }
       // Refresh availability — the previous slot is now open, the new one is taken.
       fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
         .then(r => r.json())
         .then(data => setAvailableDates(Array.isArray(data) ? data : []))
         .catch(() => {})
-    } finally {
-      setLoading(false)
       setRescheduleModal({ open: false, id: '', name: '' })
       router.refresh()
+    } catch {
+      setActionError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
     }
   }
 
@@ -345,7 +371,13 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
     { key: 'Rejected',   sectionTitle: 'Rejected Referrals',        referrals: sortReferrals(filteredReferrals.filter(r => getPortalStatus(r.referralReview, r.appointmentStatus) === 'Rejected'),   'Rejected'),   collapsible: true },
   ]
 
-  if (referrals.length === 0) {
+  // Tested against the GROUPED total, not the incoming array. A referral whose
+  // portal status matches none of the seven groups above renders in no section
+  // (GroupSection returns null when its list is empty), so testing
+  // referrals.length meant an unmapped status produced a page with no cards and
+  // no empty state either — which reads as broken rather than empty. Any future
+  // status that nobody maps now shows "No referrals found." instead.
+  if (groups.every(g => g.referrals.length === 0)) {
     return (
       <div style={{ background: 'white', borderRadius: '12px', padding: '36px', textAlign: 'center', color: '#7A8899', fontSize: '14px' }}>
         No referrals found.
@@ -358,15 +390,17 @@ export default function ReferralTable({ referrals, isAdmin = false }: { referral
       <ConfirmModal
         modal={confirmModal}
         onConfirm={handleConfirm}
-        onClose={() => setConfirmModal({ open: false, type: null, id: '', name: '' })}
+        onClose={() => { setActionError(null); setConfirmModal({ open: false, type: null, id: '', name: '' }) }}
         loading={loading}
+        error={actionError}
       />
       <RescheduleModal
         modal={rescheduleModal}
         availableDates={availableDates}
         onConfirm={handleRescheduleConfirm}
-        onClose={() => setRescheduleModal({ open: false, id: '', name: '' })}
+        onClose={() => { setActionError(null); setRescheduleModal({ open: false, id: '', name: '' }) }}
         loading={loading}
+        submitError={actionError}
       />
       {/* Staff filter — admin only. Wrapping lives in globals.css
           (.fa-filter-row): label plus select is wider than a small phone, so

@@ -34,11 +34,13 @@ export type ConfirmModalState = {
   name: string
 }
 
-export function ConfirmModal({ modal, onConfirm, onClose, loading }: {
+export function ConfirmModal({ modal, onConfirm, onClose, loading, error }: {
   modal: ConfirmModalState
   onConfirm: () => void
   onClose: () => void
   loading: boolean
+  /** Set when the action came back non-OK. The modal stays open and says so. */
+  error?: string | null
 }) {
   // Close on Esc — same as InviteStaffModal.
   useEffect(() => {
@@ -68,6 +70,11 @@ export function ConfirmModal({ modal, onConfirm, onClose, loading }: {
             ? `Are you sure you want to withdraw the referral for ${modal.name}? It will be removed from the review queue.`
             : `Are you sure you want to cancel the appointment for ${modal.name}? Furniture Assist will be notified.`}
         </p>
+        {error && (
+          <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#C0392B' }}>
+            {error}
+          </div>
+        )}
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
           <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
             Back
@@ -88,12 +95,15 @@ export type RescheduleModalState = {
   name: string
 }
 
-export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading }: {
+export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading, submitError }: {
   modal: RescheduleModalState
   availableDates: AvailableDate[]
   onConfirm: (preferredDate: string | null, flexible: boolean, preferredTime: string | null) => void
   onClose: () => void
   loading: boolean
+  /** Set when the request came back non-OK. Shown in the same slot as the
+      local validation error, and the modal stays open. */
+  submitError?: string | null
 }) {
   const [preferredDate, setPreferredDate] = useState('')
   const [preferredTime, setPreferredTime] = useState('')
@@ -195,9 +205,9 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
           </span>
         </label>
 
-        {error && (
+        {(error || submitError) && (
           <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#C0392B' }}>
-            {error}
+            {error || submitError}
           </div>
         )}
 
