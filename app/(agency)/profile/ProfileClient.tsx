@@ -6,18 +6,21 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { cityStateZip } from '@/lib/address'
 
+// Optional Airtable fields are string | null — Airtable omits blank fields,
+// so anything not guaranteed present must not be typed as a bare string.
 type Agency = {
   id: string
   name: string
   officeName: string | null
   ein: string | null
-  address: string
+  address: string | null
   address2: string | null
-  city: string
-  state: string
-  zip: string
-  phone: string
+  city: string | null
+  state: string | null
+  zip: string | null
+  phone: string | null
   website: string | null
   contactName: string
   adminEmail: string | null
@@ -235,6 +238,8 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
     setEditing(false)
   }
 
+  const locality = cityStateZip(agency.city, agency.state, agency.zip)
+
   return (
     <CardShell accent={EDIT_ACCENT}>
       <div style={CARD_HEADER}>
@@ -260,7 +265,7 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
           </div>
           <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Address</div>
-            <div style={VALUE}>
+            <div style={agency.address || locality ? VALUE : VALUE_MUTED}>
               {agency.address}
               {agency.address2 ? (
                 <>
@@ -268,8 +273,13 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
                   {agency.address2}
                 </>
               ) : null}
-              <br />
-              {agency.city}, {agency.state} {agency.zip}
+              {locality ? (
+                <>
+                  {agency.address ? <br /> : null}
+                  {locality}
+                </>
+              ) : null}
+              {!agency.address && !locality ? 'Not set' : null}
             </div>
           </div>
           <div className="fa-profile-row" style={ROW}>

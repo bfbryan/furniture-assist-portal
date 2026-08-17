@@ -3,6 +3,7 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { formatDateOnly } from "@/lib/dates";
+import { matchesSearch } from "@/lib/search";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 // July 2026: statuses now match the six Airtable Appointment Status values
@@ -117,9 +118,7 @@ export default function AgencyReferralsPanel({
     return referrals.filter((r) => {
       const matchStatus =
         activeFilter === "All" || r.status === activeFilter;
-      const matchSearch =
-        !search.trim() ||
-        r.clientName.toLowerCase().includes(search.toLowerCase());
+      const matchSearch = matchesSearch(search, r.clientName);
       return matchStatus && matchSearch;
     });
   }, [referrals, search, activeFilter]);

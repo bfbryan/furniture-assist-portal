@@ -5,6 +5,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { TIME_CAPS, TIME_ORDER, describeDayLoad, type TimeSlot } from '@/lib/schedule/capacity'
+import { matchesSearch } from '@/lib/search'
 import AddAgencyStaffModal, { type AddStaffResult } from '@/components/internal/modals/AddAgencyStaffModal'
 import DuplicateClientBanner, { type ClientMatch } from '@/components/internal/modals/DuplicateClientModal'
 
@@ -458,7 +459,7 @@ useEffect(() => {
 
 
   const filteredAgencies = agencyQuery.trim()
-    ? agencies.filter(a => a.name.toLowerCase().includes(agencyQuery.toLowerCase()))
+    ? agencies.filter(a => matchesSearch(agencyQuery, a.name))
     : agencies
 
 

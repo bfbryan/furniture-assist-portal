@@ -5,7 +5,23 @@
 // Primary Admin link to Agency Users, so they arrive as lookups and go
 // through safeLookupString.
 
-import { airtableFetch, airtableFetchAll, safeLookupString, BASE_ID, HEADERS } from './client'
+import {
+  airtableFetch,
+  airtableFetchAll,
+  optionalString,
+  safeLookupString,
+  BASE_ID,
+  HEADERS,
+} from './client'
+
+// Airtable omits empty fields from the API response entirely, so every
+// optional column reads back `undefined` when blank — including ones the
+// UI treats as always-there, like City (75 of 129 unclaimed agencies have
+// none). These mappers used to paper over that with `as string`, which let
+// `undefined` masquerade as `string` all the way into `.toLowerCase()`
+// calls in search boxes. Optional text fields are now typed `string | null`
+// honestly; only the primary display field (Agency Name) falls back to ''
+// because everything renders and sorts on it.
 
 export async function getAgencyById(agencyId: string) {
   const data = await airtableFetch('Agencies', `/${agencyId}`)
@@ -17,21 +33,21 @@ export async function getAgencyById(agencyId: string) {
   const adminLast = safeLookupString(f['Admin Last Name']) ?? ''
   return {
     id: data.id,
-    name: f['Agency Name'] as string,
-    officeName: (f['Office Name'] as string) ?? null,
-    ein: (f['EIN#'] as string) ?? null,
-    address: f['Address'] as string,
-    address2: (f['Address 2'] as string) ?? null,
-    city: f['City'] as string,
-    state: f['State'] as string,
-    zip: f['Zip'] as string,
-    phone: f['Main Phone Number'] as string,
-    website: (f['Website'] as string) ?? null,
+    name: optionalString(f['Agency Name']) ?? '',
+    officeName: optionalString(f['Office Name']),
+    ein: optionalString(f['EIN#']),
+    address: optionalString(f['Address']),
+    address2: optionalString(f['Address 2']),
+    city: optionalString(f['City']),
+    state: optionalString(f['State']),
+    zip: optionalString(f['Zip']),
+    phone: optionalString(f['Main Phone Number']),
+    website: optionalString(f['Website']),
     contactName: `${adminFirst} ${adminLast}`.trim(),
     adminEmail: safeLookupString(f['Admin Email']) ?? null,
     adminPhone: safeLookupString(f['Admin Phone']) ?? null,
-    status: f['Status'] as string,
-    clerkOrgId: (f['Clerk Org ID'] as string) ?? null,
+    status: optionalString(f['Status']) ?? '',
+    clerkOrgId: optionalString(f['Clerk Org ID']),
   }
 }
 
@@ -60,28 +76,28 @@ export async function getAllAgencies(status?: string) {
     const adminLast = safeLookupString(f['Admin Last Name']) ?? ''
     return {
       id: record.id,
-      name: f['Agency Name'] as string,
-      ein: f['EIN#'] as string,
-      address: f['Address'] as string,
-      address2: (f['Address 2'] as string) ?? null,
-      city: f['City'] as string,
-      state: f['State'] as string,
-      zip: f['Zip'] as string,
-      phone: f['Main Phone Number'] as string,
+      name: optionalString(f['Agency Name']) ?? '',
+      ein: optionalString(f['EIN#']),
+      address: optionalString(f['Address']),
+      address2: optionalString(f['Address 2']),
+      city: optionalString(f['City']),
+      state: optionalString(f['State']),
+      zip: optionalString(f['Zip']),
+      phone: optionalString(f['Main Phone Number']),
       // Admin email is now a lookup via Primary Admin.
       email: safeLookupString(f['Admin Email']),
       contactName: `${adminFirst} ${adminLast}`.trim(),
-      status: f['Status'] as string,
+      status: optionalString(f['Status']) ?? '',
       // FIXED: was reading "Registration Date" (a field that doesn't exist).
       // The real field is "Record Creation Date".
-      registrationDate: (f['Record Creation Date'] as string) ?? null,
-      approvalDate: (f['Approval Date'] as string) ?? null,
-      invitedDate: (f['Invited Date'] as string) ?? null,
-      rejectedDate: (f['Rejected Date'] as string) ?? null,
-      website: (f['Website'] as string) ?? null,
-      officeName: (f['Office Name'] as string) ?? null,
+      registrationDate: optionalString(f['Record Creation Date']),
+      approvalDate: optionalString(f['Approval Date']),
+      invitedDate: optionalString(f['Invited Date']),
+      rejectedDate: optionalString(f['Rejected Date']),
+      website: optionalString(f['Website']),
+      officeName: optionalString(f['Office Name']),
       possibleDuplicate: (f['Possible Duplicate'] as boolean) ?? false,
-      source: (f['Source'] as string) ?? null,
+      source: optionalString(f['Source']),
       // Ben ticks Reconciled in Airtable once he has verified the imported
       // agency. Together with an Admin Email on file (via Primary Admin) it
       // gates the Invite button on the Unclaimed list.
@@ -123,48 +139,49 @@ export async function getAgencyWithDetails(agencyId: string) {
 
   return {
     id: agency.id,
-    name: af['Agency Name'] as string,
-    ein: af['EIN#'] as string,
-    address: af['Address'] as string,
-    address2: (af['Address 2'] as string) ?? null,
-    city: af['City'] as string,
-    state: af['State'] as string,
-    zip: af['Zip'] as string,
-    county: (af['County'] as string) ?? null,
-    officeName: (af['Office Name'] as string) ?? null,
-    phone: af['Main Phone Number'] as string,
-    website: (af['Website'] as string) ?? null,
+    name: optionalString(af['Agency Name']) ?? '',
+    ein: optionalString(af['EIN#']),
+    address: optionalString(af['Address']),
+    address2: optionalString(af['Address 2']),
+    city: optionalString(af['City']),
+    state: optionalString(af['State']),
+    zip: optionalString(af['Zip']),
+    county: optionalString(af['County']),
+    officeName: optionalString(af['Office Name']),
+    phone: optionalString(af['Main Phone Number']),
+    website: optionalString(af['Website']),
     // Admin-derived (lookup chain via Primary Admin → Agency Users)
     email: adminEmail,
     contactFirstName: adminFirst || null,
     contactLastName: adminLast || null,
     contactPhone: adminPhone,
     primaryAdminId,                                  // for the admin-confirm UI
-    status: af['Status'] as string,
+    status: optionalString(af['Status']) ?? '',
     // FIXED: "Registration Date" → "Record Creation Date"
-    registrationDate: (af['Record Creation Date'] as string) ?? null,
-    approvalDate: (af['Approval Date'] as string) ?? null,
-    invitedDate: (af['Invited Date'] as string) ?? null,
-    rejectedDate: (af['Rejected Date'] as string) ?? null,
-    agencyNumber: (af['Agency #'] as string) ?? null,
+    registrationDate: optionalString(af['Record Creation Date']),
+    approvalDate: optionalString(af['Approval Date']),
+    invitedDate: optionalString(af['Invited Date']),
+    rejectedDate: optionalString(af['Rejected Date']),
+    agencyNumber: optionalString(af['Agency #']),
     possibleDuplicate: (af['Possible Duplicate'] as boolean) ?? false,
-    notes: (af['Notes'] as string) ?? null,
-    source: (af['Source'] as string) ?? null,
+    notes: optionalString(af['Notes']),
+    source: optionalString(af['Source']),
     users: users.records.map((r: any) => ({
       id: r.id,
       name: `${r.fields['First Name'] ?? ''} ${r.fields['Last Name'] ?? ''}`.trim(),
-      firstName: (r.fields['First Name'] as string) ?? '',
-      lastName: (r.fields['Last Name'] as string) ?? '',
-      email: r.fields['Email'] as string,
-      phone: (r.fields['Phone Number'] as string) ?? null,
-      role: r.fields['Role'] as string,
-      status: r.fields['Status'] as string,
+      firstName: optionalString(r.fields['First Name']) ?? '',
+      lastName: optionalString(r.fields['Last Name']) ?? '',
+      // Genuinely absent on Excel-import placeholder rows — the detail page
+      // shows a "no email on file" badge for exactly this case.
+      email: optionalString(r.fields['Email']),
+      phone: optionalString(r.fields['Phone Number']),
+      role: optionalString(r.fields['Role']) ?? '',
+      status: optionalString(r.fields['Status']) ?? '',
       // FIXED: was falling back to "Registration Date" (doesn't exist).
       // Real field is "Record Creation Date" on Agency Users.
       invitedDate:
-        (r.fields['Invited Date'] as string) ??
-        (r.fields['Record Creation Date'] as string) ??
-        null,
+        optionalString(r.fields['Invited Date']) ??
+        optionalString(r.fields['Record Creation Date']),
       needsReview: (r.fields['Needs Review'] as boolean) ?? false,
       isPrimaryAdmin: primaryAdminId === r.id,
     })),
