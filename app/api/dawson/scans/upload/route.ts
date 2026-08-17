@@ -399,6 +399,12 @@ export async function POST(req: NextRequest) {
         outcome: r.outcome,
         appointmentDate: r.appointmentDate,
         errorMessage: r.errorMessage,
+        // The Notes column on the result screen renders this for a page that
+        // SUCCEEDED — a capacity override, a slot the allocator had to choose,
+        // a reschedule email that was withheld or failed. It was being dropped
+        // here, so every successful row showed a blank cell and Dawson had to
+        // open Airtable to find out any of it.
+        notice: r.notice,
       })),
       splitFailures: splitResults
         .filter((r) => r.error !== null)

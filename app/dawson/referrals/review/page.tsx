@@ -447,6 +447,13 @@ export default function AwaitingReviewPage() {
       }
 
       handleAction(id)
+      // Surfaced HERE rather than in each caller. Both routes out of a
+      // reschedule request land in this function, but only "Pick Another" was
+      // reading the returned notice — so accepting the agency's date, which is
+      // the primary green button, committed the reschedule, withheld the
+      // agency email, removed the card, and said nothing at all. Two buttons,
+      // identical data, different honesty.
+      if (withheld) setWithheldNotices(prev => [...prev, withheld])
       return { ok: true, notice: withheld }
     } catch {
       return { ok: false, message: 'Network error — please try again.' }
@@ -459,7 +466,6 @@ export default function AwaitingReviewPage() {
     const result = await applyReschedule(overrideModal.id, overrideModal.name, preferredDate, appointmentTime)
     setOverrideLoading(false)
     if (!result.ok) { setOverrideError(result.message); return }
-    if (result.notice) setWithheldNotices(prev => [...prev, result.notice!])
     setOverrideModal({ open: false, id: '', name: '' })
   }
 
