@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { clerkClient } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { getAgencyUserByClerkId, getAgencyById } from '@/lib/airtable'
+import { findDoNotServeClientByIdentity, doNotServeMessage } from '@/lib/clients/do-not-serve'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -48,6 +49,41 @@ export async function POST(req: Request) {
   } = body
 
   const dobFormatted = formatDOB(dob)
+
+  // ---- Do-not-serve block ----
+  // Same rule as the internal route, enforced on this side too: a hard block,
+  // no override, no agency-facing way past it. See lib/clients/do-not-serve.ts.
+  //
+  // This route builds a referral straight from form fields and never resolves
+  // a Clients record, so it cannot use assertClientMayBeReferred() — it has a
+  // name and a date of birth, which is what the identity lookup takes. That is
+  // a weaker hook than a record link, and it is the reason this check is here
+  // rather than being left until the route is rebuilt: whoever rebuilds it
+  // should be replacing this with the record-id assert, not adding a block
+  // that was never there.
+  //
+  // Worth knowing while reading this: agencies cannot actually submit today.
+  // /referrals/new is not linked from the agency nav, and this route still
+  // writes First Name / Address / Phone directly onto Client Referrals, which
+  // have been lookups through the Client link since the July 2026 migration —
+  // Airtable rejects those writes outright. The guard is here so that whenever
+  // this route is fixed, it is fixed with the block already in place.
+  try {
+    const flagged = await findDoNotServeClientByIdentity({ firstName, lastName, dob: dobFormatted })
+    if (flagged) {
+      return NextResponse.json(
+        { error: doNotServeMessage(flagged.name), doNotServe: true },
+        { status: 403 },
+      )
+    }
+  } catch (e: unknown) {
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json(
+      { error: `Could not verify this client's do-not-serve status, so the referral was not submitted: ${msg}` },
+      { status: 502 },
+    )
+  }
+
   const isDuplicate = await checkDuplicate(lastName, dobFormatted)
   const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
 

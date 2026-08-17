@@ -103,6 +103,7 @@ import { sendRescheduleNotice } from '@/lib/notifications/reschedule-notice'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { pickFirstOpenSlot, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
 import { findNextFlexibleSlot, FLEXIBLE_LEAD_DAYS } from '@/lib/schedule/flexible'
+import { assertClientMayBeReferred, DoNotServeError } from '@/lib/clients/do-not-serve'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -236,6 +237,22 @@ async function rescheduleExistingReferral(
   // link + Appointment Time on file from before it was marked No Show, so
   // this fires the same as any other reschedule.
   const current = await getReferral(referralId)
+
+  // Do-not-serve applies here too. This branch writes no new Client Referrals
+  // record, so it is not "creating a referral" in the literal sense — but it
+  // takes a no-show and puts that client back on a Saturday with a real time
+  // slot, which is the thing the flag exists to prevent. Leaving it out would
+  // mean the SAME banner that warns Dawson a client is flagged also carries a
+  // "Reschedule this appointment" button that sails straight past the block,
+  // while the button beside it is refused.
+  //
+  // Throws DoNotServeError, which the POST handler turns into a 403 rather
+  // than the generic 500 this function's other failures produce.
+  const currentClientLinks: string[] = current?.fields?.['Client'] ?? []
+  if (currentClientLinks[0]) {
+    await assertClientMayBeReferred(currentClientLinks[0])
+  }
+
   const currentScheduleLinks: string[] = current?.fields?.['Saturday Schedule'] ?? []
   const currentApptDateLookup = current?.fields?.['Appointment Date']
   const currentApptTime: string | undefined = current?.fields?.['Appointment Time']
@@ -344,6 +361,9 @@ export async function POST(req: Request) {
       const result = await rescheduleExistingReferral(rescheduleReferralId, { preferredDate, appointmentTime })
       return NextResponse.json({ success: true, rescheduled: true, ...result })
     } catch (e: any) {
+      if (e instanceof DoNotServeError) {
+        return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
+      }
       return NextResponse.json({ error: e.message }, { status: 500 })
     }
   }
@@ -541,6 +561,33 @@ export async function POST(req: Request) {
     }
   } catch (e: any) {
     return NextResponse.json({ error: `Client resolution failed: ${e.message}` }, { status: 500 })
+  }
+
+  // ---- Do-not-serve block ----
+  // The last thing checked before a referral record comes into existence, and
+  // deliberately placed AFTER client resolution rather than earlier: which
+  // Client this referral attaches to is only settled above, and that Client is
+  // what the flag lives on. Checking any sooner would be checking the wrong
+  // record in the divergence case, where a submitted edit forks off a fresh
+  // Client from the one the form matched.
+  //
+  // A freshly created Client cannot be flagged, so in practice this fires only
+  // on the branch that LINKS an existing one. It is run unconditionally
+  // anyway, because "this branch can't be blocked" is the kind of thing that
+  // stops being true quietly.
+  //
+  // No override exists here by design. See lib/clients/do-not-serve.ts.
+  try {
+    await assertClientMayBeReferred(resolvedClientId)
+  } catch (e: unknown) {
+    if (e instanceof DoNotServeError) {
+      return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
+    }
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json(
+      { error: `Could not verify this client's do-not-serve status, so the referral was not created: ${msg}` },
+      { status: 502 },
+    )
   }
 
   // ---- Build referral fields ----

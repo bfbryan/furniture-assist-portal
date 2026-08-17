@@ -85,9 +85,20 @@ export type ClientMatch = {
     zip: string
     language: string
     referralIds: string[]
+    // Clients.Status. Only 'DNS' changes anything here.
+    status?: string | null
   }
   history: ReferralHistoryItem[]
   scenarios: MatchScenario[]
+}
+
+// Mirrors isDoNotServeStatus in lib/clients/do-not-serve.ts, which is the
+// server-side authority. Duplicated rather than imported because that module
+// reads env vars at load and this is a client component; kept to the same
+// trim/case-insensitive rule so the banner and the block agree about what
+// counts as flagged.
+function isDoNotServe(status: string | null | undefined): boolean {
+  return typeof status === 'string' && status.trim().toUpperCase() === 'DNS'
 }
 
 // What's been typed into the form so far, for the live "on file" vs.
@@ -223,6 +234,11 @@ function MatchCard({
     !!noShowScenario.referral.referringAgency &&
     normalizeAgencyName(noShowScenario.referral.referringAgency) === normalizeAgencyName(currentAgencyName)
 
+  // Do-not-serve outranks everything else on this card. It is not another
+  // scenario competing on priority — it is a decision already taken about this
+  // person, so it replaces the actions rather than colouring them.
+  const doNotServe = isDoNotServe(match.client.status)
+
   const primary: 'active' | 'reschedule' | 'history' = activeScenario
     ? 'active'
     : canReschedule
@@ -238,9 +254,16 @@ function MatchCard({
   }
 
   return (
-    <div style={{ border: '1px solid #EDE9E1', borderRadius: '10px', padding: '18px', marginBottom: '14px' }}>
-      <div style={{ fontSize: '10px', fontWeight: 800, color: EYEBROW[primary].color, textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px' }}>
-        {EYEBROW[primary].text}
+    <div style={{
+      border: doNotServe ? '1px solid #C0392B' : '1px solid #EDE9E1',
+      borderRadius: '10px', padding: '18px', marginBottom: '14px',
+    }}>
+      <div style={{
+        fontSize: '10px', fontWeight: 800,
+        color: doNotServe ? '#C0392B' : EYEBROW[primary].color,
+        textTransform: 'uppercase', letterSpacing: '0.08em', marginBottom: '6px',
+      }}>
+        {doNotServe ? 'DO NOT SERVE' : EYEBROW[primary].text}
       </div>
       <div style={{ fontSize: '15px', fontWeight: 700, color: '#2C3A4A', marginBottom: '2px' }}>
         {match.client.firstName} {match.client.lastName}
@@ -249,7 +272,34 @@ function MatchCard({
         DOB {match.client.dob || '—'}{match.client.phone ? ` · ${match.client.phone}` : ''}
       </div>
 
-      {primary === 'active' && (
+      {/* Shown INSTEAD of the scenario banners below, not alongside them. Once
+          a client is flagged, whether they also have a no-show or an active
+          appointment is not a decision Dawson has to make — none of those
+          paths are open to him. Spelling out where the flag lives, because
+          there is nothing he can click to get past it and an unexplained
+          disabled button reads as a bug. */}
+      {doNotServe && (
+        <div
+          style={{
+            background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px',
+            padding: '12px 14px', marginBottom: '14px', color: '#C0392B',
+          }}
+        >
+          <div style={{ fontSize: '13px', fontWeight: 800, marginBottom: '4px' }}>
+            This client is marked do-not-serve
+          </div>
+          <div style={{ fontSize: '12.5px', lineHeight: 1.55, fontWeight: 500 }}>
+            They cannot be referred, and this cannot be overridden from the portal.
+            The flag is the Status field on their record in the Clients table in
+            Airtable, set to &ldquo;DNS&rdquo;. If it is wrong, change it there first.
+            <br />
+            If this is a <strong>different person</strong> with the same name, choose
+            &ldquo;None of these are the same person&rdquo; below and carry on.
+          </div>
+        </div>
+      )}
+
+      {!doNotServe && primary === 'active' && (
         <div
           style={{
             background: '#FDEDEC', border: '1px solid #F0C4BE', borderRadius: '8px',
@@ -261,7 +311,7 @@ function MatchCard({
         </div>
       )}
 
-      {primary === 'reschedule' && (
+      {!doNotServe && primary === 'reschedule' && (
         <div
           style={{
             background: '#FEF9EC', border: '1px solid #C9A84C', borderRadius: '8px',
@@ -278,7 +328,7 @@ function MatchCard({
         </div>
       )}
 
-      {primary === 'history' && historyCount > 0 && (
+      {!doNotServe && primary === 'history' && historyCount > 0 && (
         <div
           style={{
             background: '#F7F5F1', border: '1px solid #EDE9E1', borderRadius: '8px',
@@ -321,6 +371,28 @@ function MatchCard({
       ))}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+        {/* A flagged client gets NO booking controls at all — not a disabled
+            button, not an acknowledgment checkbox. Both of those say "there is
+            a way through if you find it", and there is not: the submit route
+            refuses this client whichever button is pressed. The one action
+            still offered is the one that is genuinely available, which is to
+            say this is somebody else. That path is important rather than
+            cosmetic — a common surname means a flagged record can match a
+            person who has nothing to do with them, and dismissing here creates
+            a brand-new Client that carries no flag. */}
+        {doNotServe ? (
+          <button
+            onClick={onDecline}
+            style={{
+              padding: '11px', borderRadius: '8px', border: '1px solid #EDE9E1',
+              background: 'white', color: '#2C3A4A',
+              fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
+            }}
+          >
+            Understood — do not book
+          </button>
+        ) : (
+        <>
         {primary === 'reschedule' && (
           <button
             onClick={() => onResolve('reschedule', match)}
@@ -376,6 +448,8 @@ function MatchCard({
         >
           Same person — do not book
         </button>
+        </>
+        )}
       </div>
     </div>
   )

@@ -27,6 +27,7 @@
 // scoring points.
 
 import { differenceInDaysISO, easternTodayISO } from '../dates'
+import { isDoNotServeStatus } from '../clients/do-not-serve'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -85,6 +86,11 @@ export type ClientRecord = {
   zip: string
   language: string
   referralIds: string[] // linked Client Referrals record IDs
+  // Clients.Status — Active | Served | DNS, and sometimes blank. Carried so
+  // the Add Referral banner can show a do-not-serve flag as Dawson types,
+  // rather than letting him fill in the whole form and hit a 403 at submit.
+  // Only 'DNS' means anything to the UI; see lib/clients/do-not-serve.ts.
+  status: string | null
 }
 
 export type ReferralHistoryItem = {
@@ -412,11 +418,20 @@ export async function findClientMatches(input: {
     const history = await fetchReferralHistory(referralLinks)
     const scenarios = bucketHistory(history)
 
+    // A do-not-serve client is ALWAYS worth surfacing, history or not. The
+    // rule below exists to suppress meaningless name coincidences, but a
+    // flagged client with no appointments on file is exactly the case Dawson
+    // most needs to see early: nothing else on the Add Referral page would
+    // mention it, and he would otherwise fill in the entire form before the
+    // submit route refused him. The flag is the reason to show the card, not
+    // the history.
+    const isFlagged = isDoNotServeStatus(candidate.fields['Status'])
+
     // Only surface candidates that actually have something worth showing
     // -- a name/DOB coincidence with zero relevant history isn't a
     // meaningful duplicate concern, and shouldn't pop the modal or count
     // toward 'Possible Duplicate'.
-    if (scenarios.length === 0) continue
+    if (scenarios.length === 0 && !isFlagged) continue
 
     matches.push({
       client: {
@@ -432,6 +447,7 @@ export async function findClientMatches(input: {
         zip: candidate.fields['Zip'] || '',
         language: candidate.fields['Preferred Language'] || '',
         referralIds: referralLinks,
+        status: candidate.fields['Status'] ?? null,
       },
       history,
       scenarios,
