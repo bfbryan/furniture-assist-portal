@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import AgencyReferralsPanel, { AgencyReferral, ReferralStatus } from "@/components/internal/AgencyReferralsPanel"
+import { cityStateZip } from '@/lib/address'
 
 type AgencyUser = {
   id: string
@@ -28,18 +29,20 @@ type Referral = {
   referredBy: string | null
 }
 
+// Optional Airtable fields are string | null — Airtable omits blank fields,
+// so anything not guaranteed present must not be typed as a bare string.
 type Agency = {
   id: string
   name: string
-  ein: string
-  address: string
+  ein: string | null
+  address: string | null
   address2: string | null
-  city: string
-  state: string
-  zip: string
+  city: string | null
+  state: string | null
+  zip: string | null
   county: string | null
   officeName: string | null
-  phone: string
+  phone: string | null
   website: string | null
   // Admin-derived fields are LOOKUPS via Primary Admin link (June 2026).
   // All four will be null for Unclaimed agencies with no Primary Admin set.
@@ -256,6 +259,8 @@ useEffect(() => {
   const initials = agency.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()
   const panelReferrals = agency.referrals.map(toAgencyReferral)
 
+  const locality = cityStateZip(agency.city, agency.state, agency.zip)
+
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
 
@@ -361,7 +366,15 @@ useEffect(() => {
               <div style={{ borderTop: '1px solid #F7F5F1', paddingTop: '4px' }}>
                 <InfoRow label="EIN" value={agency.ein} />
                 {agency.officeName && <InfoRow label="Office" value={agency.officeName} />}
-                <InfoRow label="Address" value={<>{agency.address}{agency.address2 ? `, ${agency.address2}` : ''}<br />{agency.city}, {agency.state} {agency.zip}</>} />
+                <InfoRow label="Address" value={
+                  agency.address || locality ? (
+                    <>
+                      {agency.address}{agency.address2 ? `, ${agency.address2}` : ''}
+                      {agency.address && locality ? <br /> : null}
+                      {locality}
+                    </>
+                  ) : null
+                } />
                 {agency.county && <InfoRow label="County" value={`${agency.county} County`} />}<InfoRow label="Main Phone" value={agency.phone} />
                 <InfoRow label="Website" value={agency.website ? <a href={agency.website} target="_blank" rel="noreferrer" style={{ color: '#2A7F6F', textDecoration: 'none' }}>{agency.website}</a> : null} />
                 <InfoRow label="Record Created" value={formatDate(agency.registrationDate)} />

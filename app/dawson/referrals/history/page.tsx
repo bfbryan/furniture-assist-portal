@@ -6,6 +6,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { addDaysISO, differenceInDaysISO, easternTodayISO } from '@/lib/dates'
 import CancelModal from '@/components/internal/modals/CancelModal'
 import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
+import { matchesSearch } from '@/lib/search'
 
 
 type Referral = {
@@ -434,14 +435,10 @@ export default function HistoryPage() {
 
 
   const filtered = useMemo(() => {
-    const q = search.toLowerCase()
     return referrals.filter(r => {
-      const matchesSearch = !q ||
-        r.clientName.toLowerCase().includes(q) ||
-        (r.referringAgency ?? '').toLowerCase().includes(q) ||
-        (r.referredBy ?? '').toLowerCase().includes(q)
+      const matchesQuery = matchesSearch(search, r.clientName, r.referringAgency, r.referredBy)
       const matchesStatus = statusFilter === 'All' || r.appointmentStatus === statusFilter
-      return matchesSearch && matchesStatus
+      return matchesQuery && matchesStatus
     })
   }, [referrals, search, statusFilter])
 

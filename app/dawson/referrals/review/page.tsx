@@ -25,6 +25,7 @@
 import { useState, useEffect } from 'react'
 import RescheduleModal, { type AvailableDate, type TimeSlot } from '@/components/internal/modals/RescheduleModal'
 import { TIME_CAPS, VALID_TIMES, type TimeSlot as Slot } from '@/lib/schedule/capacity'
+import { matchesSearch } from '@/lib/search'
 
 type Referral = {
   id: string
@@ -463,9 +464,7 @@ export default function AwaitingReviewPage() {
   }
 
   const filtered = referrals.filter(r =>
-    r.clientName.toLowerCase().includes(search.toLowerCase()) ||
-    (r.referringAgency ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    (r.referredBy ?? '').toLowerCase().includes(search.toLowerCase())
+    matchesSearch(search, r.clientName, r.referringAgency, r.referredBy)
   )
 
   // The one thing that tells the two apart. An agency reschedule request sets

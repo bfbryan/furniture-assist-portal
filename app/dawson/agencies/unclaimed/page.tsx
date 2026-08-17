@@ -1,6 +1,8 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { matchesSearch } from '@/lib/search'
+import { cityStateZip } from '@/lib/address'
 
 // The "Invite Admin" button is parked, not removed. It posts to
 // /api/dawson/agencies/[id]/invite, which does not exist yet — so the button
@@ -9,15 +11,19 @@ import { useState, useEffect } from 'react'
 // again unchanged.
 const SHOW_INVITE_ADMIN: boolean = false
 
+// Address fields are string | null: Airtable omits blank fields, and most of
+// these are blank on plenty of rows (75 of 129 unclaimed agencies have no
+// City). Searching them goes through matchesSearch, which treats missing as
+// "does not match" rather than crashing or falsely matching.
 type Agency = {
   id: string
   name: string
-  address: string
+  address: string | null
   address2: string | null
-  city: string
-  state: string
-  zip: string
-  phone: string
+  city: string | null
+  state: string | null
+  zip: string | null
+  phone: string | null
   // email + contactName come from the Primary Admin lookup chain (June 2026).
   // For Unclaimed agencies these are null by definition — no admin assigned yet.
   email: string | null
@@ -222,7 +228,7 @@ function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: 
         <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, paddingTop: '14px' }}>
           <div style={{ width: '190px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
             <div style={{ fontSize: '11px', color: '#7A8899', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agency.address}{agency.address2 ? `, ${agency.address2}` : ''}</div>
-            <div style={{ fontSize: '11px', color: '#7A8899' }}>{agency.city}, {agency.state} {agency.zip}</div>
+            <div style={{ fontSize: '11px', color: '#7A8899' }}>{cityStateZip(agency.city, agency.state, agency.zip)}</div>
           </div>
           <div style={{ width: '190px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
             <div style={{ fontSize: '12px', fontWeight: 600, color: '#7A8899' }}>{agency.phone || '—'}</div>
@@ -278,11 +284,7 @@ export default function UnclaimedAgenciesPage() {
   }
 
   const filtered = agencies
-    .filter(a =>
-      a.name.toLowerCase().includes(search.toLowerCase()) ||
-      a.city.toLowerCase().includes(search.toLowerCase()) ||
-      (a.officeName ?? '').toLowerCase().includes(search.toLowerCase())
-    )
+    .filter(a => matchesSearch(search, a.name, a.city, a.officeName))
     .sort((a, b) => {
       let val = 0
       if (sortKey === 'name') val = a.name.localeCompare(b.name)

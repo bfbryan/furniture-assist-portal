@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import CancelModal from '@/components/internal/modals/CancelModal'
 import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
+import { matchesSearch } from '@/lib/search'
 
 
 type Referral = {
@@ -352,9 +353,7 @@ export default function ScheduledPage() {
 
 
   const filtered = referrals.filter(r =>
-    r.clientName.toLowerCase().includes(search.toLowerCase()) ||
-    (r.referringAgency ?? '').toLowerCase().includes(search.toLowerCase()) ||
-    (r.referredBy ?? '').toLowerCase().includes(search.toLowerCase())
+    matchesSearch(search, r.clientName, r.referringAgency, r.referredBy)
   )
 
 
