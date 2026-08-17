@@ -28,6 +28,28 @@ export async function POST(
   const staff = await getAgencyUserById(recordId)
   if (!staff) return NextResponse.json({ error: 'Not found' }, { status: 404 })
 
+  // Who is sending this invite. Loaded before the ownership check below, which
+  // needs their agency; also supplies the Invited By text further down.
+  const admin = await getAgencyUserByClerkId(userId)
+
+  // The invited row must belong to the caller's own agency.
+  //
+  // Without this the only gate is "you are an org admin of SOME agency", while
+  // the record id comes straight from the URL and the Clerk membership granted
+  // below uses the CALLER's orgId — so an admin could pull any Agency Users row
+  // in the base into their own organization, as org:admin if that row's Role is
+  // Admin, and be emailed a working sign-in link for them.
+  //
+  // This is not only reachable by hand-crafting a request. The Team page lists
+  // staff via getAgencyUsersByAgencyId(agency.name), which matches on agency
+  // NAME, and two names are duplicated in the live base — so those agencies
+  // already render each other's people with a live Send Invite button beside
+  // them. Scoping the list by record id is the wider fix and is called out
+  // separately; this closes the endpoint regardless of what the page shows.
+  if (!admin?.agencyId || staff.agencyId !== admin.agencyId) {
+    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  }
+
   // Only invitable if row is currently Unclaimed or already Invited (resend case)
   if (staff.status !== 'Unclaimed' && staff.status !== 'Invited') {
     return NextResponse.json(
@@ -36,9 +58,7 @@ export async function POST(
     )
   }
 
-  // Look up who's sending this invite (for Invited By text)
-  const admin = await getAgencyUserByClerkId(userId)
-  const invitedByName = admin?.name ?? 'Portal Admin'
+  const invitedByName = admin.name ?? 'Portal Admin'
 
   const client = await clerkClient()
 

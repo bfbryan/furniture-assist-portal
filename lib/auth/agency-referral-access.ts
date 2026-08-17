@@ -66,5 +66,21 @@ export async function requireAgencyReferralAccess(
     return { denied: NextResponse.json({ error: 'Unauthorized' }, { status: 403 }) }
   }
 
+  // Agency Name is not unique. Two pairs of Agencies rows in the live base
+  // share a name, so the string comparison above cannot tell them apart — and
+  // every route behind this guard reads or writes a client's referral, name,
+  // date of birth and address.
+  //
+  // referringAgencyId is the record id, chased through Referring Staff Link ->
+  // Agency Users -> Agency by getReferralById. Checked as an ADDITIONAL gate
+  // rather than a replacement: it is null whenever the referral has no staff
+  // link, and also whenever that extra lookup happens to fail, so making it
+  // the only test would turn a transient Airtable error into a 403 on
+  // someone's own referral. Requiring both means this can only ever deny
+  // access the name check would have allowed.
+  if (referral.referringAgencyId && referral.referringAgencyId !== agencyUser.agencyId) {
+    return { denied: NextResponse.json({ error: 'Unauthorized' }, { status: 403 }) }
+  }
+
   return { referral, agencyUser }
 }
