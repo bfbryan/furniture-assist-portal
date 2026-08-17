@@ -1,17 +1,21 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { matchesSearch } from '@/lib/search'
+import { cityStateZip } from '@/lib/address'
 
+// Optional Airtable fields are string | null — Airtable omits blank fields,
+// so anything not guaranteed present must not be typed as a bare string.
 type Agency = {
   id: string
   name: string
-  address: string
+  address: string | null
   address2: string | null
-  city: string
-  state: string
-  zip: string
-  phone: string
-  email: string
+  city: string | null
+  state: string | null
+  zip: string | null
+  phone: string | null
+  email: string | null
   website: string | null
   officeName: string | null
   contactName: string
@@ -137,7 +141,7 @@ function ActiveCard({ agency, onStatusChange }: { agency: Agency; onStatusChange
         <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, paddingTop: '14px' }}>
           <div style={{ width: '190px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
             <div style={{ fontSize: '11px', color: '#7A8899', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agency.address}{agency.address2 ? `, ${agency.address2}` : ''}</div>
-            <div style={{ fontSize: '11px', color: '#7A8899' }}>{agency.city}, {agency.state} {agency.zip}</div>
+            <div style={{ fontSize: '11px', color: '#7A8899' }}>{cityStateZip(agency.city, agency.state, agency.zip)}</div>
           </div>
           <div style={{ width: '190px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
             <div style={{ fontSize: '12px', fontWeight: 600, color: '#7A8899' }}>{agency.phone}</div>
@@ -206,12 +210,7 @@ export default function ActiveAgenciesPage() {
   }
 
   const filtered = agencies
-    .filter(a =>
-      a.name.toLowerCase().includes(search.toLowerCase()) ||
-      a.city.toLowerCase().includes(search.toLowerCase()) ||
-     a.contactName.toLowerCase().includes(search.toLowerCase()) ||
-      (a.officeName ?? '').toLowerCase().includes(search.toLowerCase())
-    )
+    .filter(a => matchesSearch(search, a.name, a.city, a.contactName, a.officeName))
     .sort((a, b) => {
       let val = 0
       if (sortKey === 'name') val = a.name.localeCompare(b.name)

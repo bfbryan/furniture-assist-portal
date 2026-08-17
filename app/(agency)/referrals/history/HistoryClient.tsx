@@ -9,6 +9,7 @@
 
 import { useState, useMemo } from 'react'
 import { addDaysISO, easternTodayISO } from '@/lib/dates'
+import { matchesSearch } from '@/lib/search'
 
 type Referral = {
   id: string
@@ -274,7 +275,7 @@ export default function HistoryClient({
     const cutoffISO =
       dateRange === 'all' ? null : addDaysISO(easternTodayISO(), -parseInt(dateRange, 10))
     return referrals.filter(r => {
-      if (q && !r.clientName.toLowerCase().includes(q)) return false
+      if (!matchesSearch(q, r.clientName)) return false
       if (staffFilter !== 'all' && r.referredBy !== staffFilter) return false
       const o = outcomeOf(r)
       if (statusFilter !== 'all' && o !== statusFilter) return false

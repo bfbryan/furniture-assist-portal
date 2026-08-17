@@ -54,6 +54,25 @@ export async function airtableFetchAll(table: string, params: string = '') {
   return { records: allRecords }
 }
 
+// Read a plain (non-lookup) text field that Airtable may omit.
+//
+// Airtable leaves blank fields OUT of the API response entirely, so any
+// optional column reads back `undefined`. The mappers used to write
+// `f['City'] as string`, which told the type system the value was always
+// there. It is not — 75 of 129 unclaimed agencies have no City — and that
+// lie is what let `undefined.toLowerCase()` reach a live search box.
+//
+// Note that `as string` also silently defeats a `?? null` written next to
+// it: the cast makes the left side non-nullable, so the fallback becomes
+// dead code AND the inferred property type stays `string`. Reading through
+// this helper instead is what makes the resulting type honestly nullable.
+//
+// Empty string collapses to null too — a blank cell and a missing cell mean
+// the same thing here, and neither should match a search.
+export function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value !== '' ? value : null
+}
+
 // Lookups return arrays even when the underlying field is a single value.
 // This unwraps `["foo"]` -> `"foo"` and `[]` / undefined -> null. Used for
 // all admin-* lookups on Agencies and all staff/agency lookups on Client

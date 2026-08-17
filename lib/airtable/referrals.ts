@@ -8,6 +8,7 @@
 // them goes through safeLookupString.
 
 import { CATALOG } from '@/lib/catalog/items-disbursed'
+import { matchesSearch } from '@/lib/search'
 import {
   airtableFetch,
   airtableFetchAll,
@@ -231,11 +232,9 @@ export async function getAllReferrals(filters?: {
 
   // Client-side search filter
   if (filters?.search) {
-    const q = filters.search.toLowerCase()
+    const q = filters.search
     return records.filter((r: any) =>
-      r.clientName.toLowerCase().includes(q) ||
-      (r.referringAgency ?? '').toLowerCase().includes(q) ||
-      (r.referredBy ?? '').toLowerCase().includes(q)
+      matchesSearch(q, r.clientName, r.referringAgency, r.referredBy)
     )
   }
 

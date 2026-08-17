@@ -22,6 +22,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
+import { matchesSearch } from '@/lib/search'
 
 export type Agency = {
   id: string
@@ -183,7 +184,7 @@ export default function AddAgencyStaffModal({
   const trimmedAgencyQuery = agencyQuery.trim()
 
   const filteredAgencies = trimmedAgencyQuery
-    ? agencies.filter(a => a.name.toLowerCase().includes(trimmedAgencyQuery.toLowerCase()))
+    ? agencies.filter(a => matchesSearch(trimmedAgencyQuery, a.name))
     : agencies
 
   const exactAgencyMatch = agencies.find(

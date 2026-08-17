@@ -1,23 +1,27 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { matchesSearch } from '@/lib/search'
+import { cityStateZip } from '@/lib/address'
 
+// Optional Airtable fields are string | null — Airtable omits blank fields,
+// so anything not guaranteed present must not be typed as a bare string.
 type Agency = {
   id: string
   name: string
-  ein: string
-  address: string
+  ein: string | null
+  address: string | null
   address2: string | null
-  city: string
-  state: string
-  zip: string
-  phone: string
-  email: string
+  city: string | null
+  state: string | null
+  zip: string | null
+  phone: string | null
+  email: string | null
   website: string | null
   officeName: string | null
   contactName: string
   status: string
-  registrationDate: string
+  registrationDate: string | null
   approvalDate: string | null
   possibleDuplicate: boolean
 
@@ -129,7 +133,7 @@ function PendingCard({ agency, onStatusChange }: { agency: Agency; onStatusChang
           <div style={{ width: '190px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1B2B4B', marginBottom: '3px' }}>Location</div>
             <div style={{ fontSize: '11px', color: '#7A8899', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agency.address}{agency.address2 ? `, ${agency.address2}` : ''}</div>
-            <div style={{ fontSize: '11px', color: '#7A8899', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{agency.city}, {agency.state} {agency.zip}</div>
+            <div style={{ fontSize: '11px', color: '#7A8899', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{cityStateZip(agency.city, agency.state, agency.zip)}</div>
           </div>
           <div style={{ width: '190px', flexShrink: 0, padding: '0px 20px 14px 0' }}>
             <div style={{ fontSize: '12px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#1B2B4B', marginBottom: '3px' }}>Main Phone</div>
@@ -184,10 +188,7 @@ export default function PendingAgenciesPage() {
   }
 
   const filtered = agencies.filter(a =>
-    a.name.toLowerCase().includes(search.toLowerCase()) ||
-    a.city.toLowerCase().includes(search.toLowerCase()) ||
-    a.contactName.toLowerCase().includes(search.toLowerCase()) ||
-    (a.officeName ?? '').toLowerCase().includes(search.toLowerCase())
+    matchesSearch(search, a.name, a.city, a.contactName, a.officeName)
   )
 
   return (
