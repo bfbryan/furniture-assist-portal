@@ -6,10 +6,17 @@
 // Deliberately empty for now: Ben asked for the nav entry to exist so the shape
 // of the reporting section is visible, and for the report itself to come later.
 // The data it will read already exists — the Email Log table in Airtable, one
-// row per send with type, status, recipient, sent time and bounce reason. The
-// per-client view of that same table is already built and live on the client
-// detail page (app/dawson/referrals/[id]/page.tsx → EmailHistoryCard), so this
-// page is the across-all-clients rollup of it, not new plumbing.
+// row per send with type, status, recipient, sent time and bounce reason, and
+// /api/dawson/referrals/[id]/emails already serves it per referral.
+//
+// Aug 2026: the per-client view of that data still lives on the client detail
+// page (the Delivery Log inside EmailHistoryCard), but it now shows only rows
+// that are NOT a clean delivery — a Delivered row said the same thing as the
+// milestone beside it. So bounced / failed / withheld are still visible per
+// referral; what no view in the portal answers is the across-all-clients
+// question ("did anything bounce this week"), which is this page's job.
+//
+// Ben is watching Resend directly in the meantime.
 //
 // Header chrome matches the other Dawson list pages so it does not read as a
 // broken route.

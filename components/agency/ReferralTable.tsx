@@ -194,10 +194,16 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
       only, so scheduled clients had no way to reach their own slip from this
       list.
 
+      EXCEPT once a reschedule has been requested. The slip names a date and
+      time that the agency has itself asked to move, so from that moment it
+      describes an appointment nobody intends to keep. It comes back on its own
+      as soon as Dawson lands the request on a real date and the status leaves
+      'Reschedule'; nothing is deleted, only hidden while the date is unsettled.
+
       marginRight: auto pins it to the LEFT edge of the actions cell, which puts
       it hard against the Appointment column rather than bunched up with
       Reschedule at the right — what Ben asked for. */}
-  {r.appointmentSlipUrl && (
+  {r.appointmentSlipUrl && status !== 'Reschedule' && (
     <div style={{ display: 'flex', marginRight: 'auto' }}>
       <Tooltip label="Appointment Slip">
         <a href={r.appointmentSlipUrl} target="_blank" rel="noreferrer"

@@ -9,17 +9,21 @@
 // is that comment made mechanical.
 //
 // ┌──────────────────────────────────────────────────────────────────────┐
-// │ THERE IS A SIXTH COPY THIS REPO CANNOT REACH.                        │
+// │ THE SIXTH COPY IS NO LONGER RUNNING (Aug 2026).                      │
 // │                                                                      │
-// │ `at-auto-schedule-script.js` is an Airtable automation script that   │
-// │ Ben maintains inside the Airtable base, not in this repository. It   │
-// │ carries its own TIME_CAPS with the same five numbers and it runs the │
-// │ auto-scheduler for new agency submissions.                           │
+// │ `at-auto-schedule-script.js` is an Airtable automation script Ben    │
+// │ maintains inside the base, not in this repository. It carried its    │
+// │ own TIME_CAPS with the same five numbers and ran the auto-scheduler  │
+// │ for new agency submissions.                                          │
 // │                                                                      │
-// │ Changing a capacity here does NOT change it there. Any edit to       │
-// │ TIME_CAPS below has to be mirrored into that script by hand, or the  │
-// │ auto-scheduler and the portal will disagree about when an hour is    │
-// │ full.                                                                │
+// │ Ben has switched those automations OFF in favour of code. That job   │
+// │ now lives in lib/schedule/flexible.ts, which imports TIME_CAPS from  │
+// │ here — so the numbers below are once again the only ones that decide │
+// │ when an hour is full.                                                │
+// │                                                                      │
+// │ The script still EXISTS in the base. If it is ever switched back on, │
+// │ its hardcoded caps go back to being a copy that this file cannot     │
+// │ reach, and the two will disagree the moment either changes.          │
 // └──────────────────────────────────────────────────────────────────────┘
 
 export type TimeSlot = '9am' | '10am' | '11am' | '12pm' | '1pm'
@@ -59,6 +63,29 @@ export const TIME_CAPS: Record<TimeSlot, number> = {
  * him, and do not add a second, higher ceiling — that was asked and declined.
  */
 export const DAY_CAPACITY = 50
+
+/**
+ * The first hour of the day with room in it, in TIME_ORDER. Null when all five
+ * are at cap.
+ *
+ * This is the allocator used every time a time slot is chosen FOR someone
+ * rather than BY them: the referral submit route, the no-show reschedule
+ * branch, and flexible scheduling (lib/schedule/flexible.ts). It lived in
+ * app/api/dawson/referrals/submit/route.ts; it moved here when flexible
+ * scheduling became a second caller, so the rule sits with the caps it reads
+ * instead of being imported out of a route handler.
+ *
+ * Note this is the CAPPED path. An explicit pick by Dawson deliberately
+ * bypasses it — that override is his and is not governed here.
+ */
+export function pickFirstOpenSlot(
+  bookedByTime: Record<TimeSlot, number>,
+): TimeSlot | null {
+  for (const slot of TIME_ORDER) {
+    if (bookedByTime[slot] < TIME_CAPS[slot]) return slot
+  }
+  return null
+}
 
 /** Per-slot booked counts as the schedule endpoints return them. */
 export interface SlotCounts {

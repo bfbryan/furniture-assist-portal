@@ -24,12 +24,17 @@
 //     - Status = 'Open'
 //   AGENCY (/api/agency/schedule/available):
 //     - the above, AND Slots Remaining > 0, i.e. the 50 cap enforced
-//   AUTO-SCHEDULE (at-auto-schedule-script.js, in Airtable, new submissions):
-//     - Date >= today + 21 days, Status = 'Open', Slots Remaining > 0,
-//       Ready to Schedule = 1, at least one time slot under cap
+//   FLEXIBLE (lib/schedule/flexible.ts, a referral submitted with no date):
+//     - Date >= today + 14 days, Status = 'Open', Slots Remaining > 0,
+//       and at least one time slot under its own cap
 //
-// 'Ready to Schedule' is not enforced here; that gate belongs to the
-// auto-scheduler.
+// Aug 2026: that third rule used to read "21 days" and to name
+// at-auto-schedule-script.js, the Airtable automation. Both are stale. Ben has
+// switched those automations off in favour of code, the lead time he confirmed
+// is 14 days, and the logic now lives in lib/schedule/flexible.ts.
+//
+// 'Ready to Schedule' was part of the automation's filter and is not enforced
+// by any of the three rules above.
 
 
 import { NextResponse } from 'next/server'
