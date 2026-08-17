@@ -98,7 +98,7 @@ function InviteModal({ agency, onClose, onInvited }: {
       }
       onInvited(agency.id)
     } catch (e) {
-      setError('Network error — please try again')
+      setError('Network error. Please try again.')
     } finally {
       setLoading(false)
     }

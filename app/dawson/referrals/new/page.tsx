@@ -1310,7 +1310,7 @@ useEffect(() => {
             }}>
               <span>
                 ⚠️ The duplicate-client check could not run, so this client was <strong>not</strong> checked
-                against existing records. You can still submit — a second check runs automatically on submit.
+                against existing records. You can still submit, and a second check runs automatically on submit.
               </span>
               <button
                 onClick={() => setDuplicateRetryNonce(n => n + 1)}
