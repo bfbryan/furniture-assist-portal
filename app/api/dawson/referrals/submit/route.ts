@@ -285,6 +285,18 @@ async function rescheduleExistingReferral(
     'Saturday Schedule': [scheduleRow.id],
     'Appointment Time': resolvedTime,
     'Appointment Status': 'Scheduled',
+    // Re-arm the Monday reminder for the NEW date. The "Reminder Email Pending"
+    // view only matches rows where 'Reminder Email Sent' is blank, so a record
+    // that was already reminded for its previous appointment never re-enters
+    // the view and the client is never reminded about the new one.
+    //
+    // This is the same re-arm lib/referrals/reschedule.ts does. It was added
+    // there and missed here, because this branch is a second copy of that
+    // logic rather than a call to it. Two live records rescheduled through
+    // this path onto 2026-08-22 were skipped by the 2026-08-17 reminder run
+    // for exactly this reason.
+    'Reminder Email Sent': false,
+    'Reminder Sent At': null,
   }
   if (shouldSnapshot) {
     fields['Original Appointment Date'] = currentApptDate
