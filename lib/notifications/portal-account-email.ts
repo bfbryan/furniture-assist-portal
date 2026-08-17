@@ -88,17 +88,26 @@ export async function sendPortalAccountEmail(params: {
         recipientEmail: to,
         status: "Failed",
         bounceReason: error.message,
-      });
+      }).catch((logErr) =>
+        console.error(`${automationName}: send failed AND the Email Log row could not be written:`, logErr)
+      );
       return { skipped: false, sent: false, error: error.message };
     }
 
+    // The log write is deliberately not allowed to change the verdict. Resend
+    // has accepted the message by this point, so a failed Email Log create is
+    // a lost paper trail, not a lost email — and letting it throw to the outer
+    // catch reported a delivered invite as { sent: false }, which invites
+    // someone to resend and burn a second sign-in link.
     await logAgencyEmailSend({
       automationRecordId: automation.id,
       agencyRecordId,
       recipientEmail: to,
       resendMessageId: data?.id,
       status: "Sent",
-    });
+    }).catch((logErr) =>
+      console.error(`${automationName}: sent, but the Email Log row could not be written:`, logErr)
+    );
 
     return { skipped: false, sent: true };
   } catch (err) {

@@ -124,7 +124,12 @@ export async function GET(req: Request) {
   const matchClause =
     tokens.length > 1 ? `AND(${tokenClauses})` : tokenClauses
 
-  const formula = `AND(OR({Status} = "Active", {Status} = "Unclaimed"), ${matchClause})`
+  // 'Invited' is included alongside Active/Unclaimed: an agency user sits in
+  // that status between being invited and their first sign-in, and dropping
+  // them from this search for the whole of that window would take the person
+  // Dawson is most likely to be looking for out of the Add Referral form
+  // exactly while their agency is being onboarded.
+  const formula = `AND(OR({Status} = "Active", {Status} = "Unclaimed", {Status} = "Invited"), ${matchClause})`
 
   const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/Agency Users`)
   url.searchParams.set('filterByFormula', formula)

@@ -31,9 +31,12 @@ export async function GET(
   const agencyName = agency.fields['Agency Name'] as string
   const safeName = agencyName.replace(/"/g, '\\"')
 
-  // Step 2: fetch Active + Unclaimed users for this agency
+  // Step 2: fetch Active + Unclaimed + Invited users for this agency.
+  // 'Invited' matters from the moment the Invite button writes it until that
+  // person's first sign-in; without it the agency's own admin drops out of
+  // this dropdown for the whole of that window.
   const formula = encodeURIComponent(
-    `AND({Agency} = "${safeName}", OR({Status} = "Active", {Status} = "Unclaimed"))`
+    `AND({Agency} = "${safeName}", OR({Status} = "Active", {Status} = "Unclaimed", {Status} = "Invited"))`
   )
   const usersRes = await fetch(
     `https://api.airtable.com/v0/${BASE_ID}/Agency%20Users?filterByFormula=${formula}`,

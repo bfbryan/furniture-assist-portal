@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
 import { cityStateZip } from '@/lib/address'
+import { formatEasternTimestamp } from '@/lib/dates'
 
 // Address fields are string | null: Airtable omits blank fields, and most of
 // these are blank on plenty of rows (75 of 129 unclaimed agencies have no
@@ -100,6 +101,25 @@ function InviteModal({ agency, onClose, onInvited }: {
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         setError(body?.error || `Invite failed (${res.status})`)
+        return
+      }
+      // The route returns 200 whether or not the email actually went out — the
+      // Airtable stamps are already committed by then and are not undone by a
+      // send failure. So the card would flip to Invited and look finished even
+      // when Resend rejected the message and the admin has no link. Once the
+      // automations are enabled at go-live, a bad key or an unverified sender
+      // would do that silently for every agency in a row.
+      //
+      // A skipped send is NOT a failure: while the automation is disabled in
+      // Airtable, { skipped: true } is the designed behaviour and the invite
+      // has genuinely succeeded.
+      const body = await res.json().catch(() => ({}))
+      const email = body?.email
+      if (email && email.skipped === false && email.sent === false) {
+        setError(
+          `${agency.name} is marked Invited, but the email did not send: ${email.error ?? 'unknown error'}. ` +
+          `Use Resend Invite once that is fixed.`
+        )
         return
       }
       onInvited(agency.id)
@@ -200,8 +220,14 @@ function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: 
                 {agency.name}
               </div>
             </a>
+            {/* formatDate is for Airtable's date-only fields — it appends
+                'T12:00:00'. Invited Date is a dateTime, so it arrives as a
+                full instant ("2026-07-18T04:00:00.000Z") and that
+                concatenation does not parse: the tooltip read "Invited
+                Invalid Date". formatEasternTimestamp is the helper for an
+                instant; see the header of lib/dates.ts. */}
             {isInvited && (
-              <span title={agency.invitedDate ? `Invited ${formatDate(agency.invitedDate)}` : 'Invited'}
+              <span title={agency.invitedDate ? `Invited ${formatEasternTimestamp(agency.invitedDate, { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Invited'}
                 style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(91,141,184,0.12)', color: '#5B8DB8', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
                 Invited
               </span>

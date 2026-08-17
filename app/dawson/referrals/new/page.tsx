@@ -278,9 +278,18 @@ export default function DawsonAddReferralPage() {
 
 
 
-  // Load Approved + Unclaimed agencies
+  // Load Approved + Unclaimed + Invited agencies.
+  //
+  // 'Invited' has to be here now that the Invite button writes it. An agency
+  // sits in that status from the moment Ben invites it until its admin signs
+  // in for the first time, which across a 125-agency rollout is days or weeks,
+  // and permanently for any agency that never claims. Without it the agency
+  // simply disappears from this picker mid-rollout, with no error and no hint
+  // that it was filtered — and Dawson's only way round is the "add new agency"
+  // panel, which dedupes on the exact name and would mint a duplicate on any
+  // typing drift.
   useEffect(() => {
-    fetch('/api/dawson/agencies?status=Approved,Unclaimed')
+    fetch('/api/dawson/agencies?status=Approved,Unclaimed,Invited')
       .then(r => r.json())
       .then(data => { setAgencies(Array.isArray(data) ? data : []); setAgenciesLoading(false) })
       .catch(() => setAgenciesLoading(false))

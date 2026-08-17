@@ -96,18 +96,15 @@ export async function stampFirstLogin(agencyUser: {
 
   const now = new Date().toISOString()
 
-  // Update Agency User: Claimed Date + Portal Invite Status
-  await airtableFetch('Agency Users', `/${agencyUser.id}`, {
-    method: 'PATCH',
-    body: {
-      fields: {
-        'Claimed Date': now,
-        'Portal Invite Status': 'Claimed',
-      },
-    },
-  })
-
-  // Cascade to Agency if this user is Primary Admin
+  // Cascade to Agency FIRST if this user is Primary Admin.
+  //
+  // The user's own Claimed Date is what makes this whole function a no-op on
+  // re-entry, so it has to be written last. Writing it first and then failing
+  // on the cascade left the person claimed and their agency stuck on 'Invited'
+  // for good: every later sign-in returned at the guard above before reaching
+  // this block, and no other code path cascades. Both writes are individually
+  // idempotent — the agency's own Claimed Date guards the cascade — so with
+  // this order a failure at any point is simply retried on the next sign-in.
   if (agencyUser.role === 'Admin' && agencyUser.agencyId) {
     const agencyData = await airtableFetch('Agencies', `/${agencyUser.agencyId}`)
     const primaryAdminLink = (agencyData.fields?.['Primary Admin'] as string[]) ?? []
@@ -126,6 +123,17 @@ export async function stampFirstLogin(agencyUser: {
       })
     }
   }
+
+  // Update Agency User: Claimed Date + Portal Invite Status
+  await airtableFetch('Agency Users', `/${agencyUser.id}`, {
+    method: 'PATCH',
+    body: {
+      fields: {
+        'Claimed Date': now,
+        'Portal Invite Status': 'Claimed',
+      },
+    },
+  })
 }
 
 // ---------------------------------------------------------------------------
