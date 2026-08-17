@@ -8,6 +8,7 @@ import {
   IconBtn, RescheduleIcon, CancelIcon, RESCHEDULE_COLOR, CANCEL_COLOR,
 } from '@/components/internal/IconBtn'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
+import { easternTodayISO } from '@/lib/dates'
 
 
 type ItemsDisbursed = {
@@ -51,6 +52,10 @@ type Referral = {
   appointmentDate: string | null
   appointmentTime: string | null
   appointmentSlipUrl: string | null
+  // The post-visit receipt PDF. getReferralById() has always returned this —
+  // the field was simply missing from this type, so the page dropped it on the
+  // floor. No API change was needed to start using it, only this line.
+  clientReceiptUrl: string | null
   dataPageUrl: string | null
   // June 2026: these four are LOOKUPS through Referring Staff Link.
   // All four will be null when the referral was imported without a usable
@@ -1673,6 +1678,42 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const noShowAged = status === 'No Show' && daysSinceNoShow !== null && daysSinceNoShow > NO_SHOW_ACTION_WINDOW_DAYS
 
 
+  // ---------------------------------------------------------------------
+  // Which document the header's one document slot is showing.
+  //
+  // Ben: "show the appt slip icon on Dawson till appt time, then flip to
+  // receipt for completed post appt date."
+  //
+  // One slot, whichever document is the useful one now. Before the visit that
+  // is the slip, which tells the client when to turn up. Afterwards it is the
+  // receipt, which records what they actually went home with.
+  //
+  // WHY THE DATE IS CHECKED AS WELL AS THE STATUS. Completed on its own would
+  // be enough in the normal run of things — a referral only reaches it after
+  // the visit. The date guard is there for the mis-click: mark a future
+  // appointment Completed by accident and the slip, which is still the useful
+  // document for an appointment that has not happened yet, stays put.
+  //
+  // "today or earlier", not "strictly earlier". Dawson marks a referral
+  // Completed on the Saturday itself, and once he has, the slip is describing
+  // a visit that has already happened. Waiting for midnight to flip would show
+  // him a "come at 10am" document for the rest of the day he handed the
+  // furniture over. Ben said "post appt date", so if he wants the flip held
+  // until the following day this is the line to change — it is one comparison.
+  //
+  // Eastern, via easternTodayISO(), not the runtime's idea of today. Both
+  // sides are 'YYYY-MM-DD' so a string compare is the whole test. On Vercel
+  // (UTC) a naive new Date() would roll over at 8pm Eastern and flip every
+  // Saturday's referrals to "receipt" four hours early.
+  const apptDatePassed =
+    !!referral.appointmentDate && referral.appointmentDate.slice(0, 10) <= easternTodayISO()
+
+  // The receipt slot is reached ONLY by a completed referral. No Show and
+  // Cancelled never get one — the client received nothing, so there is nothing
+  // to receipt — and they keep the slip instead; see the note at the render.
+  const showReceiptSlot = status === 'Completed' && apptDatePassed
+
+
   // Reschedule / Cancel live in the meta strip. Shown while the appointment is
   // still actionable. No Show is included on purpose: Dawson often learns days
   // later whether a no-show should become a reschedule or a cancel — but only
@@ -1759,12 +1800,100 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           )}
 
 
-          {referral.appointmentSlipUrl && (
-            <a href={referral.appointmentSlipUrl} target="_blank" rel="noreferrer"
-              style={{ padding: '8px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
-              Appt Slip
-            </a>
+          {/* ----------------------------------------------------------------
+              The document slot. Appt Slip before the visit, Client Receipt
+              after it — one control, never both, so the header keeps the shape
+              it has always had. Every branch below reuses the Appt Slip
+              button's exact geometry (8px/18px, 7px radius, #EDE9E1 border,
+              white, 13px Montserrat) so this stays one style of link, the same
+              one Data Page beside it uses.
+
+              WHAT EACH STATE SHOWS, and why the awkward ones resolve this way:
+
+              • Scheduled, or anything before the visit → APPT SLIP, exactly as
+                before. Unchanged behaviour.
+
+              • Completed, on or after the appointment date → CLIENT RECEIPT.
+
+              • Completed, but the receipt PDF does not exist yet → "RECEIPT
+                PENDING", greyed and not clickable.
+
+                This gap is much bigger than "the cron has not caught up". The
+                receipt is generated and emailed by the Client Receipt job,
+                which runs on the day and hour set on its Email Automations row
+                in Airtable — TUESDAY 08:00 Eastern as configured today — over
+                the "Ready to Send Post Appt Email - Completed" view. So a
+                Saturday appointment marked Completed that afternoon has no
+                receipt until Tuesday morning. That is not a fault, it is the
+                normal weekly rhythm, and it means this state is what EVERY
+                completed referral looks like for roughly three days a week.
+                Checked against the base while building this: 14 referrals were
+                sitting in exactly this state, all from the Saturday two days
+                earlier, all correctly waiting for the next Tuesday run.
+
+                Which is precisely why the two obvious alternatives are wrong.
+                Falling back to the slip would re-offer a "come at 10am"
+                document for a finished visit on every completed referral for
+                half of each week, and would make a working flip look broken. A
+                Client Receipt link pointing at nothing would be a dead click
+                that reads as a bug. A visibly-not-ready control that says why
+                is the honest option, and it holds the slot so the header does
+                not reflow when the receipt lands.
+
+                The tooltip splits the two reasons it can be pending, because
+                one of them is Dawson's to fix: an appointment not yet ticked
+                "Ready for Post-Appt Email" is not in the view at all and will
+                be skipped by Tuesday's run. That checkbox is in the meta strip
+                on this same page.
+
+              • No Show → APPT SLIP stays. A no-show never gets a receipt, on
+                purpose: the client received nothing. So there is nothing to
+                flip to, and the slip is the only document this appointment
+                ever had — still worth reaching while Dawson decides whether to
+                rebook or cancel. The status pill immediately to its left reads
+                "No Show", so there is no chance of mistaking it for an
+                upcoming visit.
+
+              • Cancelled → APPT SLIP stays, for the same reason. No receipt
+                will ever exist, and the slip remains the record of the
+                appointment that was called off.
+
+                (This is deliberately NOT the agency-side rule, where the slip
+                is hidden on completed and reschedule-requested referrals. An
+                agency user might act on a stale slip; this page is Dawson's
+                record of what happened, and hiding documents from it would
+                lose him the only copy he can reach.)
+          ---------------------------------------------------------------- */}
+          {showReceiptSlot ? (
+            referral.clientReceiptUrl ? (
+              <a href={referral.clientReceiptUrl} target="_blank" rel="noreferrer"
+                style={{ padding: '8px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                {/* Lined document, the same glyph the receipt already uses on
+                    both History pages. Same button, different paper — which is
+                    what makes the flip legible at a glance. */}
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+                Client Receipt
+              </a>
+            ) : (
+              <span
+                title={
+                  readyForPostApptEmail
+                    ? 'No receipt yet. The client receipt is generated and emailed by the Tuesday 8am job, so an appointment from this weekend gets one on Tuesday morning. Nothing is wrong and nothing needs doing.'
+                    : 'No receipt yet, and this one will be skipped: the Tuesday 8am job only picks up appointments ticked "Ready for Post-Appt Email". That checkbox is in the strip just below.'
+                }
+                style={{ padding: '8px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#9AA6B2', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'default' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                Receipt pending
+              </span>
+            )
+          ) : (
+            referral.appointmentSlipUrl && (
+              <a href={referral.appointmentSlipUrl} target="_blank" rel="noreferrer"
+                style={{ padding: '8px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', textDecoration: 'none', display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></svg>
+                Appt Slip
+              </a>
+            )
           )}
 
 
