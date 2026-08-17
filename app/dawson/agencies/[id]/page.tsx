@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import AgencyReferralsPanel, { AgencyReferral, ReferralStatus } from "@/components/internal/AgencyReferralsPanel"
 import { cityStateZip } from '@/lib/address'
+import { formatEasternTimestamp } from '@/lib/dates'
 
 type AgencyUser = {
   id: string
@@ -378,7 +379,13 @@ useEffect(() => {
                 {agency.county && <InfoRow label="County" value={`${agency.county} County`} />}<InfoRow label="Main Phone" value={agency.phone} />
                 <InfoRow label="Website" value={agency.website ? <a href={agency.website} target="_blank" rel="noreferrer" style={{ color: '#2A7F6F', textDecoration: 'none' }}>{agency.website}</a> : null} />
                 <InfoRow label="Record Created" value={formatDate(agency.registrationDate)} />
-                {agency.invitedDate && <InfoRow label="Invited" value={formatDate(agency.invitedDate)} />}
+                {/* Invited Date is a dateTime field, i.e. a true instant, not
+                    one of Airtable's date-only values. formatDate below builds
+                    `${value}T12:00:00`, which on "2026-07-18T04:00:00.000Z"
+                    produces an unparseable string and printed the literal text
+                    "Invalid Date" on this row. See the header of lib/dates.ts
+                    for which helper belongs to which kind of value. */}
+                {agency.invitedDate && <InfoRow label="Invited" value={formatEasternTimestamp(agency.invitedDate, { month: 'short', day: 'numeric', year: 'numeric' })} />}
                 <InfoRow label="Approval Date" value={formatDate(agency.approvalDate)} />
                 {agency.rejectedDate && <InfoRow label="Rejected" value={formatDate(agency.rejectedDate)} />}
                 {agency.source && <InfoRow label="Source" value={agency.source} />}

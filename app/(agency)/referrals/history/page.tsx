@@ -13,6 +13,7 @@ import {
   getReferralsByAgencyId,
 } from '@/lib/airtable'
 import HistoryClient from './HistoryClient'
+import { cityStateZip } from '@/lib/address'
 
 // Terminal statuses only.
 function isTerminal(r: {
@@ -92,10 +93,11 @@ export default async function HistoryPage() {
               <h1 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
                 {agency.name}
               </h1>
+              {/* Joined rather than interpolated — see the same block on
+                  app/(agency)/referrals/active/page.tsx. */}
               <p className="text-sm text-white/50 font-light">
-                {agency.address}
-                {agency.address2 ? `, ${agency.address2}` : ''}, {agency.city},{' '}
-                {agency.state} {agency.zip}
+                {[[agency.address, agency.address2].filter(Boolean).join(', '),
+                  cityStateZip(agency.city, agency.state, agency.zip)].filter(Boolean).join(', ')}
               </p>
               <p className="text-sm text-white/50 font-light">{agency.phone}</p>
             </div>
