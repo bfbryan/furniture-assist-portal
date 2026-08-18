@@ -586,11 +586,17 @@ const CONFIRM_COPY: Record<
     body: (name) => <>This will restore <strong style={{ color: '#1B2B4B' }}>{name}</strong>&apos;s portal access.</>,
     button: 'Reactivate',
   },
+  // Claims only what the flag actually does. PATCH /api/admin/staff/[id]/status
+  // removes their Clerk org membership (portal access), writes Portal Invite
+  // Status = 'Wrong Agency' to Airtable, and the Team page filters that value
+  // out of every section. Nothing emails or notifies anyone, and no internal
+  // screen lists flagged people today — so this promises a review, which is
+  // true, and not an alert, which would not be.
   'wrong-agency': {
     title: 'Not in this Agency',
     body: (name) => (
       <>
-        Flag <strong style={{ color: '#1B2B4B' }}>{name}</strong> as not belonging to this agency? They&apos;ll be hidden from your team view. Contact Furniture Assist to have them reassigned or removed.
+        Say that <strong style={{ color: '#1B2B4B' }}>{name}</strong> is not a staff member of this agency or office? This removes their portal access, takes them off your team list, and flags them for Furniture Assist to review.
       </>
     ),
     button: 'Flag Wrong Agency',

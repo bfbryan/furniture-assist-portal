@@ -1118,6 +1118,11 @@ async function applyScanReschedule(
         ? `The date read from the sheet (${newDate}) is not a Saturday.`
         : outcome.reason === 'all-slots-full'
         ? `Every time slot on ${newDate} is full and the sheet gave no time to override with.`
+        // Do-not-serve is a decision, not a scanning problem, so say so plainly
+        // to whoever reads OCR Notes on the record. There is no override here
+        // or anywhere else: the flag has to change in Airtable first.
+        : outcome.reason === 'do-not-serve'
+        ? `${outcome.message} The sheet was processed, but the appointment was NOT moved.`
         : outcome.message
     return {
       applied: false,

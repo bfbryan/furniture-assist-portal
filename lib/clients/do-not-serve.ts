@@ -21,6 +21,32 @@
 // to look alike.
 //
 // ============================================================
+// What it blocks: creating AND rescheduling  (updated Aug 2026)
+// ============================================================
+// This file used to say, in several places, that the block belongs on the
+// CREATION PATH specifically — the moment a referral comes into existence.
+// Ben has widened it: a client flagged do-not-serve must not be moved onto a
+// new Saturday either. The reasoning that put it on creation was never really
+// about creation, it was about not putting a flagged client in front of the
+// warehouse; a reschedule does exactly that, and it was reachable while the
+// front door was locked.
+//
+// So the rule now covers every path that puts a flagged client on a Saturday:
+//
+//   creating   agency submit, Dawson submit, and the submit route's
+//              reschedule-a-no-show-in-place branch (which already had it)
+//   moving     rescheduleReferral() — Dawson's reschedule button and the OCR
+//              scan pipeline both go through it — and the agency-facing
+//              reschedule REQUEST route
+//
+// The agency reschedule route is a request rather than a booking: it parks the
+// record in Dawson's queue and changes nothing about the appointment. It is
+// guarded anyway. A request that can only ever be refused is not worth
+// accepting, and refusing it at the door tells the agency why, in the same
+// words the create paths use, instead of leaving Dawson to discover the flag
+// and explain it himself.
+//
+// ============================================================
 // Why the test is `=== 'DNS'` and never `!== 'Active'`
 // ============================================================
 // Tempting, and wrong twice over:
@@ -125,12 +151,13 @@ async function fetchClientRow(clientId: string): Promise<ClientStatusRow> {
 /**
  * Refuse to go further if this Client is flagged do-not-serve.
  *
- * Call this on the CREATION PATH — the server route that is about to write a
- * referral — not on a screen. Screens come and go and each new one is a chance
- * to forget; there is exactly one moment a referral comes into existence, and
- * this belongs at it. Same reasoning that put the reschedule-notice
- * confirmation guard inside the shared send function rather than into each of
- * its four callers.
+ * Call this on a SERVER ROUTE that is about to put this client in front of the
+ * warehouse — creating a referral, or moving one onto a new Saturday — not on
+ * a screen. Screens come and go and each new one is a chance to forget. Same
+ * reasoning that put the reschedule-notice confirmation guard inside the
+ * shared send function rather than into each of its four callers, which is
+ * also why the reschedule side of this hooks into rescheduleReferral() rather
+ * than into its two callers.
  *
  * FAILS CLOSED. If the Clients row cannot be read — timeout, permissions, or
  * an id that does not resolve — this throws rather than assuming the client is
@@ -150,6 +177,53 @@ export async function assertClientMayBeReferred(clientId: string): Promise<void>
   if (isDoNotServeStatus(row.status)) {
     throw new DoNotServeError(doNotServeMessage(row.name), row.id)
   }
+}
+
+/**
+ * The same refusal, for a path holding an existing REFERRAL rather than a
+ * Client id — every reschedule path.
+ *
+ * Two tiers, deliberately, because a Client Referrals row may or may not carry
+ * a Client link:
+ *
+ *   1. There is a Client link. Use it. assertClientMayBeReferred() is the real
+ *      guard and it fails closed on a bad round-trip.
+ *
+ *   2. There is not. Rows that predate the July 2026 migration can still have
+ *      no link. Fall back to the identity lookup on the referral's own name and
+ *      DOB, which is the same backstop the agency submit route uses for the
+ *      same reason. If those are blank too there is nothing to match on and
+ *      nothing to block: a referral with no client link, no name and no date of
+ *      birth cannot be identified as anyone, flagged or not.
+ *
+ * Throws DoNotServeError when the flag is set. Anything else it throws means
+ * "could not verify" — callers must keep the two apart, since the first is
+ * permanent and the second is worth retrying.
+ */
+export async function assertReferralClientMayBeRescheduled(client: {
+  clientId?: string | null
+  firstName?: string | null
+  lastName?: string | null
+  dob?: string | null
+}): Promise<void> {
+  if (client.clientId) {
+    await assertClientMayBeReferred(client.clientId)
+    return
+  }
+
+  const flagged = await findDoNotServeClientByIdentity({
+    firstName: client.firstName ?? '',
+    lastName: client.lastName ?? '',
+    dob: client.dob ?? '',
+  })
+  if (flagged) {
+    throw new DoNotServeError(doNotServeMessage(flagged.name), flagged.id)
+  }
+}
+
+/** The wording every path uses when the status could not be read at all. */
+export function doNotServeUnverifiedMessage(action: string, detail: string): string {
+  return `Could not verify this client's do-not-serve status, so ${action}: ${detail}`
 }
 
 // ---------------------------------------------------------------------------
