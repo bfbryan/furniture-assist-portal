@@ -3,13 +3,7 @@
 import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
 import { cityStateZip } from '@/lib/address'
-
-// The "Invite Admin" button is parked, not removed. It posts to
-// /api/dawson/agencies/[id]/invite, which does not exist yet — so the button
-// currently 404s. Ben is inviting agency admins one at a time by hand for now;
-// flip this to true once that endpoint is built and the modal below goes live
-// again unchanged.
-const SHOW_INVITE_ADMIN: boolean = false
+import { formatEasternTimestamp } from '@/lib/dates'
 
 // Address fields are string | null: Airtable omits blank fields, and most of
 // these are blank on plenty of rows (75 of 129 unclaimed agencies have no
@@ -25,7 +19,8 @@ type Agency = {
   zip: string | null
   phone: string | null
   // email + contactName come from the Primary Admin lookup chain (June 2026).
-  // For Unclaimed agencies these are null by definition — no admin assigned yet.
+  // Ben links a Primary Admin during reconciliation, so a populated email
+  // here means there is an admin on file to invite.
   email: string | null
   website: string | null
   officeName: string | null
@@ -36,6 +31,17 @@ type Agency = {
   invitedDate: string | null
   rejectedDate: string | null
   possibleDuplicate: boolean
+  reconciled: boolean
+}
+
+// Ben invites agencies one at a time as he reconciles them. An agency is only
+// invitable once BOTH are true in Airtable: Reconciled is ticked, and a
+// Primary Admin with an email is linked. Everything else stays disabled with
+// the reason shown, so nothing can be invited early by accident.
+function inviteBlockReason(agency: Agency): string | null {
+  if (!agency.reconciled) return 'Not reconciled yet'
+  if (!agency.email) return 'No admin on file'
+  return null
 }
 
 // Agency name column. Wider than it was (270px) because long agency names were
@@ -78,52 +84,50 @@ function InviteModal({ agency, onClose, onInvited }: {
   onClose: () => void
   onInvited: (id: string) => void
 }) {
-  const [firstName, setFirstName] = useState('')
-  const [lastName, setLastName] = useState('')
-  const [email, setEmail] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const isResend = agency.status === 'Invited'
 
-  const valid =
-    firstName.trim().length > 0 &&
-    lastName.trim().length > 0 &&
-    /^\S+@\S+\.\S+$/.test(email.trim())
-
+  // The admin's identity comes from the Primary Admin already linked in
+  // Airtable — nothing is typed here, so the invite can only ever go to the
+  // person on file. The endpoint re-checks the same guard server-side.
   async function handleSubmit() {
-    if (!valid) return
     setLoading(true)
     setError(null)
     try {
       const res = await fetch(`/api/dawson/agencies/${agency.id}/invite`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          firstName: firstName.trim(),
-          lastName: lastName.trim(),
-          email: email.trim().toLowerCase(),
-        }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         setError(body?.error || `Invite failed (${res.status})`)
         return
       }
+      // The route returns 200 whether or not the email actually went out — the
+      // Airtable stamps are already committed by then and are not undone by a
+      // send failure. So the card would flip to Invited and look finished even
+      // when Resend rejected the message and the admin has no link. Once the
+      // automations are enabled at go-live, a bad key or an unverified sender
+      // would do that silently for every agency in a row.
+      //
+      // A skipped send is NOT a failure: while the automation is disabled in
+      // Airtable, { skipped: true } is the designed behaviour and the invite
+      // has genuinely succeeded.
+      const body = await res.json().catch(() => ({}))
+      const email = body?.email
+      if (email && email.skipped === false && email.sent === false) {
+        setError(
+          `${agency.name} is marked Invited, but the email did not send: ${email.error ?? 'unknown error'}. ` +
+          `Use Resend Invite once that is fixed.`
+        )
+        return
+      }
       onInvited(agency.id)
     } catch (e) {
-      setError('Network error — please try again')
+      setError('Network error. Please try again.')
     } finally {
       setLoading(false)
     }
-  }
-
-  const inputStyle: React.CSSProperties = {
-    width: '100%', padding: '8px 12px', borderRadius: '8px',
-    border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A',
-    outline: 'none', background: 'white', boxSizing: 'border-box',
-  }
-  const labelStyle: React.CSSProperties = {
-    fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
-    textTransform: 'uppercase', color: '#1B2B4B', marginBottom: '6px', display: 'block',
   }
 
   return (
@@ -136,26 +140,20 @@ function InviteModal({ agency, onClose, onInvited }: {
         width: '440px', boxShadow: '0 8px 40px rgba(27,43,75,0.18)',
       }}>
         <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B', marginBottom: '4px' }}>
-          Invite Primary Admin
+          {isResend ? 'Resend Invitation' : 'Invite Primary Admin'}
         </div>
         <div style={{ fontSize: '12px', color: '#7A8899', marginBottom: '20px' }}>
           {agency.name}
         </div>
 
-        <div style={{ display: 'flex', gap: '10px', marginBottom: '14px' }}>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>First Name</label>
-            <input style={inputStyle} value={firstName} onChange={e => setFirstName(e.target.value)} autoFocus />
+        <div style={{ background: '#F7F5F1', borderRadius: '8px', padding: '14px 16px', marginBottom: '18px' }}>
+          <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: '#7A8899', marginBottom: '6px' }}>
+            Admin on file
           </div>
-          <div style={{ flex: 1 }}>
-            <label style={labelStyle}>Last Name</label>
-            <input style={inputStyle} value={lastName} onChange={e => setLastName(e.target.value)} />
+          <div style={{ fontSize: '14px', fontWeight: 700, color: '#1B2B4B' }}>
+            {agency.contactName || '—'}
           </div>
-        </div>
-
-        <div style={{ marginBottom: '20px' }}>
-          <label style={labelStyle}>Email</label>
-          <input style={inputStyle} type="email" value={email} onChange={e => setEmail(e.target.value)} />
+          <div style={{ fontSize: '13px', color: '#2C3A4A' }}>{agency.email}</div>
         </div>
 
         {error && (
@@ -165,7 +163,13 @@ function InviteModal({ agency, onClose, onInvited }: {
         )}
 
         <div style={{ fontSize: '11px', color: '#7A8899', marginBottom: '18px', lineHeight: 1.5 }}>
-          An invitation email will be sent. The agency moves to <strong>Invited</strong> and this person becomes the Primary Admin.
+          {isResend ? (
+            <>A fresh sign-in link is emailed to this person. Their previous link stops working.</>
+          ) : (
+            <>This creates the agency&apos;s portal account and emails this person their
+            sign-in link. The agency moves to <strong>Invited</strong> and stays on this
+            page until they sign in for the first time.</>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
@@ -173,14 +177,14 @@ function InviteModal({ agency, onClose, onInvited }: {
             style={{ padding: '8px 18px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
             Cancel
           </button>
-          <button onClick={handleSubmit} disabled={loading || !valid}
+          <button onClick={handleSubmit} disabled={loading}
             style={{
               padding: '8px 18px', borderRadius: '8px', border: 'none',
-              background: valid ? '#2A7F6F' : '#B8C3CC',
+              background: '#2A7F6F',
               color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px',
-              cursor: valid && !loading ? 'pointer' : 'not-allowed',
+              cursor: loading ? 'not-allowed' : 'pointer',
             }}>
-            {loading ? 'Sending...' : 'Send Invitation'}
+            {loading ? 'Sending...' : isResend ? 'Resend Invitation' : 'Send Invitation'}
           </button>
         </div>
       </div>
@@ -190,6 +194,8 @@ function InviteModal({ agency, onClose, onInvited }: {
 
 function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: string) => void }) {
   const [modalOpen, setModalOpen] = useState(false)
+  const blockReason = inviteBlockReason(agency)
+  const isInvited = agency.status === 'Invited'
 
   return (
     <>
@@ -197,7 +203,7 @@ function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: 
         <InviteModal
           agency={agency}
           onClose={() => setModalOpen(false)}
-          onInvited={onInvited}
+          onInvited={(id) => { setModalOpen(false); onInvited(id) }}
         />
       )}
       <div style={{
@@ -205,14 +211,28 @@ function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: 
         boxShadow: '0 2px 12px rgba(27,43,75,0.07)', marginBottom: '10px',
         display: 'flex', alignItems: 'center', overflow: 'hidden',
       }}>
-        <div style={{ width: '4px', alignSelf: 'stretch', background: '#7A8899', flexShrink: 0 }} />
+        <div style={{ width: '4px', alignSelf: 'stretch', background: isInvited ? '#5B8DB8' : '#7A8899', flexShrink: 0 }} />
 
         <div style={{ width: NAME_COL_WIDTH, flexShrink: 0, padding: '14px 20px', alignSelf: 'flex-start' }}>
-          <a href={`/dawson/agencies/${agency.id}?from=unclaimed`} style={{ textDecoration: 'none' }}>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#2A7F6F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-              {agency.name}
-            </div>
-          </a>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <a href={`/dawson/agencies/${agency.id}?from=unclaimed`} style={{ textDecoration: 'none', minWidth: 0 }}>
+              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#2A7F6F', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                {agency.name}
+              </div>
+            </a>
+            {/* formatDate is for Airtable's date-only fields — it appends
+                'T12:00:00'. Invited Date is a dateTime, so it arrives as a
+                full instant ("2026-07-18T04:00:00.000Z") and that
+                concatenation does not parse: the tooltip read "Invited
+                Invalid Date". formatEasternTimestamp is the helper for an
+                instant; see the header of lib/dates.ts. */}
+            {isInvited && (
+              <span title={agency.invitedDate ? `Invited ${formatEasternTimestamp(agency.invitedDate, { month: 'short', day: 'numeric', year: 'numeric' })}` : 'Invited'}
+                style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(91,141,184,0.12)', color: '#5B8DB8', textTransform: 'uppercase', letterSpacing: '0.05em', flexShrink: 0 }}>
+                Invited
+              </span>
+            )}
+          </div>
           {agency.officeName && (
             <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {agency.officeName}
@@ -244,10 +264,15 @@ function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: 
               ⚠
             </div>
           )}
-          {SHOW_INVITE_ADMIN && (
+          {blockReason ? (
+            <button disabled title={blockReason}
+              style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: '#EDE9E1', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'not-allowed', flex: 1 }}>
+              {blockReason}
+            </button>
+          ) : (
             <button onClick={() => setModalOpen(true)}
-              style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', flex: 1 }}>
-              Invite Admin
+              style={{ padding: '6px 12px', borderRadius: '6px', border: 'none', background: isInvited ? 'rgba(91,141,184,0.12)' : '#2A7F6F', color: isInvited ? '#5B8DB8' : 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer', flex: 1 }}>
+              {isInvited ? 'Resend Invite' : 'Invite'}
             </button>
           )}
         </div>
@@ -264,14 +289,20 @@ export default function UnclaimedAgenciesPage() {
   const [sortDir, setSortDir] = useState<SortDir>('asc')
 
   useEffect(() => {
-    fetch('/api/dawson/agencies?status=Unclaimed')
+    // Invited agencies stay on this page (with a badge and a Resend button)
+    // until their admin claims — otherwise a pending invite would be
+    // invisible in every list between Invite and first sign-in.
+    fetch('/api/dawson/agencies?status=Unclaimed,Invited')
       .then(r => r.json())
       .then(data => { setAgencies(data); setLoading(false) })
   }, [])
 
   function handleInvited(id: string) {
-    // After invite, the agency moves to Invited status and leaves this list
-    setAgencies(prev => prev.filter(a => a.id !== id))
+    // Flip the card to its Invited look in place; it leaves the page for
+    // good once the admin signs in and the agency moves to Approved.
+    setAgencies(prev => prev.map(a =>
+      a.id === id ? { ...a, status: 'Invited', invitedDate: new Date().toISOString() } : a
+    ))
   }
 
   function handleSort(key: SortKey) {

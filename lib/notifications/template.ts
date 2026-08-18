@@ -45,7 +45,22 @@ export function fillTemplate(
   template: string,
   tokens: Record<string, string>
 ): string {
-  return template.replace(/{{\s*(\w+)\s*}}/g, (_match, key: string) => {
+  // The portal-account templates (agency welcome, staff invite, inactive,
+  // reinstate) were written for Zapier and still carry its placeholder
+  // dialect: {{=gives["<zap step id>"]["<key>"]}}, sometimes with single
+  // quotes. The step id was only meaningful inside the Zap, so it is
+  // ignored here — the inner key ("firstName", "Agency Name", "token", …)
+  // is the token name. Handled first so the generic {{Token}} pass below
+  // never sees the leftovers.
+  const zapierFilled = template.replace(
+    /{{=gives\[['"][^'"\]]*['"]\]\[['"]([^'"\]]+)['"]\]}}/g,
+    (_match, key: string) => {
+      const value = tokens[key];
+      return value !== undefined ? escapeHtml(value) : "";
+    }
+  );
+
+  return zapierFilled.replace(/{{\s*(\w+)\s*}}/g, (_match, key: string) => {
     const value = tokens[key];
     return value !== undefined ? escapeHtml(value) : "";
   });

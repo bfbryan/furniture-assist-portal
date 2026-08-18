@@ -1,10 +1,13 @@
 // app/api/admin/invite/route.ts
-// Invite a new staff member — creates Clerk user, adds to org, creates AT Agency Users record
+// Invite a brand-new staff member from the Team page — creates the Clerk
+// user, adds them to the org, creates the Agency Users row, and emails the
+// magic link through the Email Automations pattern (the Zapier webhook this
+// used to POST to has been retired).
 
 import { auth } from '@clerk/nextjs/server'
 import { clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
-import { easternTodayISO } from '@/lib/dates'
+import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -29,9 +32,13 @@ async function createAgencyUserRecord(data: {
     'Email':         data.email,
     'Role':          data.role === 'org:admin' ? 'Admin' : 'Staff',
     'Clerk User ID': data.clerkUserId,
-    'Status':        'Pending',
-    'Invited Date':  easternTodayISO(),
-    'Phone Number':  data.phone ??'',
+    // Created straight into the invited state — the magic link is already on
+    // its way, so the row belongs in the Team page's Awaiting Claim section
+    // (Invited + Invite Sent). First sign-in flips it to Active/Claimed.
+    'Status':        'Invited',
+    'Portal Invite Status': 'Invite Sent',
+    'Invited Date':  new Date().toISOString(),
+    'Phone Number':  data.phone ?? '',
     'Invited By':    data.invitedByName,
     // Linked record — Airtable expects an array of record IDs
     'Agency':        [data.agencyId],
@@ -99,7 +106,7 @@ export async function POST(req: NextRequest) {
         Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ user_id: user.id }),
+      body: JSON.stringify({ user_id: user.id, expires_in_seconds: 60 * 60 * 24 * 30 }),
     })
     const tokenData = await tokenRes.json()
     const magicLink: string | null = tokenData.url ?? null
@@ -116,15 +123,20 @@ export async function POST(req: NextRequest) {
       phone,
     })
 
-    // 5. Send invitation email with magic link
-  
-    await fetch(process.env.ZAPIER_STAFF_INVITE_WEBHOOK!, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ firstName, lastName, email, magicLink, agencyName }),
+    // 5. Send the invitation email. While the automation is disabled in
+    // Airtable this is skipped by design and the invite still succeeds.
+    const emailResult = await sendPortalAccountEmail({
+      automationName: 'Agency Staff Welcome to Portal - Invite',
+      to: email,
+      tokens: {
+        firstName,
+        agencyName: agencyName ?? '',
+        magicLink: magicLink ?? '',
+      },
+      agencyRecordId: agencyId,
     })
 
-    return NextResponse.json({ success: true, userId: user.id, magicLink })
+    return NextResponse.json({ success: true, userId: user.id, email: emailResult })
 
   } catch (err: any) {
     console.error('Invite error:', err)

@@ -3,6 +3,7 @@
 import { clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
+import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -88,36 +89,31 @@ export async function PATCH(
     }
   }
 
-  // Send Zapier webhooks for email notifications.
+  // Email notifications through the Email Automations pattern (these used to
+  // POST to Zapier webhooks whose Zaps have been switched off for weeks).
   // Only fire when we have a contactEmail — agencies without a Primary Admin
-  // wouldn't have anywhere to send the email.
+  // wouldn't have anywhere to send the email. While either automation is
+  // disabled in Airtable, its send is skipped by design.
   try {
-    if (
-      status === 'Inactive' &&
-      contactEmail &&
-      process.env.ZAPIER_AGENCY_INACTIVE_WEBHOOK
-    ) {
-      await fetch(process.env.ZAPIER_AGENCY_INACTIVE_WEBHOOK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agencyName, contactEmail, contactFirstName }),
+    if (status === 'Inactive' && contactEmail) {
+      await sendPortalAccountEmail({
+        automationName: 'Agency Inactive Notice',
+        to: contactEmail,
+        tokens: { contactFirstName, agencyName },
+        agencyRecordId: id,
       })
     }
 
-    if (
-      status === 'Approved' &&
-      previousStatus === 'Inactive' &&
-      contactEmail &&
-      process.env.ZAPIER_AGENCY_REINSTATE_WEBHOOK
-    ) {
-      await fetch(process.env.ZAPIER_AGENCY_REINSTATE_WEBHOOK, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ agencyName, contactEmail, contactFirstName }),
+    if (status === 'Approved' && previousStatus === 'Inactive' && contactEmail) {
+      await sendPortalAccountEmail({
+        automationName: 'Agency Reinstate Notice',
+        to: contactEmail,
+        tokens: { contactFirstName, agencyName },
+        agencyRecordId: id,
       })
     }
   } catch (err) {
-    console.error('Zapier webhook failed:', err)
+    console.error('Status notice email failed:', err)
   }
 
   return NextResponse.json({ success: true })

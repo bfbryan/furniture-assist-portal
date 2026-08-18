@@ -98,6 +98,10 @@ export async function getAllAgencies(status?: string) {
       officeName: optionalString(f['Office Name']),
       possibleDuplicate: (f['Possible Duplicate'] as boolean) ?? false,
       source: optionalString(f['Source']),
+      // Ben ticks Reconciled in Airtable once he has verified the imported
+      // agency. Together with an Admin Email on file (via Primary Admin) it
+      // gates the Invite button on the Unclaimed list.
+      reconciled: (f['Reconciled'] as boolean) ?? false,
     }
   })
 }
