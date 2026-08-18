@@ -31,7 +31,7 @@ type Referral = {
   phone: string | null
 }
 
-type StatusFilter = 'all' | 'completed' | 'missed' | 'cancelled' | 'rejected'
+type StatusFilter = 'all' | 'completed' | 'missed' | 'cancelled' | 'rejected' | 'withdrawn'
 type DateRange = '30' | '60' | '90' | '180' | 'all'
 
 // ---------- helpers ----------
@@ -53,8 +53,13 @@ function activityDate(r: Referral): string {
   return r.appointmentDate ?? r.referralDate ?? ''
 }
 
-function outcomeOf(r: Referral): 'completed' | 'missed' | 'cancelled' | 'rejected' | 'other' {
+function outcomeOf(r: Referral): 'completed' | 'missed' | 'cancelled' | 'rejected' | 'withdrawn' | 'other' {
   if (r.referralReview === 'Rejected') return 'rejected'
+  // Withdrawn is the agency's own doing, not a refusal. Without its own
+  // outcome it fell through to 'other', which OUTCOME_META resolves to the
+  // Cancelled styling and label — so a referral the agency withdrew read back
+  // to them as "Cancelled", i.e. as something Furniture Assist did.
+  if (r.referralReview === 'Withdrawn') return 'withdrawn'
   if (r.appointmentStatus === 'Completed') return 'completed'
   if (r.appointmentStatus === 'No Show') return 'missed'
   if (r.appointmentStatus === 'Cancelled') return 'cancelled'
@@ -69,6 +74,7 @@ const OUTCOME_META: Record<
   missed:    { label: 'Missed appointment', accent: '#C9A84C', pillBg: '#FEF6E7', pillText: '#B98A29' },
   cancelled: { label: 'Cancelled',          accent: '#C0392B', pillBg: '#FDEDEC', pillText: '#C0392B' },
   rejected:  { label: 'Rejected',           accent: '#C0392B', pillBg: '#FDEDEC', pillText: '#C0392B' },
+  withdrawn: { label: 'Withdrawn',          accent: '#7A8899', pillBg: '#F0F0F0', pillText: '#7A8899' },
 }
 
 const STATUS_CHIPS: Array<{ key: StatusFilter; label: string }> = [
@@ -77,6 +83,7 @@ const STATUS_CHIPS: Array<{ key: StatusFilter; label: string }> = [
   { key: 'missed',    label: 'MISSED APPOINTMENT' },
   { key: 'cancelled', label: 'CANCELLED' },
   { key: 'rejected',  label: 'REJECTED' },
+  { key: 'withdrawn', label: 'WITHDRAWN' },
 ]
 
 // Shared by all three filter selects so they read as one set of controls.

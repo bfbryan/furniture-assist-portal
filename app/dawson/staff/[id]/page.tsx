@@ -15,6 +15,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import AgencyReferralsPanel, { AgencyReferral, ReferralStatus } from '@/components/internal/AgencyReferralsPanel'
+import { formatEasternTimestamp } from '@/lib/dates'
 
 type Referral = {
   id: string
@@ -248,7 +249,11 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
                 />
                 <InfoRow label="Phone" value={staff.phone} />
                 <InfoRow label="Record Created" value={formatDate(staff.recordCreationDate)} />
-                {staff.invitedDate && <InfoRow label="Invited" value={formatDate(staff.invitedDate)} />}
+                {/* Invited Date on Agency Users is a dateTime, so it is an
+                    instant. formatDate here appends 'T12:00:00' to it and
+                    renders the literal text "Invalid Date" — same as the
+                    agency detail page. See lib/dates.ts. */}
+                {staff.invitedDate && <InfoRow label="Invited" value={formatEasternTimestamp(staff.invitedDate, { month: 'short', day: 'numeric', year: 'numeric' })} />}
                 {staff.needsReview && (
                   <InfoRow
                     label="Review Flag"

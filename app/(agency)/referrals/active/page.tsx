@@ -11,9 +11,18 @@ import {
   getReferralsByAgencyId,
 } from '@/lib/airtable'
 import ReferralTable from '@/components/agency/ReferralTable'
+import { cityStateZip } from '@/lib/address'
 
 // Active = not yet approved OR upcoming appointment.
-// Excludes Completed, Cancelled, Rejected.
+// Excludes Completed, Cancelled, Rejected and No Show.
+//
+// No Show has to be excluded here to match isTerminal() on the History page,
+// which already treats it as finished. While the two disagreed, a No Show was
+// kept by this filter and then matched none of ReferralTable's seven status
+// groups, so it rendered in no section at all — and the table's empty state
+// tested the ungrouped array, so it did not fire either. An agency whose only
+// remaining referrals were No Shows opened Active to a completely blank page.
+// No Show is the largest bucket in the base by some way.
 function isActive(r: {
   referralReview: string
   appointmentStatus: string
@@ -21,6 +30,7 @@ function isActive(r: {
   if (r.referralReview === 'Rejected') return false
   if (r.appointmentStatus === 'Completed') return false
   if (r.appointmentStatus === 'Cancelled') return false
+  if (r.appointmentStatus === 'No Show') return false
   return true
 }
 
@@ -84,8 +94,14 @@ export default async function ActiveReferralsPage() {
               <h1 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
                 {agency.name}
               </h1>
+              {/* Joined rather than interpolated. 75 of the 129 agencies queued
+                  for onboarding have no City, and an agency with no address at
+                  all rendered a line reading ", ," under its own name. This is
+                  what lib/address.ts exists for; the other agency surfaces
+                  already use it. */}
               <p className="text-sm text-white/50 font-light">
-                {agency.address}{agency.address2 ? `, ${agency.address2}` : ''}, {agency.city}, {agency.state} {agency.zip}
+                {[[agency.address, agency.address2].filter(Boolean).join(', '),
+                  cityStateZip(agency.city, agency.state, agency.zip)].filter(Boolean).join(', ')}
               </p>
               <p className="text-sm text-white/50 font-light">{agency.phone}</p>
             </div>

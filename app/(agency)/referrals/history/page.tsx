@@ -13,13 +13,21 @@ import {
   getReferralsByAgencyId,
 } from '@/lib/airtable'
 import HistoryClient from './HistoryClient'
+import { cityStateZip } from '@/lib/address'
 
 // Terminal statuses only.
+//
+// 'Withdrawn' has to be here. The Withdraw button writes Referral Review =
+// 'Withdrawn', getPortalStatus returns it, and ReferralTable has no group for
+// it — so the card rendered nowhere on Active, and without this line it never
+// reached History either. One click made the referral disappear from the
+// agency's portal completely. Nothing else in the app surfaces it.
 function isTerminal(r: {
   referralReview: string
   appointmentStatus: string
-}): boolean {``
+}): boolean {
   if (r.referralReview === 'Rejected') return true
+  if (r.referralReview === 'Withdrawn') return true
   if (r.appointmentStatus === 'Completed') return true
   if (r.appointmentStatus === 'Cancelled') return true
   if (r.appointmentStatus === 'No Show') return true
@@ -92,10 +100,11 @@ export default async function HistoryPage() {
               <h1 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
                 {agency.name}
               </h1>
+              {/* Joined rather than interpolated — see the same block on
+                  app/(agency)/referrals/active/page.tsx. */}
               <p className="text-sm text-white/50 font-light">
-                {agency.address}
-                {agency.address2 ? `, ${agency.address2}` : ''}, {agency.city},{' '}
-                {agency.state} {agency.zip}
+                {[[agency.address, agency.address2].filter(Boolean).join(', '),
+                  cityStateZip(agency.city, agency.state, agency.zip)].filter(Boolean).join(', ')}
               </p>
               <p className="text-sm text-white/50 font-light">{agency.phone}</p>
             </div>

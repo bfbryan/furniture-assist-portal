@@ -1052,6 +1052,31 @@ async function setOcrNotes(recordId: string, note: string): Promise<void> {
   }
 }
 
+// Put a referral back into Dawson's review queue. Only used when a scanned
+// reschedule could not be applied — see the call site for why the record is
+// otherwise invisible. Never throws: the page has already done its real work
+// by this point, and failing to queue it must not turn a partial success into
+// a hard failure.
+async function setReferralReviewPending(recordId: string): Promise<void> {
+  if (!AIRTABLE_BASE_ID || !AIRTABLE_API_KEY) return
+  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}/${recordId}`
+  try {
+    const res = await fetch(url, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${AIRTABLE_API_KEY}`,
+      },
+      body: JSON.stringify({ fields: { 'Referral Review': 'Pending' }, typecast: true }),
+    })
+    if (!res.ok) {
+      console.error(`setReferralReviewPending PATCH ${res.status} for ${recordId}: ${await res.text()}`)
+    }
+  } catch (e) {
+    console.error('setReferralReviewPending failed:', e)
+  }
+}
+
 async function applyScanReschedule(
   result: GeminiOcrResult,
   recordId: string,
@@ -1087,6 +1112,8 @@ async function applyScanReschedule(
     const explanation =
       outcome.reason === 'no-schedule-row'
         ? `No Saturday Schedule row exists for ${newDate}. Create that Saturday, then reschedule in the portal.`
+        : outcome.reason === 'blackout-date'
+        ? `${newDate} is a Blackout Saturday — the warehouse is closed. Pick a different date in the portal.`
         : outcome.reason === 'not-saturday'
         ? `The date read from the sheet (${newDate}) is not a Saturday.`
         : outcome.reason === 'all-slots-full'
@@ -1254,6 +1281,21 @@ export async function processPage({
       if (!applied.applied) {
         const message = applied.errorMessage ?? 'Reschedule could not be applied.'
         await flagManualReview(recordId, message, batchAirtableUrl, scanBatchRecordId)
+        // Put it in front of a human. writeToAirtable has already set
+        // Appointment Status = 'Reschedule', and 'Manual Review Needed' /
+        // 'OCR Confidence' / 'OCR Notes' are written but read by nothing in
+        // the portal and matched by no view in the base — so without this the
+        // record sits mid-reschedule, on its stale old appointment, listed on
+        // no page at all. Scheduled and History both filter it out, and the
+        // review queue keys on Referral Review = 'Pending'.
+        //
+        // Setting that pairs with the 'Reschedule' status the review page
+        // already groups on, so the record appears in its Reschedule Requests
+        // section with the Pick Another button that fits this exactly. It is
+        // deliberately NOT given a Preferred Date: the date on the sheet is
+        // the one that could not be used, and offering Accept Date for it
+        // would only fail again.
+        await setReferralReviewPending(recordId)
         return { ...base, success: false, errorMessage: message }
       }
       return { ...base, notice: applied.notice }

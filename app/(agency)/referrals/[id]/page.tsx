@@ -721,6 +721,9 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({ open: false, type: null, id: '', name: '' })
   const [rescheduleModal, setRescheduleModal] = useState<RescheduleModalState>({ open: false, id: '', name: '' })
   const [actionLoading, setActionLoading] = useState(false)
+  // A cancel / withdraw / reschedule that did not go through. Cleared when a
+  // modal opens; while it is set the modal stays open and shows it.
+  const [actionError, setActionError] = useState<string | null>(null)
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
 
   useEffect(() => {
@@ -737,6 +740,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           return r.json()
         })
         .then(data => { if (data) { setReferral(data); setLoading(false) } })
+        // Without this a dropped connection leaves "Loading referral..." on
+        // screen forever — the !r.ok branch above only covers a response that
+        // actually arrived.
+        .catch(() => { setError('Could not load this referral. Check your connection and try again.'); setLoading(false) })
     })
     // Saturdays for the reschedule picker. leadDays=14 matches ReferralTable —
     // agencies need more notice than Dawson does.
@@ -759,14 +766,26 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       .catch(() => {})
   }
 
+  // The response used to be discarded, so a 403, a failed Airtable write or a
+  // dropped connection closed the dialog exactly as success does and the
+  // agency believed the appointment was cancelled. Same fix as
+  // components/agency/ReferralTable.tsx, which offers the same three actions.
   async function handleConfirmAction() {
     setActionLoading(true)
+    setActionError(null)
     try {
-      await fetch(`/api/referrals/${confirmModal.id}/${confirmModal.type}`, { method: 'POST' })
-    } finally {
-      setActionLoading(false)
+      const res = await fetch(`/api/referrals/${confirmModal.id}/${confirmModal.type}`, { method: 'POST' })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setActionError(body.error || 'That did not go through. Please try again.')
+        return
+      }
       setConfirmModal({ open: false, type: null, id: '', name: '' })
       refetch()
+    } catch {
+      setActionError('Network error. Please try again.')
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -776,16 +795,24 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     preferredTime: string | null,
   ) {
     setActionLoading(true)
+    setActionError(null)
     try {
-      await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
+      const res = await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ preferredDate, preferredTime, flexible }),
       })
-    } finally {
-      setActionLoading(false)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setActionError(body.error || 'That did not go through. Please try again.')
+        return
+      }
       setRescheduleModal({ open: false, id: '', name: '' })
       refetch()
+    } catch {
+      setActionError('Network error. Please try again.')
+    } finally {
+      setActionLoading(false)
     }
   }
 
@@ -829,15 +856,17 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       <ConfirmModal
         modal={confirmModal}
         onConfirm={handleConfirmAction}
-        onClose={() => setConfirmModal({ open: false, type: null, id: '', name: '' })}
+        onClose={() => { setActionError(null); setConfirmModal({ open: false, type: null, id: '', name: '' }) }}
         loading={actionLoading}
+        error={actionError}
       />
       <RescheduleModal
         modal={rescheduleModal}
         availableDates={availableDates}
         onConfirm={handleRescheduleConfirm}
-        onClose={() => setRescheduleModal({ open: false, id: '', name: '' })}
+        onClose={() => { setActionError(null); setRescheduleModal({ open: false, id: '', name: '' }) }}
         loading={actionLoading}
+        submitError={actionError}
       />
 
       {/* ------------------------------------------------------------------

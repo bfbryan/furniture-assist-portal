@@ -65,10 +65,16 @@ function toInt(v: any): number {
 }
 
 // Look up a Saturday Schedule record by ISO date. Returns the full record
-// (id + per-slot booked counts) or null. Uses DATETIME_FORMAT to compare
-// on YYYY-MM-DD regardless of AT's stored datetime precision.
+// (id + status + per-slot booked counts) or null. Uses DATETIME_FORMAT to
+// compare on YYYY-MM-DD regardless of AT's stored datetime precision.
+//
+// Status is read but NOT filtered on in the formula, so a Blackout day comes
+// back and can be reported as a Blackout day rather than as a missing row.
+// Telling the caller "create that Saturday" when the Saturday exists and is
+// deliberately closed would invite a duplicate schedule row.
 async function findScheduleRecordByDate(isoDate: string): Promise<{
   id: string
+  status: string | null
   bookedByTime: Record<TimeSlot, number>
 } | null> {
   const formula = `DATETIME_FORMAT({Date}, 'YYYY-MM-DD') = '${isoDate}'`
@@ -82,6 +88,7 @@ async function findScheduleRecordByDate(isoDate: string): Promise<{
   const rec = data.records[0]
   return {
     id: rec.id as string,
+    status: typeof rec.fields['Status'] === 'string' ? rec.fields['Status'] : null,
     bookedByTime: {
       '9am':  toInt(rec.fields['9am']  ?? rec.fields['9am Booked']),
       '10am': toInt(rec.fields['10am'] ?? rec.fields['10am Booked']),
@@ -115,6 +122,7 @@ export type RescheduleFailureReason =
   | 'invalid-time'
   | 'not-saturday'
   | 'no-schedule-row'
+  | 'blackout-date'
   | 'all-slots-full'
   | 'lookup-failed'
   | 'write-failed'
@@ -208,6 +216,28 @@ export async function rescheduleReferral({
       ok: false,
       reason: 'no-schedule-row',
       message: `No Saturday Schedule row found for ${preferredDate}.`,
+    }
+  }
+
+  // A Blackout Saturday is a closure, not a full day. Its per-hour rollups are
+  // all 0 and Slots Remaining is forced to 0, so every capacity check below
+  // reads it as completely empty and would happily book into it.
+  //
+  // Dawson cannot reach this by clicking — his date picker and the agency one
+  // both filter on Status = 'Open'. The OCR scan pipeline can: it takes the
+  // date a volunteer wrote in the RESCH/DATE box, and the Saturday after a
+  // scanned one is often a Blackout (2026-09-05 follows 2026-08-29). Booking
+  // there would move the client onto a day the warehouse is shut, flip the
+  // record to Scheduled, re-arm the reminder, and — because the Reschedule
+  // Notice automation is enabled — email the agency to confirm it.
+  //
+  // This is deliberately NOT a capacity check. Dawson's authority to book past
+  // a cap is untouched; a closed day is not a full day.
+  if (scheduleRow.status === 'Blackout') {
+    return {
+      ok: false,
+      reason: 'blackout-date',
+      message: `${preferredDate} is a Blackout Saturday — the warehouse is closed that day. Pick a different Saturday.`,
     }
   }
 
