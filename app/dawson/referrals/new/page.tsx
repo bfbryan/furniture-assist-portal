@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { TIME_CAPS, TIME_ORDER, describeDayLoad, type TimeSlot } from '@/lib/schedule/capacity'
 import { matchesSearch } from '@/lib/search'
+import { maskMdyInput, parseMdyToISO } from '@/lib/dates'
 import AddAgencyStaffModal, { type AddStaffResult } from '@/components/internal/modals/AddAgencyStaffModal'
 import DuplicateClientBanner, { type ClientMatch } from '@/components/internal/modals/DuplicateClientModal'
 
@@ -72,6 +73,76 @@ const INPUT: React.CSSProperties = {
   border: `1px solid ${FIELD_BORDER}`, fontSize: '14px', color: '#2C3A4A',
   background: 'white', outline: 'none',
 }
+
+
+
+/* The field border, in the one state where it is allowed to be red: a date
+   that has been typed but is not a real date. Same width and radius, so
+   nothing jumps when it turns. */
+const INPUT_INVALID: React.CSSProperties = {
+  ...INPUT,
+  border: '1px solid #C0392B',
+}
+
+
+
+const FIELD_ERROR: React.CSSProperties = {
+  marginTop: '5px', fontSize: '11.5px', color: '#C0392B',
+}
+
+
+
+/* ---------------------------------------------------------------------------
+   FORM ROW TRACKS
+
+   Every multi-field row on this form used bare `1fr` tracks. A bare 1fr is
+   `minmax(auto, 1fr)`, and that `auto` minimum is the item's MIN-CONTENT — so
+   a track can refuse to shrink, and a control that will not fit ends up
+   spilling over the one beside it. That is the mechanism behind the date of
+   birth field landing on top of the cell phone field on an iPad.
+
+   Measured in Chrome on this very page rather than reasoned about. Min-content
+   width of the three controls in that row:
+
+     input[type=date]   149px      <-- the native picker, and the whole problem
+     input[type=text]    26px      (its padding, 12+12, plus 1+1 of border)
+     select              26px
+
+   Squeezing that row: below about 440px of row width the date column pins
+   itself at 149px and stops giving way, so the other two absorb the entire
+   shortfall — cell phone is down to 69px at a 320px row and hits its own 26px
+   floor shortly after, at which point the row's contents no longer fit inside
+   the row. Chrome spills to the right; Safari, where a date input's internal
+   fields have a larger and harder minimum, paints it over its neighbour, which
+   is what Ben saw.
+
+   Two things fix it, and both are in this PR:
+
+     1. these tracks. `auto-fit` with an explicit 180px floor means a row wraps
+        onto a second line when its fields can no longer sit side by side,
+        instead of crushing them into each other. No media query is involved,
+        so it also works on the internal pages, which are laid out with inline
+        styles that a media query cannot reach — the agency portal's fa-form-*
+        classes stack below 1280px and these screens never got that treatment.
+     2. the date of birth field stops being a native date input (see below),
+        which removes the oversized control from the row entirely.
+
+   180px is measured, not picked: the widest real value any of these fields
+   holds is a formatted phone number, "(000) 000-0000", at 104px of text plus
+   26px of box. 180 leaves room for the placeholder, which is longer.
+
+   Verified at 1440, 1280, 1180, 820 and 768: at desktop widths every row keeps
+   exactly the columns it had and every field is the same width to the pixel,
+   because the floors all fit. Only tablet widths change, which is where the
+   overlap was.
+   --------------------------------------------------------------------------- */
+const FORM_ROW = 'repeat(auto-fit, minmax(180px, 1fr))'
+
+/* City / State / Zip keeps its deliberate fixed tracks — a two-letter state and
+   a five-digit zip do not want a third of the row each. Only the City track
+   changes, from `1fr` to `minmax(0, 1fr)`, so it can shrink rather than push
+   the other two off the end. */
+const FORM_ROW_CITY_STATE_ZIP = 'minmax(0, 1fr) 80px 120px'
 
 
 
@@ -248,10 +319,9 @@ export default function DawsonAddReferralPage() {
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
   const [availabilityLoading, setAvailabilityLoading] = useState(true)
 
-  // City autocomplete -- most-common values already on file, fetched once
-  // and offered via a native <datalist> on the City field. No per-keystroke
-  // querying; the browser handles prefix-filtering itself.
-  const [commonCities, setCommonCities] = useState<string[]>([])
+  // Date of birth is TYPED, mm/dd/yyyy, not picked. See handleDobChange below.
+  const [dobText, setDobText] = useState('')
+  const [dobBlurred, setDobBlurred] = useState(false)
 
 
 
@@ -356,16 +426,6 @@ useEffect(() => {
 
 
 
-  // Load the most-common City values once, for the datalist autocomplete.
-  useEffect(() => {
-    fetch('/api/dawson/clients/cities')
-      .then(r => r.json())
-      .then(data => setCommonCities(Array.isArray(data.cities) ? data.cities : []))
-      .catch(() => setCommonCities([]))
-  }, [])
-
-
-
   // Fires the duplicate check as soon as First/Last/DOB are filled in --
   // Agency & Staff is the first section on the form, so by the time
   // someone reaches Client Information the current agency is already
@@ -425,6 +485,46 @@ useEffect(() => {
 
 
   const set = (field: string, value: any) => setForm(prev => ({ ...prev, [field]: value }))
+
+
+
+  // Date of birth: typed mm/dd/yyyy, stored ISO.
+  //
+  // `dobText` is exactly what is in the box. `form.dob` is the 'YYYY-MM-DD'
+  // the rest of the app stores and compares on, and it is written ONLY from a
+  // value that actually parsed — so a half-typed or impossible date leaves
+  // form.dob empty. That is what keeps a bad value away from the submit path:
+  // nothing malformed can be sent, because malformed never becomes a value.
+  // The required-field check already refuses an empty DOB by name, and the
+  // extra check in handleSubmit distinguishes "not filled in" from "filled in
+  // wrongly" so Dawson is told which of the two he is looking at.
+  //
+  // Ben asked for typing because tabbing through the native picker is slower.
+  // It also removes two faults the native control brought with it: on iPadOS
+  // Safari an EMPTY date input renders today's date, so a required field that
+  // is genuinely blank looks filled in; and that control's 149px minimum width
+  // is what pushed this field over the cell phone field beside it (see
+  // FORM_ROW above).
+  //
+  // Nothing downstream changes. form.dob is the same ISO string the native
+  // input produced, which is what the duplicate-client check keys on together
+  // with first and last name, what findClientMatches() normalises, and what the
+  // submit route's formatDOB() turns into the M/D/YYYY that Airtable stores.
+  const dobMalformed = dobText.trim() !== '' && form.dob === ''
+
+  // Whether to SAY so, which is a different question. A half-typed date is
+  // malformed by definition, so keying the message off dobMalformed alone puts
+  // a red border and an error under the field from the first digit and leaves
+  // it there for seven of the eight keystrokes. It waits until the entry is
+  // either finished (all ten characters are in) or abandoned (the field lost
+  // focus). The submit guard uses dobMalformed directly and is not affected.
+  const dobShowError = dobMalformed && (dobBlurred || dobText.length === 10)
+
+  const handleDobChange = (raw: string) => {
+    const masked = maskMdyInput(raw)
+    setDobText(masked)
+    set('dob', parseMdyToISO(masked) ?? '')
+  }
 
 
 
@@ -773,6 +873,16 @@ useEffect(() => {
       children: '# of Children',
       dob: 'Date of Birth',
     }
+    // Named before the generic missing-fields message, because a date of birth
+    // that has been typed but does not parse IS missing as far as form.dob is
+    // concerned — and being told "Missing required field: Date of Birth" while
+    // looking at a box with 12/34/5678 in it would send Dawson hunting for a
+    // field he can plainly see he filled in.
+    if (dobMalformed) {
+      setError(`Date of Birth is not a real date: "${dobText}". Enter it as mm/dd/yyyy.`)
+      return
+    }
+
     const missing = Object.keys(REQUIRED_LABELS).filter(
       f => !String(form[f as keyof typeof form] ?? '').trim()
     )
@@ -835,6 +945,9 @@ useEffect(() => {
   setSubmitted(false)
   clearAgency()
   setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '', preferredDate: '', appointmentTime: null })
+  // dobText lives outside `form`, so clearing form.dob does not clear the box.
+  setDobText('')
+  setDobBlurred(false)
   setRescheduleMode(null)
   setMatchResolution(null)
   setCheckedKey(null)
@@ -1128,7 +1241,7 @@ useEffect(() => {
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 New Agency Details
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px', marginBottom: '12px' }}>
                 <div>
                   <label style={LABEL}>Agency Name *</label>
                   <input style={INPUT} value={newAgency.name} onChange={e => setNewAgency({ ...newAgency, name: e.target.value })} placeholder="Agency name" />
@@ -1141,7 +1254,7 @@ useEffect(() => {
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 Referring Staff Member
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px', marginBottom: '12px' }}>
                 <div>
                   <label style={LABEL}>First Name *</label>
                   <input style={INPUT} value={newStaff.firstName} onChange={e => setNewStaff({ ...newStaff, firstName: e.target.value })} />
@@ -1151,7 +1264,7 @@ useEffect(() => {
                   <input style={INPUT} value={newStaff.lastName} onChange={e => setNewStaff({ ...newStaff, lastName: e.target.value })} />
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px' }}>
                 <div>
                   <label style={LABEL}>Staff Email *</label>
                   <input style={INPUT} type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="staff@example.com" />
@@ -1198,7 +1311,7 @@ useEffect(() => {
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 New Staff Member
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px', marginBottom: '12px' }}>
                 <div>
                   <label style={LABEL}>First Name *</label>
                   <input style={INPUT} value={newStaff.firstName} onChange={e => setNewStaff({ ...newStaff, firstName: e.target.value })} />
@@ -1208,7 +1321,7 @@ useEffect(() => {
                   <input style={INPUT} value={newStaff.lastName} onChange={e => setNewStaff({ ...newStaff, lastName: e.target.value })} />
                 </div>
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px' }}>
                 <div>
                   <label style={LABEL}>Staff Email *</label>
                   <input style={INPUT} type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="staff@example.com" />
@@ -1229,7 +1342,7 @@ useEffect(() => {
 
           {/* Client Info */}
           <div style={SECTION}>Client Information</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '16px', marginBottom: '16px' }}>
             <div>
               <label style={LABEL}>First Name *</label>
               <input style={INPUT} value={form.firstName} onChange={e => set('firstName', e.target.value)} placeholder="First name" />
@@ -1239,10 +1352,25 @@ useEffect(() => {
               <input style={INPUT} value={form.lastName} onChange={e => set('lastName', e.target.value)} placeholder="Last name" />
             </div>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '16px', marginBottom: '16px' }}>
             <div>
               <label style={LABEL}>Date of Birth *</label>
-              <input style={INPUT} type="date" value={form.dob} onChange={e => set('dob', e.target.value)} />
+              <input
+                style={dobShowError ? INPUT_INVALID : INPUT}
+                value={dobText}
+                onChange={e => handleDobChange(e.target.value)}
+                onBlur={() => setDobBlurred(true)}
+                placeholder="mm/dd/yyyy"
+                // Numeric keypad on the iPad, and no autocorrect or
+                // autocapitalisation getting in the way of eight digits.
+                inputMode="numeric"
+                autoComplete="off"
+                maxLength={10}
+                aria-invalid={dobShowError}
+              />
+              {dobShowError && (
+                <div style={FIELD_ERROR}>Enter a real date as mm/dd/yyyy.</div>
+              )}
             </div>
             <div>
               <label style={LABEL}>Cell Phone</label>
@@ -1292,20 +1420,25 @@ useEffect(() => {
             <label style={LABEL}>Address Line 2</label>
             <input style={INPUT} value={form.address2} onChange={e => set('address2', e.target.value)} placeholder="Apt, Suite, Unit (optional)" />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 80px 120px', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW_CITY_STATE_ZIP, gap: '16px', marginBottom: '16px' }}>
             <div>
               <label style={LABEL}>City *</label>
+              {/* Plain text field. This carried a native <datalist>
+                  autocomplete over the 40 most common City values on file;
+                  Ben reported it pausing when he went back to correct an
+                  entry, and his steer was that free typing is probably easier
+                  for Dawson. Dropped rather than tuned — see the PR for the
+                  measurements, but the short version is that the suggestion
+                  list was being built from unvalidated free text and was
+                  itself offering "Newark```", "j" and "north Bergen" as
+                  choices, so keeping it had a cost of its own. */}
               <input
                 style={INPUT}
                 value={form.city}
                 onChange={e => set('city', e.target.value)}
                 placeholder="City"
-                list="common-cities"
                 autoComplete="off"
               />
-              <datalist id="common-cities">
-                {commonCities.map(c => <option key={c} value={c} />)}
-              </datalist>
             </div>
             <div>
               <label style={LABEL}>State *</label>
@@ -1321,7 +1454,7 @@ useEffect(() => {
 
           {/* Household */}
           <div style={{ ...SECTION, marginTop: '24px' }}>Household</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginBottom: '16px' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '16px', marginBottom: '16px' }}>
             <div>
               <label style={LABEL}>Household Size *</label>
               <input style={INPUT} type="number" min="1" value={form.hhSize} onChange={e => set('hhSize', e.target.value)} placeholder="Total people in household" />

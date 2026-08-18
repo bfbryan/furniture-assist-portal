@@ -31,6 +31,11 @@
 
 import { sendRescheduleNotice, type RescheduleNoticeResult } from '@/lib/notifications/reschedule-notice'
 import { parseDateOnly } from '@/lib/dates'
+import {
+  assertReferralClientMayBeRescheduled,
+  doNotServeUnverifiedMessage,
+  DoNotServeError,
+} from '@/lib/clients/do-not-serve'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -126,6 +131,10 @@ export type RescheduleFailureReason =
   | 'all-slots-full'
   | 'lookup-failed'
   | 'write-failed'
+  /** The client is flagged do-not-serve. Permanent: retrying will not help. */
+  | 'do-not-serve'
+  /** The do-not-serve status could not be read, so this failed closed. Retryable. */
+  | 'do-not-serve-unverified'
 
 /** Set only when an explicitly requested slot was already at or over its cap. */
 export interface CapacityOverride {
@@ -199,6 +208,57 @@ export async function rescheduleReferral({
 
   const shouldSnapshot =
     currentScheduleLinks.length > 0 && !!currentApptTime && !!currentApptDate
+
+  // ---- Do-not-serve. A flagged client must not be moved onto a new Saturday.
+  //   Ben widened the flag from "cannot be referred" to "cannot be put in
+  //   front of the warehouse", which a reschedule does just as surely as a new
+  //   referral does. It sits here, in the shared function, rather than in the
+  //   two callers, so Dawson's reschedule button and the OCR scan pipeline are
+  //   covered by construction and a third caller cannot forget it.
+  //
+  //   Before any write, and after the referral read above so it costs no extra
+  //   round trip. First Name / Last Name / DOB on Client Referrals are lookups
+  //   through the Client link, so they arrive wrapped in arrays; the fallback
+  //   only runs for a row with no link at all.
+  //   Fails closed on a referral that could not be read at all. getReferral()
+  //   returns null for any non-OK response, and the code below tolerates that
+  //   by skipping the snapshot and writing anyway — which is survivable for a
+  //   snapshot and not survivable for this. A record whose Client link cannot
+  //   be seen is a record whose flag cannot be seen.
+  if (!current) {
+    return {
+      ok: false,
+      reason: 'do-not-serve-unverified',
+      message: doNotServeUnverifiedMessage(
+        'the appointment was not moved',
+        `referral ${referralId} could not be read`,
+      ),
+    }
+  }
+
+  try {
+    const clientLinks: string[] = current?.fields?.['Client'] ?? []
+    const lookup = (v: unknown): string =>
+      Array.isArray(v) ? String(v[0] ?? '') : typeof v === 'string' ? v : ''
+    await assertReferralClientMayBeRescheduled({
+      clientId: clientLinks[0] ?? null,
+      firstName: lookup(current?.fields?.['First Name']),
+      lastName: lookup(current?.fields?.['Last Name']),
+      dob: lookup(current?.fields?.['DOB']),
+    })
+  } catch (e) {
+    if (e instanceof DoNotServeError) {
+      return { ok: false, reason: 'do-not-serve', message: e.message }
+    }
+    return {
+      ok: false,
+      reason: 'do-not-serve-unverified',
+      message: doNotServeUnverifiedMessage(
+        'the appointment was not moved',
+        e instanceof Error ? e.message : String(e),
+      ),
+    }
+  }
 
   // ---- Look up the Saturday Schedule row for the requested date.
   let scheduleRow: Awaited<ReturnType<typeof findScheduleRecordByDate>>

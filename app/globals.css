@@ -1,5 +1,27 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   BOX SIZING
+   ==========================================================================
+   Tailwind v4's preflight already sets this on `*`, so as of today this rule
+   changes nothing — measured, not assumed: every input, select and textarea on
+   the internal Add Referral screen computes box-sizing: border-box before and
+   after, and no field's width moves by a pixel at 1440, 1280, 1180, 820 or
+   768. It is here for one reason: preflight ships inside `@layer base`, and
+   ANY unlayered author rule beats a layered one no matter how weak its
+   selector. This file is unlayered. So is every stylesheet a future dependency
+   might inject. Pinning the reset outside the layer means the guarantee stops
+   depending on where Tailwind chose to put it.
+
+   It is deliberately NOT what fixed the Add Referral overlap — see the note on
+   .fa-int-form-row below for what actually did.
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 :root {
   --navy: #1B2B4B;
   --teal: #2A7F7F;
