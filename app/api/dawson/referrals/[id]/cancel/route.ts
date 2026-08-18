@@ -2,45 +2,26 @@
 //
 // POST /api/dawson/referrals/:id/cancel
 //
-// Cancels a referral. Handles what the "Cancellation" Airtable automation
-// previously did, now inline:
+// Cancels a referral from the internal portal.
 //
-//   1. Read current Saturday Schedule + Appointment Time from the referral
-//   2. Look up the linked Saturday Schedule's Date (for the Original snapshot)
-//   3. Single PATCH:
-//        - Appointment Status  = 'Cancelled'
-//        - Original Appointment Date = previous Appointment Date (if scheduled)
-//        - Original Appointment Time = previous Appointment Time (if scheduled)
-//        - Saturday Schedule = [] (clear link)
-//        - Appointment Time  = null (clear time)
-//   4. If the referral was actually Scheduled (not just Unscheduled being
-//      cancelled outright), fire the Cancellation Notice — emails the
-//      referring agency confirming the cancellation with the original
-//      appointment details. Email-only, no PDF work (see
-//      lib/notifications/cancellation-notice.ts). A failure here doesn't fail this
-//      request — the Airtable write above already committed and is the
-//      part that matters operationally.
+// The work itself — releasing the Saturday slot, snapshotting the previous
+// appointment into the Original fields, and firing the Cancellation Notice —
+// now lives in lib/referrals/end-referral.ts, because the two agency-facing
+// ending routes have to do exactly the same thing and previously did not.
+// This file is the HTTP shell: authorize, call, map the result. The response
+// shape is unchanged apart from an added `releasedSlot`, which is the same
+// boolean this route used to return as `snapshottedOriginal` (still returned,
+// under its old name, so nothing reading it breaks).
 //
-// The AT "Cancellation" automation is now redundant for Dawson's flow.
-// Leave it on as a safety net for agency-portal cancellations until we
-// port that path too.
-
-
+// The comment this file used to carry — that the Airtable "Cancellation"
+// automation stayed on as a safety net for agency-portal cancellations until
+// that path was ported — described something that was not running. Ben's
+// automations are off while this work moves into code. The agency path is now
+// ported, which is what actually makes it true.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
-import { sendCancellationNotice } from '@/lib/notifications/cancellation-notice'
-
-
-
-const BASE_ID = process.env.AIRTABLE_BASE_ID!
-const API_KEY = process.env.AIRTABLE_API_KEY!
-const HEADERS = {
-  Authorization: `Bearer ${API_KEY}`,
-  'Content-Type': 'application/json',
-}
-
-
+import { endReferral } from '@/lib/referrals/end-referral'
 
 export async function POST(
   _request: NextRequest,
@@ -49,83 +30,19 @@ export async function POST(
   const denied = await requireDawsonAccess()
   if (denied) return denied
 
-
-
   const { id } = await params
 
+  const result = await endReferral({ referralId: id, outcome: 'cancelled', notify: true })
 
-
-  // ---- Read current referral to snapshot originals.
-  const refUrl = `https://api.airtable.com/v0/${BASE_ID}/Client%20Referrals/${id}`
-  const refRes = await fetch(refUrl, { headers: { Authorization: `Bearer ${API_KEY}` } })
-  if (!refRes.ok) {
-    return NextResponse.json({ error: 'Referral not found' }, { status: 404 })
+  if (!result.ok) {
+    return NextResponse.json({ error: result.message }, { status: result.status })
   }
-  const ref = await refRes.json()
-
-
-
-  const currentScheduleLinks: string[] = ref?.fields?.['Saturday Schedule'] ?? []
-  const currentTime: string | undefined = ref?.fields?.['Appointment Time']
-
-
-
-  // Appointment Date is a lookup (array of ISO date strings). Use the
-  // first entry as the snapshot value.
-  const currentApptDateLookup = ref?.fields?.['Appointment Date']
-  const currentApptDate: string | null = Array.isArray(currentApptDateLookup)
-    ? (currentApptDateLookup[0] as string) ?? null
-    : (currentApptDateLookup as string) ?? null
-
-
-
-  const wasScheduled =
-    currentScheduleLinks.length > 0 && !!currentTime && !!currentApptDate
-
-
-
-  // ---- Build the cancel PATCH.
-  const fields: Record<string, any> = {
-    'Appointment Status': 'Cancelled',
-    'Saturday Schedule': [],
-    'Appointment Time': null,
-  }
-  if (wasScheduled) {
-    fields['Original Appointment Date'] = currentApptDate
-    fields['Original Appointment Time'] = currentTime
-  }
-
-
-
-  const patchRes = await fetch(refUrl, {
-    method: 'PATCH',
-    headers: HEADERS,
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-
-
-
-  if (!patchRes.ok) {
-    const err = await patchRes.text()
-    return NextResponse.json({ error: err }, { status: 500 })
-  }
-
-
-
-  // ---- Fire the Cancellation Notice.
-  //   Only when this referral was actually Scheduled -- an Unscheduled
-  //   referral being cancelled never had a confirmed appointment to notify
-  //   anyone about.
-  let cancellationNotice: Awaited<ReturnType<typeof sendCancellationNotice>> | null = null
-  if (wasScheduled) {
-    cancellationNotice = await sendCancellationNotice(id, currentApptDate, currentTime ?? null)
-  }
-
-
 
   return NextResponse.json({
     success: true,
-    snapshottedOriginal: wasScheduled,
-    cancellationNotice,
+    releasedSlot: result.releasedSlot,
+    // Kept under its original name for the two pages that read it.
+    snapshottedOriginal: result.releasedSlot,
+    cancellationNotice: result.cancellationNotice,
   })
 }

@@ -3,6 +3,7 @@
 // Called by OCR tool after scanning client pickup sheet QR code
 
 import { NextRequest, NextResponse } from 'next/server'
+import { endReferral } from '@/lib/referrals/end-referral'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -61,6 +62,47 @@ export async function PATCH(
 
   if (Object.keys(fields).length === 0) {
     return NextResponse.json({ error: 'No fields to update' }, { status: 400 })
+  }
+
+  // A sheet coming back marked Cancelled ends the referral, and ending one is
+  // not a status write — the Saturday Schedule link and the Appointment Time
+  // have to be released too or the client goes on consuming that hour forever.
+  // Same standard as the two cancel buttons; see lib/referrals/end-referral.ts.
+  //
+  // Only 'Cancelled' takes this branch. 'Completed' and 'No Show' both mean the
+  // slot WAS consumed, so their link and time stay exactly where they are —
+  // clearing those would erase the record of a Saturday that actually happened.
+  //
+  // Today's OCR prompt never returns 'Cancelled' (lib/scanning/ocr.ts says so
+  // explicitly), so this is the door being shut before anyone walks through it
+  // rather than a live bug. The endpoint accepts the value, which is enough.
+  if (fields['Appointment Status'] === 'Cancelled') {
+    // Any quantities off the sheet ride along in endReferral's single PATCH,
+    // so this stays one write like it was — a second write would leave a
+    // window where the quantities landed and the cancellation did not.
+    const quantityFields = Object.fromEntries(
+      Object.entries(fields).filter(([key]) => key !== 'Appointment Status')
+    )
+
+    // notify: false. The scanning pipeline reports back into Airtable for a
+    // human who is not sitting there, and a cancellation discovered on a
+    // pickup sheet is being recorded after the fact rather than announced.
+    // Emailing the agency "your appointment is cancelled" about a Saturday
+    // that has already been and gone would be worse than saying nothing.
+    const ended = await endReferral({
+      referralId: id,
+      outcome: 'cancelled',
+      notify: false,
+      alsoWrite: quantityFields,
+    })
+    if (!ended.ok) {
+      return NextResponse.json({ error: ended.message }, { status: ended.status })
+    }
+    return NextResponse.json({
+      ok: true,
+      updated: Object.keys(fields),
+      releasedSlot: ended.releasedSlot,
+    })
   }
 
   const res = await fetch(

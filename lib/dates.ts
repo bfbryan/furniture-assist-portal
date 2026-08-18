@@ -119,3 +119,94 @@ export function differenceInDaysISO(
   if (!from || !to) return null
   return Math.round((to.getTime() - from.getTime()) / 86_400_000)
 }
+
+// ---------- (3) typed mm/dd/yyyy entry ----------
+//
+// For date fields a human TYPES rather than picks. The internal Add Referral
+// screen's Date of Birth is the first: Ben asked for a plain typed field
+// because tabbing through a native picker is slower for Dawson, and a native
+// date input has a second problem he did not raise — on iPadOS Safari an EMPTY
+// one renders today's date in the control, so a required field that is really
+// blank looks filled in. (This form's own submit handler already carried a
+// comment about "a date input that looks filled but holds an empty value".)
+//
+// These two are pure string functions, deliberately: the mask is what the
+// field shows as you type, and the parse is the only thing allowed to produce
+// the ISO value the rest of the app stores. Nothing downstream changes — the
+// stored value is still 'YYYY-MM-DD', which is what the duplicate-client check,
+// findClientMatches() and the submit route's formatDOB() all already expect.
+
+/**
+ * Format what someone is typing into mm/dd/yyyy, as they type it.
+ *
+ * Handles both habits: eight straight digits ("12251990") get their slashes
+ * inserted for them, and slashes typed by hand are respected as segment
+ * boundaries, so "1/2/1990" becomes "01/02/1990" and not "12/19/90".
+ *
+ * Purely cosmetic — it never decides whether a date is real. That is
+ * parseMdyToISO()'s job, and it is the one whose answer gets stored.
+ */
+export function maskMdyInput(raw: string): string {
+  const cleaned = String(raw ?? '').replace(/[^\d/]/g, '')
+  if (!cleaned) return ''
+
+  // A '/' the user typed means "this segment is finished", so a single digit
+  // before one is a zero-padded month or day rather than the first half of a
+  // two-digit one. Anything not closed by a separator just flows into the
+  // fixed widths below.
+  const parts = cleaned.split('/')
+  let digits = ''
+  for (let i = 0; i < parts.length; i++) {
+    const closed = i < parts.length - 1
+    digits += closed && i < 2 ? parts[i].padStart(2, '0').slice(0, 2) : parts[i]
+  }
+
+  digits = digits.slice(0, 8)
+  if (digits.length <= 2) return digits
+  if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`
+  return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
+}
+
+/**
+ * 'mm/dd/yyyy' -> 'YYYY-MM-DD', or null if it is not a real past date.
+ *
+ * Null covers every way this can fail, and they are all the same to the
+ * caller: half-typed, out of range, or a day that does not exist. Rejecting
+ * 02/30/1990 needs the round-trip below — Date happily rolls that over to
+ * 03/02 and would otherwise store a birthday nobody has.
+ *
+ * A date of birth in the future is refused too. `todayISO` is injected so a
+ * caller can pass one value for a whole render rather than re-reading the
+ * clock, and so this stays testable.
+ */
+export function parseMdyToISO(
+  text: string | null | undefined,
+  todayISO: string = easternTodayISO(),
+): string | null {
+  const match = String(text ?? '').trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  if (!match) return null
+
+  const month = Number(match[1])
+  const day = Number(match[2])
+  const year = Number(match[3])
+
+  // 1900 is a floor for mistyped years ("0199", "2O26" once the letter is
+  // stripped). Nobody being referred for furniture was born before it.
+  if (year < 1900) return null
+  if (month < 1 || month > 12) return null
+  if (day < 1 || day > 31) return null
+
+  const dt = new Date(Date.UTC(year, month - 1, day))
+  if (
+    dt.getUTCFullYear() !== year ||
+    dt.getUTCMonth() !== month - 1 ||
+    dt.getUTCDate() !== day
+  ) {
+    return null
+  }
+
+  const iso = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}`
+  // ISO date strings compare correctly as plain strings.
+  if (iso > todayISO) return null
+  return iso
+}
