@@ -43,6 +43,13 @@ function shapeReferralListItem(record: any) {
     referralReview: f['Referral Review'] as string,
     appointmentStatus: f['Appointment Status'] as string,
     appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
+    // What the agency asked for on a reschedule, as opposed to what is booked.
+    // The agency list reads these to fill the Appointment row on a Reschedule
+    // Requested card, which rendered an em dash before — that row was only
+    // filled for 'Scheduled'. See lib/referrals/requested-slot.ts.
+    preferredDate: (f['Preferred Date'] as string) ?? null,
+    preferredTime: (f['Preferred Time'] as string) ?? null,
+    schedulingFlexibility: (f['Scheduling Flexibility'] as string) ?? null,
     referredBy: safeLookupString(f['Referring Staff']),
     dataPageUrl: f['Data Page URL'] as string,
     address: (f['Address'] as string) ?? null,
@@ -347,6 +354,12 @@ export async function getReferralById(referralId: string) {
     appointmentStatus: f['Appointment Status'] as string,
     appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
     appointmentTime: (f['Appointment Time'] as string) ?? null,
+    // Same three fields the list shape carries, for the same reason: the
+    // agency detail page's Appointment card left Date and Time blank on a
+    // referral awaiting a reschedule. See lib/referrals/requested-slot.ts.
+    preferredDate: (f['Preferred Date'] as string) ?? null,
+    preferredTime: (f['Preferred Time'] as string) ?? null,
+    schedulingFlexibility: (f['Scheduling Flexibility'] as string) ?? null,
     appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
     // Written by the client-receipt cron (lib/notifications/client-receipt.ts)
     // into the "Client Receipt" attachment field once the visit is done. Read

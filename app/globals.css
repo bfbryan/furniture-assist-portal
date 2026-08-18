@@ -1,5 +1,27 @@
 @import "tailwindcss";
 
+/* ==========================================================================
+   BOX SIZING
+   ==========================================================================
+   Tailwind v4's preflight already sets this on `*`, so as of today this rule
+   changes nothing — measured, not assumed: every input, select and textarea on
+   the internal Add Referral screen computes box-sizing: border-box before and
+   after, and no field's width moves by a pixel at 1440, 1280, 1180, 820 or
+   768. It is here for one reason: preflight ships inside `@layer base`, and
+   ANY unlayered author rule beats a layered one no matter how weak its
+   selector. This file is unlayered. So is every stylesheet a future dependency
+   might inject. Pinning the reset outside the layer means the guarantee stops
+   depending on where Tailwind chose to put it.
+
+   It is deliberately NOT what fixed the Add Referral overlap — see the note on
+   .fa-int-form-row below for what actually did.
+   ========================================================================== */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
 :root {
   --navy: #1B2B4B;
   --teal: #2A7F7F;
@@ -326,12 +348,13 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ---------- Fixed column tracks inside cards and forms ---------- */
 
-/* Dashboard appointment row: accent bar + name/time block + status. The time
-   used to hold its own 90px track between the name and the status; it now sits
-   on the client-name line inside the second track, right-aligned there, so
-   only three tracks remain. */
+/* Dashboard appointment row: accent bar + name/time/status block. The time and
+   the status pill both used to hold their own tracks here; both now sit on the
+   client-name line inside the second track, right-aligned there, so two tracks
+   remain. Losing the 130px status track also gives the name that much more
+   room at every width, which is what pays for the pill joining its line. */
 .fa-dash-appt-row {
-  grid-template-columns: 4px 1fr 130px;
+  grid-template-columns: 4px 1fr;
 }
 
 /* New referral form. The address row declares four tracks for three inputs;
@@ -493,34 +516,45 @@ h1, h2, h3, h4, h5, h6 {
     display: none;
   }
 
-  /* The appointment row carries no labels. Kept on one line the time and the
-     status pill ate ~190px of a 278px card, leaving the client name about 58px
-     and truncating it to "Vande…" — you could not tell whose appointment it
-     was. The name and address take the full first row, and the status sits
-     beneath as a footer row with the accent bar spanning both.
+  /* The appointment row carries no labels, so below 1280 it is just the accent
+     bar and one content block.
 
-     The time is no longer part of that footer — it rides on the client-name
-     line now — but the footer row still has to stay. Folding the lone status
-     pill back up alongside the name would cost ~130px of a 278px card, and the
-     name, which wraps rather than truncates, would spend most rows stacked
-     three or four lines deep. */
+     History, because this reversed twice: the time and the status pill each
+     used to own a track, which left the client name ~58px and truncated it to
+     "Vande…". The fix then was to drop the status to its own footer row. Ben
+     asked for that row back — it spent a full row of card height on one word —
+     so both now ride the client-name line, and the name is no longer
+     truncated but wrapped, so a long one costs a line rather than its tail.
+
+     What makes that affordable this time is the padding below: the panel and
+     the row give back 30px on a phone, which is more than the pill takes.
+     Measured at 375px and 393px, the card goes 105px → 81px and names up to
+     "Toribio, Sonia & Alexandra" still hold one line. */
   .fa-dash-appt-row {
-    grid-template-columns: 4px minmax(0, 1fr) auto;
+    grid-template-columns: 4px minmax(0, 1fr);
   }
 
-  .fa-dash-appt-row > :first-child {
-    grid-row: span 2;
+  /* Reclaim the width the pill needs, rather than taking it from the name.
+     Three nested paddings were charging a 375px screen 116px — 31% of it — to
+     put whitespace either side of an appointment card: 32px page gutters, 24px
+     panel, 14px row. Halving the first two and trimming the third gives the
+     card 52px back, which is what buys the client name a single line on most
+     referrals with the pill now sharing it. 16px page gutters are the iOS
+     default; nothing here goes below that.
+
+     Scoped to .fa-dashboard-grid, so only the dashboard moves — the referral
+     list and history pages keep the gutters they have. */
+  .fa-dashboard-grid {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
   }
 
-  .fa-dash-appt-row > :nth-child(2) {
-    grid-column: 2 / -1;
+  .fa-dash-panel {
+    padding: 18px 14px !important;
   }
 
-  /* Pin the status to the last track. Left to auto-placement it would drop into
-     the 1fr track and drift into the middle of the footer row; the badge is
-     meant to stay at the right edge where it has always been. */
-  .fa-dash-appt-row > :nth-child(3) {
-    grid-column: 3;
+  .fa-dash-appt-row > :last-child {
+    padding: 10px 12px !important;
   }
 
   /* Hero stat tiles: three tiles at their natural width overflow a phone and

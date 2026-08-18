@@ -11,6 +11,10 @@ import {
   getReferralsByAgencyId,
 } from '@/lib/airtable'
 import ReferralTable from '@/components/agency/ReferralTable'
+import {
+  StaffFilterProvider,
+  ActiveHeroStats,
+} from '@/components/agency/ActiveReferralsFilter'
 import { cityStateZip } from '@/lib/address'
 
 // Active = not yet approved OR upcoming appointment.
@@ -69,14 +73,15 @@ export default async function ActiveReferralsPage() {
 
   const activeReferrals = allReferrals.filter(isActive)
 
-  const pendingCount = activeReferrals.filter(
-    (r: any) => r.referralReview === 'Pending'
-  ).length
-  const scheduledCount = activeReferrals.filter(
-    (r: any) => r.appointmentStatus === 'Scheduled'
-  ).length
-
+  // The Pending / Scheduled counts used to be computed right here, over the
+  // whole agency, and rendered into the hero below — while the Filter by Staff
+  // dropdown inside ReferralTable filtered the list in the browser. The two
+  // never met, so the numbers sat still while the list changed underneath
+  // them. Both now read one filtered list held by StaffFilterProvider, which
+  // is why it wraps the hero and the table together. Definitions themselves
+  // are unchanged; see components/agency/ActiveReferralsFilter.tsx.
   return (
+    <StaffFilterProvider referrals={activeReferrals}>
     <div className="min-h-screen bg-[#F7F5F1]">
 
       {/* Hero */}
@@ -123,32 +128,18 @@ export default async function ActiveReferralsPage() {
 
           </div>
 
-          {/* Right — Stats */}
-          <div className="fa-hero-stats flex items-center gap-4 flex-wrap">
-            <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
-              <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
-                {pendingCount}
-              </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-white/45">Pending</div>
-            </div>
-            <div className="bg-white/8 border border-[rgba(58,160,141,0.4)] rounded-xl px-5 py-3 text-center min-w-[80px]">
-              <div className="font-montserrat font-extrabold text-2xl text-[#3AA08D] leading-none mb-1">
-                {scheduledCount}
-              </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-white/45">Scheduled</div>
-            </div>
-          </div>
+          {/* Right — Stats. Same two tiles, same markup; they moved into a
+              client component only so they can see the staff filter. */}
+          <ActiveHeroStats />
 
         </div>
       </div>
 
       {/* Main content */}
       <main className="max-w-6xl mx-auto px-8 py-9">
-        <ReferralTable
-          referrals={activeReferrals}
-          isAdmin={agencyUser.role === 'Admin'}
-        />
+        <ReferralTable isAdmin={agencyUser.role === 'Admin'} />
       </main>
     </div>
+    </StaffFilterProvider>
   )
 }

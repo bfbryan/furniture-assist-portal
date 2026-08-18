@@ -32,6 +32,16 @@ const SERVER_ERROR_REASONS: ReadonlySet<RescheduleFailureReason> = new Set<Resch
   'lookup-failed',
 ])
 
+// Do-not-serve reports itself exactly as it does on the two create paths, so
+// the same refusal reads the same wherever it is hit:
+//   flagged            -> 403 { error, doNotServe: true }
+//   could not verify   -> 502 { error }
+// See app/api/dawson/referrals/submit/route.ts and app/api/referrals/submit.
+const DO_NOT_SERVE_STATUS: Partial<Record<RescheduleFailureReason, number>> = {
+  'do-not-serve': 403,
+  'do-not-serve-unverified': 502,
+}
+
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
@@ -50,6 +60,15 @@ export async function POST(
   })
 
   if (!result.ok) {
+    const doNotServeStatus = DO_NOT_SERVE_STATUS[result.reason]
+    if (doNotServeStatus) {
+      return NextResponse.json(
+        result.reason === 'do-not-serve'
+          ? { error: result.message, doNotServe: true }
+          : { error: result.message },
+        { status: doNotServeStatus }
+      )
+    }
     return NextResponse.json(
       { error: result.message },
       { status: SERVER_ERROR_REASONS.has(result.reason) ? 500 : 400 }

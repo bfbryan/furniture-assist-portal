@@ -28,6 +28,11 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
 import { VALID_TIMES } from '@/lib/schedule/capacity'
+import {
+  assertReferralClientMayBeRescheduled,
+  doNotServeUnverifiedMessage,
+  DoNotServeError,
+} from '@/lib/clients/do-not-serve'
 
 function isSaturday(isoDate: string): boolean {
   const [y, m, d] = isoDate.split('-').map(Number)
@@ -42,6 +47,38 @@ export async function POST(
   const { id } = await params
   const access = await requireAgencyReferralAccess(id)
   if (access.denied) return access.denied
+
+  // Do-not-serve, reported exactly as the create paths report it: 403 with
+  // `doNotServe: true` for the flag, 502 when the status could not be read.
+  //
+  // This route only files a REQUEST — it does not move the appointment — but a
+  // request that can only ever be refused is not worth accepting. Refusing it
+  // here tells the agency why, in the same words the submit route uses,
+  // instead of parking it in Dawson's queue for him to decline by hand.
+  //
+  // requireAgencyReferralAccess already loaded the referral, so the client
+  // identity comes free.
+  try {
+    await assertReferralClientMayBeRescheduled({
+      clientId: access.referral.clientId,
+      firstName: access.referral.firstName,
+      lastName: access.referral.lastName,
+      dob: access.referral.dob,
+    })
+  } catch (e: unknown) {
+    if (e instanceof DoNotServeError) {
+      return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
+    }
+    return NextResponse.json(
+      {
+        error: doNotServeUnverifiedMessage(
+          'the reschedule request was not submitted',
+          e instanceof Error ? e.message : String(e),
+        ),
+      },
+      { status: 502 },
+    )
+  }
 
   const body = await request.json().catch(() => ({}))
   const { preferredDate, preferredTime, flexible } = body
