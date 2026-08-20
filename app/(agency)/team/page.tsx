@@ -97,6 +97,7 @@ export default async function AdminPage() {
           agencyId={agencyUser.agencyId!}
           agencyName={agency.name}
           invitedByName={agencyUser.name}
+          inviterEmail={agencyUser.email}
         />
       </main>
     </div>

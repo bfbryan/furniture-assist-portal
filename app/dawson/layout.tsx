@@ -3,6 +3,29 @@ import { SignOutButton } from '@clerk/nextjs'
 import { redirect } from 'next/navigation'
 import { isDawsonPortalUser, isPortalAdmin } from '@/lib/auth/dawson-access'
 
+// Nav category labels — "Overview", "Agencies", "Referrals", "Schedule",
+// "Admin". Ben asked for these a little larger so the grouping reads more
+// clearly. He also has a standing rule that colour, font style, the left nav
+// and the header stay as they are, so this is HIM overriding his own
+// constraint, not a change made on his behalf; it is noted as such in the PR.
+//
+// Only the two size-related values move — 10px to 11.5px, and the tracking
+// eased from 0.12em to 0.10em because letter-spacing that wide starts to
+// separate the word at the larger size. Weight, colour, transform and padding
+// are untouched, so the labels still read as labels and not as links.
+//
+// Six identical copies of this object were inline in the nav below (five live,
+// one in the commented-out Reports block). They are now one constant, so the
+// next size change is one edit rather than six.
+const NAV_SECTION_LABEL: React.CSSProperties = {
+  fontSize: '11.5px',
+  fontWeight: 700,
+  letterSpacing: '0.10em',
+  textTransform: 'uppercase',
+  color: 'rgba(255,255,255,0.3)',
+  padding: '12px 8px 6px',
+}
+
 export default async function DawsonLayout({
   children,
 }: {
@@ -59,7 +82,7 @@ export default async function DawsonLayout({
         <nav style={{ flex: 1, padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }}>
 
           
-          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Overview</div>
+          <div style={NAV_SECTION_LABEL}>Overview</div>
 
           <a href="/dawson" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
@@ -67,7 +90,7 @@ export default async function DawsonLayout({
           </a>
           
 
-          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Agencies</div>
+          <div style={NAV_SECTION_LABEL}>Agencies</div>
 
 {/* Order follows the lifecycle an agency actually moves through — Unclaimed,
     Pending Approval, Active, then Inactive & Rejected — rather than putting
@@ -93,7 +116,15 @@ export default async function DawsonLayout({
   Inactive & Rejected
 </a>
 
-          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Referrals</div>
+{/* Staff an agency admin flagged as belonging elsewhere. Sits under Agencies
+    rather than Admin because it is agency casework, not back-office tooling,
+    and Dawson is the one who moves these people. */}
+<a href="/dawson/staff/wrong-agency" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
+  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="8.5" cy="7" r="4"/><line x1="18" y1="8" x2="23" y2="13"/><line x1="23" y1="8" x2="18" y2="13"/></svg>
+  Flagged Wrong Agency
+</a>
+
+          <div style={NAV_SECTION_LABEL}>Referrals</div>
 
 <a href="/dawson/referrals/review" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
@@ -115,7 +146,7 @@ export default async function DawsonLayout({
   Add Referral
 </a>
 
-          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Schedule</div>
+          <div style={NAV_SECTION_LABEL}>Schedule</div>
 
           <a href="/dawson/schedule" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
@@ -128,7 +159,7 @@ export default async function DawsonLayout({
               scroll past. */}
           {showAdmin && (
             <>
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Admin</div>
+              <div style={NAV_SECTION_LABEL}>Admin</div>
 
               <a href="/dawson/scans/upload" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
@@ -143,7 +174,7 @@ export default async function DawsonLayout({
           )}
 
           {/* --- HIDDEN: Reports (Statistics page not built yet) ---
-          <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.3)', padding: '12px 8px 6px' }}>Reports</div>
+          <div style={NAV_SECTION_LABEL}>Reports</div>
 
           <a href="/dawson/reports" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>

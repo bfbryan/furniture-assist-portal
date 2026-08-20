@@ -129,33 +129,94 @@ function ClockIcon() {
 }
 
 // The Appointment cell on a card whose reschedule request is still with
-// Furniture Assist. Renders the three shapes a real request takes, plus the
-// one a failed scan leaves behind — see lib/referrals/requested-slot.ts for
-// why that fourth case is not hypothetical.
+// Furniture Assist.
+//
+// It used to show the requested slot alone, under a 'Requested' header. Ben
+// asked for both dates: the appointment the client STILL HOLDS and the one the
+// agency has asked for. He is right that one alone is dangerous — a reschedule
+// request changes nothing until Dawson acts, so an agency reading only
+// "Requested Oct 17" can tell a client not to come on Sep 26, when Sep 26 is
+// still their appointment. The client detail page already showed both — that
+// is the "at minimum" half of Ben's ask, and it was already done — so this
+// brings the card into line with it.
+//
+// Shorter labels than the detail page's Currently / Requested pair, because
+// this column is a fraction of that page's width: at 9.5px uppercase those two
+// words need a 61px label track and leave the date wrapping. Now / Asked are
+// the same two facts in a 34px track. Measured, not guessed.
+//
+// FITTING BOTH WITHOUT CROWDING. Two rows in a label/value mini-grid rather
+// than four stacked lines: the labels are 10px and share one narrow auto
+// track, so the pair costs one extra line of card height and no width beyond
+// what the column re-tune below already gives back. Below 1280px the whole
+// cell is already a label/value pair, and this nests inside it unchanged.
+const REQ_LABEL: React.CSSProperties = {
+  fontSize: '9.5px',
+  fontWeight: 700,
+  letterSpacing: '0.06em',
+  textTransform: 'uppercase',
+  color: '#A0A9B5',
+  whiteSpace: 'nowrap',
+  paddingTop: '1px',
+}
+
+// The three shapes a real request takes, plus the one a failed scan leaves
+// behind — see lib/referrals/requested-slot.ts for why that fourth case is not
+// hypothetical.
 function RequestedSlotValue({ r }: { r: Referral }) {
   const slot = requestedSlot(r)
 
-  if (slot.kind === 'flexible') {
-    return <div style={{ ...COL_SUB, fontStyle: 'italic' }}>Any Saturday</div>
-  }
-
-  // Nothing on the record to show. Deliberately the same em dash the other
-  // sections use for "not set", rather than a claim about what was asked for.
-  if (slot.kind === 'unknown') {
-    return <div style={COL_SUB}>—</div>
-  }
+  const requested =
+    slot.kind === 'flexible' ? (
+      <span style={{ fontStyle: 'italic' }}>Any Saturday</span>
+    ) : slot.kind === 'unknown' ? (
+      // Nothing on the record. Says so rather than inventing a preference —
+      // the same em dash the other sections use for "not set".
+      <span>—</span>
+    ) : (
+      <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px 6px' }}>
+        <span>{formatDate(slot.date)}</span>
+        {slot.time ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+            <ClockIcon />
+            {slot.time}
+          </span>
+        ) : (
+          <span style={{ fontStyle: 'italic' }}>Any time</span>
+        )}
+      </span>
+    )
 
   return (
-    <div style={{ ...COL_SUB, display: 'flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px 6px' }}>
-      <span>{formatDate(slot.date)}</span>
-      {slot.time ? (
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-          <ClockIcon />
-          {slot.time}
-        </span>
-      ) : (
-        <span style={{ fontStyle: 'italic' }}>Any time</span>
-      )}
+    <div
+      style={{
+        display: 'grid',
+        gridTemplateColumns: 'auto minmax(0, 1fr)',
+        gap: '2px 6px',
+        alignItems: 'start',
+      }}
+    >
+      <div style={REQ_LABEL}>Now</div>
+      <div style={COL_SUB}>
+        {r.appointmentDate ? (
+          <span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: '3px 6px' }}>
+            <span>{formatDate(r.appointmentDate)}</span>
+            {r.appointmentTime && (
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <ClockIcon />
+                {r.appointmentTime}
+              </span>
+            )}
+          </span>
+        ) : (
+          // No appointment to keep — this referral was never scheduled, so the
+          // request is a first preference rather than a move.
+          <span style={{ fontStyle: 'italic' }}>Not yet scheduled</span>
+        )}
+      </div>
+
+      <div style={{ ...REQ_LABEL, color: '#C9A84C' }}>Asked</div>
+      <div style={{ ...COL_SUB, color: '#2C3A4A', fontWeight: 600 }}>{requested}</div>
     </div>
   )
 }
@@ -193,17 +254,20 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
   </Tooltip>
 </div>
 
-        {/* ADDRESS */}
+        {/* ADDRESS — "Client Address" rather than "Address" (Ben). The card
+            also carries the agency's own address in the hero above it, so the
+            bare word was ambiguous on a phone where the two are closer
+            together. */}
         <div>
-          <div style={COL_HEADER}>Address</div>
+          <div style={COL_HEADER}>Client Address</div>
           {addressLine1 && <div style={COL_SUB}>{addressLine1}</div>}
           {addressLine2 && <div style={COL_SUB}>{addressLine2}</div>}
           {!addressLine1 && !addressLine2 && <div style={COL_SUB}>—</div>}
         </div>
 
-        {/* PHONE */}
+        {/* PHONE — "Client Phone", same reason as the address above. */}
         <div>
-          <div style={COL_HEADER}>Phone</div>
+          <div style={COL_HEADER}>Client Phone</div>
           <div style={COL_SUB}>{r.phone ?? '—'}</div>
         </div>
 
@@ -230,7 +294,11 @@ function ClientCard({ r, onCancel, onReschedule, onWithdraw }: {
             instead, under a 'Requested' header so it cannot be misread as a
             booking. Every other section is untouched. */}
 <div>
-  <div style={COL_HEADER}>{status === 'Reschedule' ? 'Requested' : 'Appointment'}</div>
+  {/* One header now, on every card. It used to flip to 'Requested' on a
+      reschedule, which was right while the cell held only the requested date;
+      the cell now labels both dates itself, so the flip would have left two
+      labels arguing about the same thing. */}
+  <div style={COL_HEADER}>Appointment</div>
   {status === 'Reschedule' ? (
     <RequestedSlotValue r={r} />
   ) : (

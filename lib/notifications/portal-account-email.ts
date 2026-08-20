@@ -17,9 +17,17 @@
 //   "Agency Inactive Notice":                  contactFirstName, agencyName
 //   "Agency Reinstate Notice":                 contactFirstName, agencyName
 //
-// "token" is a RAW Clerk sign-in token — the welcome template hard-codes
-// https://portal.furnitureassist.com/sign-in?__clerk_ticket={{token}} around
-// it. "magicLink" is a complete URL (Clerk's tokenData.url).
+// Both are built from a RAW Clerk sign-in token, and both end up pointing at
+// the portal. They just differ in WHERE the portal URL is written down:
+//
+//   "token"     the welcome template hard-codes
+//               https://portal.furnitureassist.com/sign-in?__clerk_ticket={{token}}
+//               around it, in Airtable.
+//   "magicLink" a complete URL, assembled in code by portalSignInLink().
+//
+// "magicLink" used to be Clerk's ready-made tokenData.url, which pointed at
+// the Clerk instance rather than at us and landed invited staff on a
+// Clerk-hosted sign-in page. See lib/auth/portal-sign-in-link.ts.
 //
 // All four automations ship with Enabled unchecked; Ben ticks them at
 // go-live. Until then every call lands in { skipped: true, reason:

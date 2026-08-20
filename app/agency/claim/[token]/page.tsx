@@ -32,6 +32,7 @@
 'use client'
 
 import { useEffect, useState, use } from 'react'
+import { formatEIN } from '@/lib/ein'
 
 // -------------------------------------------------------------------------
 // Types
@@ -755,11 +756,5 @@ function RadioGroup({
 }
 
 // EIN formatter: strips non-digits, inserts dash after 2 digits, caps at 9 digits total.
-function formatEIN(raw: string): string {
-  const digits = raw.replace(/\D/g, '').slice(0, 9)
-  if (digits.length <= 2) return digits
-  return `${digits.slice(0, 2)}-${digits.slice(2)}`
-}
-
 const inputCls =
   'block w-full rounded-md border border-[#D4D9E0] bg-white px-3 py-2 text-sm text-[#2C3A4A] shadow-sm placeholder:text-[#B8C1CC] focus:border-[#2A7F6F] focus:outline-none focus:ring-1 focus:ring-[#2A7F6F]'

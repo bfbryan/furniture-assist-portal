@@ -18,6 +18,8 @@ type Props = {
   agencyId: string
   agencyName: string
   invitedByName: string
+  /** The signed-in admin's own email. Its domain is what a new invite is compared against. */
+  inviterEmail: string
 }
 
 
@@ -28,6 +30,7 @@ export default function InviteStaffModal({
   agencyId,
   agencyName,
   invitedByName,
+  inviterEmail,
 }: Props) {
   const router = useRouter()
   const [form, setForm] = useState({
@@ -61,6 +64,37 @@ export default function InviteStaffModal({
 
 
   if (!open) return null
+
+
+  // Ben asked for a check on the invited address's domain against the
+  // inviting admin's own. He did not say what should happen when they differ,
+  // and this WARNS rather than blocks — a decision taken in his absence and
+  // recorded in the PR. Plenty of agency staff legitimately use a personal
+  // address (a caseworker on gmail, a contractor on their own firm's domain),
+  // and a hard block would stop those invites dead with the admin unable to
+  // override it. A warning they have to read and then knowingly send past is
+  // the version that cannot cost anybody an invite. Flipping it to a block is
+  // one line: gate `canSubmit` on `!domainMismatch`.
+  const domain = (email: string) => email.trim().toLowerCase().split('@')[1] ?? ''
+  const inviterDomain = domain(inviterEmail)
+  const inviteeDomain = domain(form.email)
+
+  // An address still being typed is not a mismatch, it is unfinished, and a
+  // warning that appears and disappears while somebody types their colleague's
+  // address is worse than no warning at all. Two guards, both about typing
+  // rather than about the rule:
+  //   - the domain has to look finished (a dot and a two-letter-plus tail), so
+  //     "@catholic" says nothing;
+  //   - and a domain that is still a prefix of the admin's own is somebody
+  //     part-way through typing it, not a different organization.
+  const looksComplete = /\.[a-z]{2,}$/.test(inviteeDomain)
+  const stillTypingOwnDomain =
+    Boolean(inviteeDomain) && inviterDomain.startsWith(inviteeDomain)
+  const domainMismatch =
+    Boolean(inviterDomain) &&
+    looksComplete &&
+    !stillTypingOwnDomain &&
+    inviterDomain !== inviteeDomain
 
 
   const canSubmit =
@@ -262,6 +296,42 @@ export default function InviteStaffModal({
               Direct work number for this staff member.
             </div>
           </div>
+
+
+          {/* Domain mismatch — warn, never block. Amber rather than the red
+              the error box below uses, because nothing has gone wrong: this is
+              a "did you mean to?" and the Send button stays live beside it. */}
+          {domainMismatch && (
+            <div
+              role="status"
+              style={{
+                background: '#FEF9EC',
+                border: '1px solid #E6D3A3',
+                borderRadius: '10px',
+                padding: '12px 14px',
+                marginBottom: '18px',
+                display: 'flex',
+                gap: '10px',
+                alignItems: 'flex-start',
+              }}
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#B8912F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, marginTop: '1px' }}>
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                <line x1="12" y1="9" x2="12" y2="13" />
+                <line x1="12" y1="17" x2="12.01" y2="17" />
+              </svg>
+              <div style={{ fontSize: '12.5px', color: '#6B5518', lineHeight: 1.5 }}>
+                <strong style={{ fontWeight: 700 }}>
+                  This address is outside your organization.
+                </strong>
+                <br />
+                You are inviting <strong>@{inviteeDomain}</strong>, and your own
+                address is <strong>@{inviterDomain}</strong>. That is fine if this
+                person uses a personal or partner email. Check the spelling
+                before you send; you will still be able to remove them later.
+              </div>
+            </div>
+          )}
 
 
           {/* Tightened Portal Access info */}
