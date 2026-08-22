@@ -174,15 +174,102 @@ h1, h2, h3, h4, h5, h6 {
      was already under 181 there.
 
      Appointment and the actions cell: no change at any width. */
+/* ---------------------------------------------------------------------------
+   Aug 2026 — SECOND SPACING RETUNE, and it deliberately undoes part of the
+   first one above. Ben, looking at the Active page on an iPad:
+
+     "rename the Address and Phone headers to Client Address and Client Phone,
+      keep client name, address and phone tighter to the left, group referred
+      by, submitted and appointment date together, and put some space between
+      the phone and referred by."
+
+   That is a request for TWO GROUPS with one gap between them, where the retune
+   above produced one gap in a different place. Read against the mechanism
+   described there — the space a reader sees between two values is the leftmost
+   one's trailing whitespace — it comes out as:
+
+     name / address / phone tight together   → Name 1.5 → 1.27. Address is the
+                                   ONLY weight held still, at 1.45, and the
+                                   reason is in the note above: 1.45 is what
+                                   keeps a 181px address on one line at 1440,
+                                   and 1.35 and 1.4 were both tried and both
+                                   landed under it. Tightening it further would
+                                   buy a few pixels of grouping and pay for
+                                   them in wrapped addresses on every card.
+     a gap after the phone       → Phone 0.7 → 1.1. Phone's own value needs
+                                   74px, so the other ~64px at 1440 IS the gap.
+                                   This is the one weight that goes UP.
+     referred by + submitted +
+       appointment grouped       → Submitted 1.2 → 0.75, which is the first
+                                   retune's gap being taken back out. It was
+                                   put there on Ben's instruction and is being
+                                   removed on Ben's instruction; the space it
+                                   held is most of what pays for the phone gap.
+                                   Referred By 1.1 → 1.0, Appointment
+                                   1.0 → 1.4 (see below).
+
+   The two gaps at 1440 come out at roughly 64px after the phone and 28px after
+   Submitted, so the row reads as two groups rather than six evenly spaced
+   columns — which is the whole of what was asked for.
+
+   WHY APPOINTMENT GOES UP RATHER THAN STAYING PUT. On a reschedule card that
+   cell now carries both dates (see RequestedSlotValue in ReferralTable.tsx),
+   as a 34px label track plus a date-and-time line that needs ~132px. At the
+   old 125px it wrapped every one of those onto four lines and took the card
+   from 84px to 105px tall. At 175px the pair fits on two lines and the card is
+   86px — 2px taller than a card with no reschedule on it at all. Below 1440
+   the time still wraps under its date; at 1280 a reschedule card is 113px.
+   That is the trade, and it was measured at each width rather than assumed.
+
+   MEASURED IN A BROWSER, at 390 / 430 / 768 / 820 / 1024 / 1180 / 1280 / 1366
+   / 1440 / 1728. Track widths at 1440, before → after:
+
+     Client Name      188 → 159
+     Client Address   182 → 181   (1px; no address wraps that did not before —
+                                   card heights at 1440 are unchanged)
+     Client Phone      88 → 138   (74 of value, 64 of gap — the ask)
+     Referred By      138 → 125
+     Submitted        151 →  94
+     Appointment      125 → 175
+     Actions          120 → 120   (untouched)
+
+   THE FLOORS MOVE THIS TIME, which the first retune's safety note was careful
+   not to do, so here is the arithmetic that replaces it. Two floors were below
+   what the cell now has to hold:
+
+     Phone       80 → 96.  "CLIENT PHONE" is 89px at 11px/700/0.08em — measured
+                 in the browser, not estimated — so the old 80px floor wrapped
+                 the new header onto two lines at 1280, 1366, 1440 and above.
+                 96 rather than 90 so a font-loading or sub-pixel difference
+                 cannot put it back.
+     Appointment 96 → 112. The label track plus a date, as above.
+
+   Row minimum therefore goes from Σfloors 594 + 120 + 6×10 = 774 to
+   626 + 120 + 60 = 806. Both are far below the 881px of track a row has at a
+   1280px viewport — the narrowest width at which this grid applies at all,
+   since below 1280 it collapses to one column — so nothing overflows that did
+   not before. Swept for horizontal overflow at every width above: zero, before
+   and after. The history card is not part of that claim and does not need to
+   be — its rule below is byte-identical to what it was.
+
+   NOT APPLIED TO THE HISTORY CARD. The first retune deliberately mirrored
+   itself onto .fa-history-card-grid, on the principle that the two cards sit
+   one page apart and should read as one design. This one does not, because Ben
+   named the Active page specifically and the instruction does not transfer
+   cleanly: the history card has no phone column, so "space between the phone
+   and referred by" has nothing to act on there. Its Submitted track therefore
+   still carries the 1.2 from the first retune, and the two cards' proportions
+   now differ. Called out in the PR as a one-line change if he wants it matched.
+   --------------------------------------------------------------------------- */
 .fa-referral-card-grid {
   grid-template-columns:
-    minmax(120px, 1.5fr)   /* Client Name  */
-    minmax(130px, 1.45fr)  /* Address      */
-    minmax(80px, 0.7fr)    /* Phone        */
-    minmax(92px, 1.1fr)    /* Referred By  */
-    minmax(76px, 1.2fr)    /* Submitted    */
-    minmax(96px, 1fr)      /* Appointment  */
-    120px;                 /* Actions      */
+    minmax(120px, 1.27fr)  /* Client Name    */
+    minmax(130px, 1.45fr)  /* Client Address */
+    minmax(96px, 1.1fr)    /* Client Phone   */
+    minmax(92px, 1fr)      /* Referred By    */
+    minmax(76px, 0.75fr)   /* Submitted      */
+    minmax(112px, 1.4fr)   /* Appointment    */
+    120px;                 /* Actions        */
 }
 
 /* A single unbroken 40-character token — an import artefact, or a staff email

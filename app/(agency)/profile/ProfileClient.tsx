@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cityStateZip } from '@/lib/address'
+import { formatEIN, isCompleteEIN } from '@/lib/ein'
 
 // Optional Airtable fields are string | null — Airtable omits blank fields,
 // so anything not guaranteed present must not be typed as a bare string.
@@ -196,7 +197,10 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
     zip: agency.zip ?? '',
     phone: agency.phone ?? '',
     website: agency.website ?? '',
-    ein: agency.ein ?? '',
+    // Seeded through formatEIN so an existing value that was stored before this
+    // field was formatted opens in the right shape rather than only correcting
+    // itself once somebody types into it.
+    ein: formatEIN(agency.ein ?? ''),
   })
 
   async function save() {
@@ -208,6 +212,15 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       })
+      // A PATCH that is bounced to the sign-in page comes back as a followed
+      // redirect: 200, with HTML in it. `res.ok` is true, so both cards used to
+      // close the editor and report success while nothing had been written.
+      // That is reachable whenever the session is not recognised on this
+      // request — which is exactly the state the portal is in on a phone today
+      // (see the note on this in the PR). Saying so beats a silent no-op.
+      if (res.redirected) {
+        throw new Error('Your session has expired. Please sign in again.')
+      }
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
         throw new Error(j.error ?? `HTTP ${res.status}`)
@@ -232,7 +245,7 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
       zip: agency.zip ?? '',
       phone: agency.phone ?? '',
       website: agency.website ?? '',
-      ein: agency.ein ?? '',
+      ein: formatEIN(agency.ein ?? ''),
     })
     setError(null)
     setEditing(false)
@@ -342,9 +355,31 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
             <div style={LABEL}>Website</div>
             <input style={INPUT} value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} placeholder="reagan.com" />
           </div>
+          {/* EIN. Was a free-text box with a placeholder and nothing else, so
+              the same nine digits could be stored a dozen ways. formatEIN is
+              the claim form's own masker, now shared — see lib/ein.ts.
+              inputMode 'numeric' brings up the number pad on a phone; the
+              maxLength of 10 is nine digits plus the hyphen it inserts. */}
           <div className="fa-profile-row" style={ROW_LAST}>
             <div style={LABEL}>EIN</div>
-            <input style={INPUT} value={form.ein} onChange={e => setForm({ ...form, ein: e.target.value })} placeholder="12-3456789" />
+            <div>
+              <input
+                style={INPUT}
+                value={form.ein}
+                onChange={e => setForm({ ...form, ein: formatEIN(e.target.value) })}
+                placeholder="12-3456789"
+                inputMode="numeric"
+                maxLength={10}
+              />
+              {/* Warned, not blocked: EIN is optional on this record, so a
+                  half-typed one must not be able to trap somebody who came here
+                  to change their phone number. */}
+              <div style={{ fontSize: '11px', color: form.ein && !isCompleteEIN(form.ein) ? '#C9A84C' : '#7A8899', marginTop: '4px' }}>
+                {form.ein && !isCompleteEIN(form.ein)
+                  ? 'An EIN is nine digits, formatted 12-3456789. This one is incomplete.'
+                  : 'Nine digits, formatted as 12-3456789. Optional.'}
+              </div>
+            </div>
           </div>
 
           {error && (
@@ -389,6 +424,15 @@ function MyProfileCard({ user }: { user: AgencyUser }) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(form),
       })
+      // A PATCH that is bounced to the sign-in page comes back as a followed
+      // redirect: 200, with HTML in it. `res.ok` is true, so both cards used to
+      // close the editor and report success while nothing had been written.
+      // That is reachable whenever the session is not recognised on this
+      // request — which is exactly the state the portal is in on a phone today
+      // (see the note on this in the PR). Saying so beats a silent no-op.
+      if (res.redirected) {
+        throw new Error('Your session has expired. Please sign in again.')
+      }
       if (!res.ok) {
         const j = await res.json().catch(() => ({}))
         throw new Error(j.error ?? `HTTP ${res.status}`)

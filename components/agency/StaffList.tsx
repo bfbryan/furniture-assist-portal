@@ -4,7 +4,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import InviteStaffModal from '../InviteStaffModal'
-import { formatDateOnly, formatEasternTimestamp } from '@/lib/dates'
+import { formatEasternTimestamp } from '@/lib/dates'
 
 
 type Member = {
@@ -33,6 +33,8 @@ type Props = {
   agencyId: string
   agencyName: string
   invitedByName: string
+  /** The signed-in admin's own email — the domain new invites are compared to. */
+  inviterEmail: string
 }
 
 
@@ -117,11 +119,19 @@ function Tooltip({ label, children }: { label: string; children: React.ReactNode
 }
 
 
-// Invited Date is an Airtable date-only field. `new Date('YYYY-MM-DD')` parses
-// as UTC midnight, which renders as the previous day in Eastern — staff saw an
-// invite they had just sent dated yesterday.
+// Invited Date is a dateTime field, not the date-only field this helper was
+// written for. It arrives as a full instant ("2026-08-19T02:43:13.462Z"), and
+// formatDateOnly reads only the leading YYYY-MM-DD, anchors it at UTC midnight
+// and prints it in UTC — so an invite sent at 10:43pm Eastern on the 18th
+// showed as the 19th. Anything sent after 8pm Eastern (7pm in winter) was
+// dated tomorrow.
+//
+// formatEasternTimestamp is the helper for an instant; see the header of
+// lib/dates.ts for why the two are not interchangeable. The Dawson-side
+// Unclaimed Agencies page hit this on the same field and was fixed the same
+// way; this copy was missed. Two lines below, Last Login already uses it.
 function formatDate(d: string | null | undefined): string {
-  return formatDateOnly(d, {
+  return formatEasternTimestamp(d, {
     month: 'short',
     day: 'numeric',
     year: 'numeric',
@@ -615,6 +625,7 @@ export default function StaffList({
   agencyId,
   agencyName,
   invitedByName,
+  inviterEmail,
 }: Props) {
   const router = useRouter()
   const [confirm, setConfirm] = useState<ConfirmState>({
@@ -811,6 +822,7 @@ export default function StaffList({
         agencyId={agencyId}
         agencyName={agencyName}
         invitedByName={invitedByName}
+        inviterEmail={inviterEmail}
       />
 
 

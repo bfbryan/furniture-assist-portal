@@ -8,6 +8,7 @@ import { auth } from '@clerk/nextjs/server'
 import { clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
+import { portalSignInLink } from '@/lib/auth/portal-sign-in-link'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -108,8 +109,14 @@ export async function POST(req: NextRequest) {
       },
       body: JSON.stringify({ user_id: user.id, expires_in_seconds: 60 * 60 * 24 * 30 }),
     })
+    // The RAW token wrapped in the PORTAL's sign-in URL, not Clerk's
+    // ready-made `tokenData.url` — that one points at the Clerk instance and
+    // dropped invited staff on a Clerk-hosted page. Same fix, same reason, as
+    // POST /api/admin/staff/[id]/invite; both feed the same Airtable template.
+    // See lib/auth/portal-sign-in-link.ts.
     const tokenData = await tokenRes.json()
-    const magicLink: string | null = tokenData.url ?? null
+    const signInToken: string | null = tokenData.token ?? null
+    const magicLink: string | null = signInToken ? portalSignInLink(signInToken) : null
 
     // 4. Create AT Agency Users record
     await createAgencyUserRecord({

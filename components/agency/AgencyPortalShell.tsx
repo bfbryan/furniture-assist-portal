@@ -3,7 +3,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { UserButton } from '@clerk/nextjs'
+import { SignOutButton, UserButton } from '@clerk/nextjs'
 import Link from 'next/link'
 
 type Props = {
@@ -320,6 +320,52 @@ export default function AgencyPortalShell({
               </div>
             </div>
           </div>
+
+          {/* Sign out. Until now the only way out of the agency portal was to
+              tap the Clerk avatar above and pick Sign Out from the menu it
+              opens — two taps, and nothing on screen said so. Ben asked for an
+              icon at the bottom left; this is it, in the bottom-left corner of
+              the portal on a desktop and at the foot of the drawer on a phone.
+
+              Icon plus a one-word label rather than a bare glyph: the icon is
+              the same door-and-arrow the operations portal already uses for
+              this, and it is unlabelled there only because the person's name
+              and email sit beside it. The Clerk menu above still works and is
+              untouched.
+
+              44px tall — the minimum comfortable tap target on a phone, which
+              is where this was asked for. */}
+          <SignOutButton redirectUrl="/sign-in">
+            <button
+              type="button"
+              title="Sign out"
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '10px',
+                width: '100%',
+                minHeight: '44px',
+                marginTop: '4px',
+                padding: '8px',
+                borderRadius: '8px',
+                border: 'none',
+                background: 'rgba(255,255,255,0.06)',
+                color: 'rgba(255,255,255,0.6)',
+                fontSize: '13px',
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                cursor: 'pointer',
+                textAlign: 'left',
+              }}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
+                <polyline points="16 17 21 12 16 7" />
+                <line x1="21" y1="12" x2="9" y2="12" />
+              </svg>
+              Sign out
+            </button>
+          </SignOutButton>
         </div>
       </aside>
 

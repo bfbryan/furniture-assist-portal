@@ -7,6 +7,7 @@
 // primary field, and Status gained 'Invited' / 'Unclaimed'.
 
 import { airtableFetch, safeLookupString, BASE_ID, HEADERS } from './client'
+import { easternTodayISO } from '@/lib/dates'
 
 export async function getAgencyUserByClerkId(clerkUserId: string) {
   const formula = encodeURIComponent(`{Clerk User ID} = "${clerkUserId}"`)
@@ -118,6 +119,19 @@ export async function stampFirstLogin(agencyUser: {
           fields: {
             'Claimed Date': now,
             'Status': 'Approved',
+            // Approval Date has only ever been read — by the four Dawson
+            // agency lists and the agency detail page — and never written, so
+            // it was blank on every agency the portal itself approved. This is
+            // the moment it becomes true: the same write that flips Status to
+            // 'Approved' is the approval.
+            //
+            // easternTodayISO() rather than `now`, because unlike Claimed Date
+            // beside it, Approval Date is still a DATE-ONLY field in Airtable
+            // (the others were converted to date+time). A date-only field takes
+            // the calendar day, and the day has to be New Jersey's: Vercel runs
+            // in UTC, so an admin claiming at 9pm Eastern would otherwise be
+            // approved tomorrow. See the header of lib/dates.ts.
+            'Approval Date': easternTodayISO(),
           },
         },
       })
@@ -134,6 +148,34 @@ export async function stampFirstLogin(agencyUser: {
       },
     },
   })
+}
+
+/**
+ * Stamp 'Last Login' on an Agency Users row. Called on every portal sign-in,
+ * not just the first — that is the difference between this and
+ * stampFirstLogin() above, which no-ops once Claimed Date is set.
+ *
+ * The field already existed and nothing had ever written to it, so it read
+ * blank for everyone. Note it is distinct from the "Last Login" column on the
+ * agency Team page, which comes from Clerk's own lastSignInAt: this one is for
+ * Ben, in Airtable, where Clerk's value is not visible.
+ *
+ * A dateTime field, so a plain instant is the right value — no Eastern
+ * conversion. Airtable renders it in the viewer's zone.
+ *
+ * Deliberately never throws. A failed audit stamp must not stand between
+ * somebody and the portal they just signed in to, and the caller is a page
+ * whose only other job is to redirect.
+ */
+export async function stampLastLogin(recordId: string): Promise<void> {
+  try {
+    await airtableFetch('Agency Users', `/${recordId}`, {
+      method: 'PATCH',
+      body: { fields: { 'Last Login': new Date().toISOString() } },
+    })
+  } catch (err) {
+    console.error('stampLastLogin failed for', recordId, err)
+  }
 }
 
 // ---------------------------------------------------------------------------

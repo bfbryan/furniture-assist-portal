@@ -16,6 +16,7 @@ import {
   updateAgencyUserPortalInvite,
 } from '@/lib/airtable'
 import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
+import { portalSignInLink } from '@/lib/auth/portal-sign-in-link'
 
 export async function POST(
   req: NextRequest,
@@ -127,22 +128,30 @@ export async function POST(
     )
   }
 
-  // Clerk returns a ready-made sign-in URL alongside the raw token. Use it.
+  // Take the RAW token and wrap the PORTAL's own sign-in URL around it.
   //
-  // This used to hand-build the link out of NEXT_PUBLIC_APP_URL, which has
-  // never been set in any environment — so every invite email went out with a
-  // link starting "undefined/sign-in?...". `tokenData.url` is the same link
-  // Clerk would build itself, already pointing at the right instance, and it
-  // is what app/api/admin/invite/route.ts has always used.
+  // This used to send `tokenData.url` — the ready-made URL Clerk returns
+  // beside the token. That URL points at the Clerk instance rather than at us,
+  // so an invited staff member landed on a Clerk-hosted sign-in page instead
+  // of the portal: Ben's report. The agency admin welcome has always done it
+  // the other way (raw token, portal URL wrapped around it in the Airtable
+  // template) and has always landed people in the right place, so this brings
+  // the staff path into line with the one that works.
+  //
+  // NOT rebuilt from NEXT_PUBLIC_APP_URL — that is the older bug, and it
+  // produced links beginning "undefined/". See lib/auth/portal-sign-in-link.ts
+  // for why the origin is a constant.
   const tokenData = await tokenRes.json()
-  const magicLink: string | null = tokenData.url ?? null
+  const signInToken: string | null = tokenData.token ?? null
 
-  if (!magicLink) {
+  if (!signInToken) {
     return NextResponse.json(
       { error: 'Failed to generate invite link' },
       { status: 500 }
     )
   }
+
+  const magicLink = portalSignInLink(signInToken)
 
   // Update the AT row. The Airtable automation that used to stamp Invited
   // Date is switched off — the code owns the timestamp now.
