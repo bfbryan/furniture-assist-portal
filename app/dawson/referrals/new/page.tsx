@@ -423,10 +423,27 @@ export default function DawsonAddReferralPage() {
 
 
 
-  // Load available Saturdays
+  // Load available Saturdays.
+  //
+  // leadDays=1 keeps the picker open right up to the Friday before, which is
+  // what Ben asked for. Without it this call falls back to the route's default
+  // of 7 and the nearest Saturday is simply absent from the list, so a referral
+  // for this weekend cannot be entered at all.
+  //
+  // Every other internal picker already passes it - the referral detail page,
+  // history, review and scheduled - so this was the odd one out rather than a
+  // deliberate rule. The parameter is the route's own, clamped there to 0-60;
+  // see app/api/dawson/schedule/available/route.ts.
+  //
+  // Nothing else here assumes a longer lead. Both Saturday pickers on this page
+  // render whatever this returns, and the submit route validates only that the
+  // date is a Saturday with a Saturday Schedule row - it never looks at lead
+  // days. The 14-day floor on flexible scheduling is a different rule in a
+  // different file (lib/schedule/flexible.ts) and is untouched: that one is for
+  // a date chosen FOR somebody, not one Dawson picked.
 const loadAvailability = () => {
   setAvailabilityLoading(true)
-  fetch('/api/dawson/schedule/available?weeks=8')
+  fetch('/api/dawson/schedule/available?weeks=8&leadDays=1')
     .then(r => r.json())
     .then(data => {
       setAvailableDates(Array.isArray(data) ? data : [])
