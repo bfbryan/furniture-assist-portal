@@ -501,6 +501,25 @@ h1, h2, h3, h4, h5, h6 {
   min-width: 200px;
 }
 
+/* ---------- Dawson Operations Dashboard ----------
+   The one page in the Dawson portal that has a side rail. Same shape and the
+   same 1280px breakpoint as .fa-dashboard-grid above; a separate class because
+   everything above this line is the agency portal and the two should be free
+   to move independently.
+
+   The Dawson shell keeps its fixed 240px sidebar at every width (Ben's standing
+   rule), so the content area is 784px on an iPad in landscape and 528px in
+   portrait. Both are below 1280, which is why both get the stacked single
+   column rather than a 484px column beside a 300px rail. */
+.fa-dawson-dash-grid {
+  grid-template-columns: minmax(0, 1fr) 320px;
+}
+
+/* The two Saturday cards, side by side on a wide screen. */
+.fa-dawson-cols {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 /* ==========================================================================
    Below 1280px — stack
    ========================================================================== */
@@ -687,6 +706,11 @@ h1, h2, h3, h4, h5, h6 {
 
   /* Label plus a 200px select overflowed a 390px screen and reintroduced
      sideways scroll; the select takes its own line instead. */
+  .fa-dawson-dash-grid,
+  .fa-dawson-cols {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
   .fa-history-staff-select {
     width: 100%;
     min-width: 0;

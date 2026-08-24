@@ -112,6 +112,24 @@ export async function getAgencyWithDetails(agencyId: string) {
   const agencyName = agency.fields['Agency Name'] as string
 
   // Then fetch users and referrals in parallel.
+  //
+  // USERS. The filter matches on {Agency Record ID}, NOT on {Agency}.
+  //
+  // {Agency} is the linked-record field, and a linked-record field referenced
+  // from an Airtable formula resolves to the linked rows' PRIMARY FIELD - for
+  // Agencies that is the agency's name. So the previous filter,
+  // FIND("recXXXX", ARRAYJOIN({Agency}, ",")), was looking for a record id
+  // inside a string of agency names and matched nothing, ever. Verified against
+  // the live base: it returned 0 rows for an agency with three Active users.
+  // That is why this page said "No portal users yet" for every agency and why
+  // its Active Staff tile always read 0 - not just for active staff, for all of
+  // them.
+  //
+  // {Agency Record ID} is an existing lookup on Agency Users that pulls the
+  // linked agency's RECORD_ID() formula, so it genuinely contains ids. Matching
+  // on it keeps this id-based rather than name-based, which also means a
+  // renamed agency and two agencies with similar names can't confuse it.
+  //
   // Referrals filter uses {Referring Agency} which is now a lookup through
   // Referring Staff Link, but single-value lookup formulas still compare as
   // strings, so the existing filter still works for the linked-staff case.
@@ -121,7 +139,7 @@ export async function getAgencyWithDetails(agencyId: string) {
   const [users, referrals] = await Promise.all([
     airtableFetch(
       'Agency Users',
-      `?filterByFormula=${encodeURIComponent(`FIND("${agencyId}", ARRAYJOIN({Agency}, ","))`)}&sort[0][field]=Last%20Name&sort[0][direction]=asc`,
+      `?filterByFormula=${encodeURIComponent(`FIND("${agencyId}", ARRAYJOIN({Agency Record ID}, ","))`)}&sort[0][field]=Last%20Name&sort[0][direction]=asc`,
     ),
     airtableFetch(
       'Client Referrals',

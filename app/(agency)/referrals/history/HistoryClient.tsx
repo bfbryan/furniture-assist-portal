@@ -4,14 +4,24 @@
 //
 // Ordered by appointment date, falling back to the referral date for rejected
 // referrals, which never get an appointment.
+//
+// The staff filter is NOT local state any more. It lives in the same
+// StaffFilterProvider the Active page uses (components/agency/
+// ActiveReferralsFilter.tsx), because the four header tiles are rendered by the
+// page's hero, outside this component, and had no way to see a selection made
+// down here - so picking a staff member re-drew the list and left the numbers
+// above it untouched, exactly as it used to on Active. HistoryHeroStats below
+// is the hero's half of that; everything else on this page filters on top of
+// what the provider hands back.
 
 'use client'
 
 import { useState, useMemo } from 'react'
 import { addDaysISO, easternTodayISO } from '@/lib/dates'
 import { matchesSearch } from '@/lib/search'
+import { useStaffFilter } from '@/components/agency/ActiveReferralsFilter'
 
-type Referral = {
+export type Referral = {
   id: string
   clientName: string
   referralDate: string
@@ -254,25 +264,87 @@ const valueStyle: React.CSSProperties = {
   color: '#7A8899',
 }
 
+// ---------- hero tiles ----------
+
+/**
+ * The four KPI tiles in the page hero: Completed / Missed / Cancelled /
+ * Rejected.
+ *
+ * Same four tiles, same order, same markup as the ones they replace in
+ * app/(agency)/referrals/history/page.tsx - they moved into a client component
+ * for one reason, which is that they now count the STAFF-FILTERED set instead
+ * of the whole agency. That is what ActiveHeroStats does on the Active page and
+ * this is the same provider.
+ *
+ * The one thing that did change: each count now goes through outcomeOf(), the
+ * same classifier the filter chips and the outcome pills already use, rather
+ * than testing a raw status inline. It is the same number today - no referral
+ * in the base is both Rejected and Completed/Cancelled/No Show, which is the
+ * only case where the two could disagree - and it means a tile and its chip
+ * can no longer drift apart.
+ */
+export function HistoryHeroStats() {
+  const { filtered } = useStaffFilter<Referral>()
+
+  const counts = useMemo(() => {
+    const c = { completed: 0, missed: 0, cancelled: 0, rejected: 0 }
+    for (const r of filtered) {
+      const o = outcomeOf(r)
+      if (o in c) c[o as keyof typeof c] += 1
+    }
+    return c
+  }, [filtered])
+
+  const tiles: Array<{ label: string; value: number; emphasized?: boolean }> = [
+    { label: 'Completed', value: counts.completed, emphasized: true },
+    { label: 'Missed', value: counts.missed },
+    { label: 'Cancelled', value: counts.cancelled },
+    { label: 'Rejected', value: counts.rejected },
+  ]
+
+  return (
+    <div className="fa-hero-stats flex items-center gap-4 flex-wrap">
+      {tiles.map(t => (
+        <div
+          key={t.label}
+          className={`bg-white/8 border rounded-xl px-5 py-3 text-center min-w-[80px] ${
+            t.emphasized ? 'border-[rgba(58,160,141,0.4)]' : 'border-white/12'
+          }`}
+        >
+          <div
+            className={`font-montserrat font-extrabold text-2xl leading-none mb-1 ${
+              t.emphasized ? 'text-[#3AA08D]' : 'text-white'
+            }`}
+          >
+            {t.value}
+          </div>
+          <div className="text-xs font-bold uppercase tracking-wider text-white/45">
+            {t.label}
+          </div>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ---------- main ----------
-export default function HistoryClient({
-  referrals,
-  isAdmin,
-}: {
-  referrals: Referral[]
-  isAdmin: boolean
-}) {
+export default function HistoryClient({ isAdmin }: { isAdmin: boolean }) {
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [dateRange, setDateRange] = useState<DateRange>('60')
   const [search, setSearch] = useState('')
-  const [staffFilter, setStaffFilter] = useState<string>('all')
 
-  const staffNames = useMemo(
-    () => Array.from(new Set(referrals.map(r => r.referredBy).filter(Boolean))) as string[],
-    [referrals]
-  )
+  // Referrals, the staff selection and the staff-name list all come from the
+  // provider now, so this list and the hero tiles above cannot disagree.
+  // `staffFiltered` is the set the tiles are counting; the three controls below
+  // narrow it further for the list only.
+  const {
+    staffFilter,
+    setStaffFilter,
+    staffNames,
+    filtered: staffFiltered,
+  } = useStaffFilter<Referral>()
 
-  // Apply search + status + staff + date range.
+  // Apply search + status + date range on top of the staff selection.
   const visible = useMemo(() => {
     const q = search.trim().toLowerCase()
     // Cutoff as an Eastern calendar date. It used to be a wall-clock instant on
@@ -281,9 +353,8 @@ export default function HistoryClient({
     // day you happened to look.
     const cutoffISO =
       dateRange === 'all' ? null : addDaysISO(easternTodayISO(), -parseInt(dateRange, 10))
-    return referrals.filter(r => {
+    return staffFiltered.filter(r => {
       if (!matchesSearch(q, r.clientName)) return false
-      if (staffFilter !== 'all' && r.referredBy !== staffFilter) return false
       const o = outcomeOf(r)
       if (statusFilter !== 'all' && o !== statusFilter) return false
 
@@ -294,7 +365,7 @@ export default function HistoryClient({
       }
       return true
     })
-  }, [referrals, search, staffFilter, statusFilter, dateRange])
+  }, [staffFiltered, search, statusFilter, dateRange])
 
   // Flat list, most recent first. History is a lookup ("when did we refer this
   // person, and what came of it"), not a schedule, so grouping by Saturday —

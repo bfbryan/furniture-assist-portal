@@ -6,6 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { TIME_CAPS, TIME_ORDER, describeDayLoad, type TimeSlot } from '@/lib/schedule/capacity'
 import { matchesSearch } from '@/lib/search'
+import { FIELD_BORDER } from '@/lib/ui/field-border'
 import { maskMdyInput, parseMdyToISO } from '@/lib/dates'
 import AddAgencyStaffModal, { type AddStaffResult } from '@/components/internal/modals/AddAgencyStaffModal'
 import DuplicateClientBanner, { type ClientMatch } from '@/components/internal/modals/DuplicateClientModal'
@@ -50,23 +51,10 @@ const LABEL: React.CSSProperties = {
 
 
 
-// The one border colour every field box on this page draws with.
-//
-// Dawson could not see where the fields were. #EDE9E1 (--cream-dark) against
-// the white field fill is a contrast ratio of about 1.19:1 — technically a
-// border, but below the point at which an edge reads as an edge, and this form
-// is long enough that hunting for the next box is real friction.
-//
-// #CFC7B8 is the same warm cream one step down in lightness: 1.68:1, roughly
-// 40% more contrast, and still visibly the same colour family rather than a
-// new grey. Deliberately short of the 3:1 that WCAG 1.4.11 asks for UI
-// boundaries, which lands around #A9A296 and would read as a hard outline
-// against the rest of the palette — Ben asked for "a touch darker", so the
-// step is sized to that. Easy to take further if Dawson still squints.
-//
-// This is the ONLY colour changed on the page, and it is the deliberate
-// exception to leaving the palette alone.
-const FIELD_BORDER = '#CFC7B8'
+// The one border colour every field box on this page draws with. Shared with
+// the agency-side Add Referral form and the Add Staff modal this page opens - 
+// see lib/ui/field-border.ts for the value, the measured contrast ratios and
+// why it is scoped to Add Referral only.
 
 const INPUT: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: '7px',
@@ -314,7 +302,10 @@ export default function DawsonAddReferralPage() {
 
   // New agency inline panel
   const [newAgencyMode, setNewAgencyMode] = useState(false)
-  const [newAgency, setNewAgency] = useState({ name: '', email: '' })
+  // Name only. The "Agency Email" that used to sit beside it was required,
+  // validated, sent, and then ignored by the server - see the header of
+  // components/internal/modals/AddAgencyStaffModal.tsx.
+  const [newAgency, setNewAgency] = useState({ name: '' })
 
 
 
@@ -358,11 +349,23 @@ export default function DawsonAddReferralPage() {
   // that it was filtered — and Dawson's only way round is the "add new agency"
   // panel, which dedupes on the exact name and would mint a duplicate on any
   // typing drift.
-  useEffect(() => {
+  //
+  // Named rather than inline because it is no longer a mount-only fetch. This
+  // list is the "Agencies" half of the combobox below, and submitting a
+  // referral that creates a NEW agency invalidates it: the agency exists in
+  // Airtable, but this array was captured before it did, so it was missing from
+  // the dropdown for the rest of the page session. "Add Another" resets the
+  // form in place rather than remounting the page, so nothing ever refetched
+  // it. See loadAgencies() beside loadAvailability() in the submit handler.
+  const loadAgencies = () => {
     fetch('/api/dawson/agencies?status=Approved,Unclaimed,Invited')
       .then(r => r.json())
       .then(data => { setAgencies(Array.isArray(data) ? data : []); setAgenciesLoading(false) })
       .catch(() => setAgenciesLoading(false))
+  }
+
+  useEffect(() => {
+    loadAgencies()
   }, [])
 
 
@@ -599,7 +602,7 @@ useEffect(() => {
     setAgencyQuery(agency.name)
     setAgencyDropdownOpen(false)
     setNewAgencyMode(false)
-    setNewAgency({ name: '', email: '' })
+    setNewAgency({ name: '' })
   }
 
 
@@ -626,7 +629,7 @@ useEffect(() => {
     setAgencyQuery(agency.name)
     setAgencyDropdownOpen(false)
     setNewAgencyMode(false)
-    setNewAgency({ name: '', email: '' })
+    setNewAgency({ name: '' })
     setNewStaffMode(false)
     setStaffResults([])
   }
@@ -650,7 +653,7 @@ useEffect(() => {
       setSelectedAgency(result.agency)
       setAgencyQuery(result.agency.name)
       setNewAgencyMode(false)
-      setNewAgency({ name: '', email: '' })
+      setNewAgency({ name: '' })
       setSelectedStaff(null)
       setNewStaffMode(true)
       setNewStaff(result.staff)
@@ -678,7 +681,7 @@ useEffect(() => {
     setNewStaffMode(false)
     setAgencyQuery('')
     setStaffResults([])
-    setNewAgency({ name: '', email: '' })
+    setNewAgency({ name: '' })
     setNewStaff({ firstName: '', lastName: '', email: '', phone: '' })
   }
 
@@ -745,7 +748,6 @@ useEffect(() => {
         // Case 3: brand new agency + new staff
         payload.newAgency = {
           name: newAgency.name.trim(),
-          email: newAgency.email.trim(),
         }
         payload.newStaff = {
           firstName: newStaff.firstName.trim(),
@@ -789,6 +791,9 @@ useEffect(() => {
       setIsDuplicate(!!data.duplicate)
       setSubmitted(true)
       loadAvailability()  // refresh slot counts for next referral
+      // And the agency list, for the same reason: a submission in newAgencyMode
+      // has just created an Agency that this page's copy of the list predates.
+      if (newAgencyMode) loadAgencies()
     } catch (e: any) {
       setError(e.message)
     } finally {
@@ -883,7 +888,6 @@ useEffect(() => {
     // Agency validation
     if (newAgencyMode) {
       if (!newAgency.name.trim()) { setError('Please enter the new agency name.'); return }
-      if (!newAgency.email.trim()) { setError('Please enter the new agency email.'); return }
     } else if (!selectedAgency) {
       setError('Please select an agency.'); return
     }
@@ -1286,15 +1290,13 @@ useEffect(() => {
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 New Agency Details
               </div>
-              <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px', marginBottom: '12px' }}>
-                <div>
-                  <label style={LABEL}>Agency Name *</label>
-                  <input style={INPUT} value={newAgency.name} onChange={e => setNewAgency({ ...newAgency, name: e.target.value })} placeholder="Agency name" />
-                </div>
-                <div>
-                  <label style={LABEL}>Agency Email *</label>
-                  <input style={INPUT} type="email" value={newAgency.email} onChange={e => setNewAgency({ ...newAgency, email: e.target.value })} placeholder="agency@example.com" />
-                </div>
+              {/* One field, so no two-column row: the Agency Email that used
+                  to sit on the right was never stored (see the modal header)
+                  and a half-width name box beside an empty gap reads as a
+                  field that failed to render. */}
+              <div style={{ marginBottom: '12px' }}>
+                <label style={LABEL}>Agency Name *</label>
+                <input style={INPUT} value={newAgency.name} onChange={e => setNewAgency({ ...newAgency, name: e.target.value })} placeholder="Agency name" />
               </div>
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
                 Referring Staff Member

@@ -2,8 +2,14 @@
 
 // components/agency/ActiveReferralsFilter.tsx
 //
-// The staff filter on the Active Referrals page, and the two header counts
-// that now follow it.
+// The staff filter shared by the Active Referrals and History pages, and the
+// header counts on both, which follow it.
+//
+// It is still named for Active because that is where it was written; History
+// was the second caller and reuses this provider rather than carrying a second
+// copy of the same state. History's own tiles live next to History's outcome
+// rules, in app/(agency)/referrals/history/HistoryClient.tsx - only the
+// provider and the hook are shared.
 //
 // Why this exists: the counts were computed on the server across the whole
 // agency, while the "Filter by Staff" dropdown below them filtered the list in
@@ -21,6 +27,12 @@
 // Nothing changes for a staff (non-admin) user: they are only ever sent their
 // own referrals, the dropdown is admin-only, and the filter therefore stays on
 // 'all' — which selects every referral they were given, exactly as before.
+//
+// `filtered` is the STAFF filter only. History layers its own search, outcome
+// and date-range controls on top of it inside HistoryClient; those deliberately
+// do not reach the header tiles, because a "Completed" count that reads 0
+// because you clicked the Cancelled chip is worse than no count at all. Active
+// has no other filters, so there the two sets are the same thing.
 
 import { createContext, useContext, useMemo, useState } from 'react'
 

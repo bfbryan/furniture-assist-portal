@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { FIELD_BORDER_STYLE } from '@/lib/ui/field-border'
 
 const ITEMS = [
   'Bedroom Furniture',
@@ -17,9 +18,12 @@ const LABEL: React.CSSProperties = {
   letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block',
 }
 
+// Field outline shared with both Add Referral screens - see
+// lib/ui/field-border.ts. Only the border moved; padding, radius, size and
+// colour are as they were.
 const INPUT: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: '7px',
-  border: '1px solid #EDE9E1', fontSize: '14px', color: '#2C3A4A',
+  border: FIELD_BORDER_STYLE, fontSize: '14px', color: '#2C3A4A',
   background: 'white', outline: 'none',
 }
 

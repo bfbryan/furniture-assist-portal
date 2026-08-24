@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
+import { useAgencyStaffSearch } from '@/components/internal/useAgencyStaffSearch'
+import StaffMatchHint from '@/components/internal/StaffMatchHint'
 import { cityStateZip } from '@/lib/address'
 
 // Optional Airtable fields are string | null — Airtable omits blank fields,
@@ -70,7 +72,7 @@ function ConfirmModal({ agencyName, label, onConfirm, onCancel, loading }: {
   )
 }
 
-function PendingCard({ agency, onStatusChange }: { agency: Agency; onStatusChange: (id: string, status: string) => void }) {
+function PendingCard({ agency, matchedStaff, onStatusChange }: { agency: Agency; matchedStaff: string[]; onStatusChange: (id: string, status: string) => void }) {
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState<{ action: string; label: string } | null>(null)
 
@@ -123,6 +125,7 @@ function PendingCard({ agency, onStatusChange }: { agency: Agency; onStatusChang
               {agency.website.replace(/^https?:\/\//, '')}
             </a>
           )}
+          <StaffMatchHint names={matchedStaff} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, paddingTop: '14px' }}>
@@ -187,8 +190,17 @@ export default function PendingAgenciesPage() {
     setAgencies(prev => prev.filter(a => a.id !== id))
   }
 
-  const filtered = agencies.filter(a =>
-    matchesSearch(search, a.name, a.city, a.contactName, a.officeName)
+  // Searching a PERSON keeps their agency on screen. `selfMatch` is the test
+  // this page always had; `staffMatches` adds the people who work there, from
+  // one read of Agency Users per page load. The hint under an agency's name is
+  // shown only when the agency itself did NOT match, so typing an agency name
+  // changes nothing about how this page already looked.
+  const staffMatches = useAgencyStaffSearch()
+  const selfMatch = (a: Agency) => matchesSearch(search, a.name, a.city, a.contactName, a.officeName)
+  const staffHint = (a: Agency) => (selfMatch(a) ? [] : staffMatches(a.id, search))
+
+  const filtered = agencies.filter(
+    a => selfMatch(a) || staffMatches(a.id, search).length > 0,
   )
 
   return (
@@ -212,7 +224,7 @@ export default function PendingAgenciesPage() {
       <div style={{ padding: '28px 32px' }}>
         <input
           type="text"
-          placeholder="Search agencies..."
+          placeholder="Search agencies or staff..."
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', width: '260px', outline: 'none', marginBottom: '20px', display: 'block', background: 'white' }}
@@ -222,7 +234,7 @@ export default function PendingAgenciesPage() {
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899', fontSize: '14px' }}>No pending applications 🎉</div>
         ) : (
-          filtered.map(a => <PendingCard key={a.id} agency={a} onStatusChange={handleStatusChange} />)
+          filtered.map(a => <PendingCard key={a.id} agency={a} matchedStaff={staffHint(a)} onStatusChange={handleStatusChange} />)
         )}
       </div>
     </div>

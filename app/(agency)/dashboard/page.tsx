@@ -468,6 +468,37 @@ export default async function DashboardPage() {
                               {fullName}
                             </Link>
                           </div>
+                          {/* Who submitted it. Admin only, and that is the
+                              whole point of it: an admin sees every referral
+                              in the agency and had no way to tell one
+                              person's from another's. A staff user is only
+                              ever sent their own - see scopedReferrals above
+ - so for them this line would say the same name
+                              on every card.
+
+                              `referredBy` is the Referring Staff lookup on
+                              Client Referrals, which resolves through
+                              Referring Staff Link to the Agency Users "Full
+                              Name" formula, i.e. first and last name. It is
+                              the same value the Active and History pages
+                              already show in their "Referred By" column and
+                              the same one their staff filter matches on. */}
+                          {isAdmin && r.referredBy && (
+                            <div
+                              style={{
+                                fontSize: '11px',
+                                color: '#7A8899',
+                                marginTop: '3px',
+                                lineHeight: '1.35',
+                                overflowWrap: 'break-word',
+                              }}
+                            >
+                              Referred by{' '}
+                              <span style={{ fontWeight: 600, color: '#2C3A4A' }}>
+                                {r.referredBy}
+                              </span>
+                            </div>
+                          )}
                           {(address || cityStateZip) && (
                             <div
                               style={{

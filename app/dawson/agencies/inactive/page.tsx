@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
+import { useAgencyStaffSearch } from '@/components/internal/useAgencyStaffSearch'
+import StaffMatchHint from '@/components/internal/StaffMatchHint'
 import { cityStateZip } from '@/lib/address'
 
 // Optional Airtable fields are string | null — Airtable omits blank fields,
@@ -66,7 +68,7 @@ function ConfirmModal({ agencyName, action, label, onConfirm, onCancel, loading 
   )
 }
 
-function AgencyCard({ agency, onStatusChange }: { agency: Agency; onStatusChange: (id: string) => void }) {
+function AgencyCard({ agency, matchedStaff, onStatusChange }: { agency: Agency; matchedStaff: string[]; onStatusChange: (id: string) => void }) {
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState<{ action: string; label: string } | null>(null)
   const isInactive = agency.status === 'Inactive'
@@ -120,6 +122,7 @@ function AgencyCard({ agency, onStatusChange }: { agency: Agency; onStatusChange
               {agency.website.replace(/^https?:\/\//, '')}
             </a>
           )}
+          <StaffMatchHint names={matchedStaff} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, paddingTop: '14px' }}>
@@ -165,11 +168,12 @@ function AgencyCard({ agency, onStatusChange }: { agency: Agency; onStatusChange
   )
 }
 
-function GroupSection({ title, agencies, accent, onStatusChange, defaultOpen = true }: {
+function GroupSection({ title, agencies, accent, onStatusChange, staffHint, defaultOpen = true }: {
   title: string
   agencies: Agency[]
   accent: string
   onStatusChange: (id: string) => void
+  staffHint: (a: Agency) => string[]
   defaultOpen?: boolean
 }) {
   const [open, setOpen] = useState(defaultOpen)
@@ -190,7 +194,7 @@ function GroupSection({ title, agencies, accent, onStatusChange, defaultOpen = t
         </span>
       </button>
       {open && agencies.map(a => (
-        <AgencyCard key={a.id} agency={a} onStatusChange={onStatusChange} />
+        <AgencyCard key={a.id} agency={a} matchedStaff={staffHint(a)} onStatusChange={onStatusChange} />
       ))}
     </div>
   )
@@ -215,8 +219,17 @@ export default function InactiveAgenciesPage() {
     setAgencies(prev => prev.filter(a => a.id !== id))
   }
 
-  const filtered = agencies.filter(a =>
-    matchesSearch(search, a.name, a.city, a.contactName, a.officeName)
+  // Searching a PERSON keeps their agency on screen. `selfMatch` is the test
+  // this page always had; `staffMatches` adds the people who work there, from
+  // one read of Agency Users per page load. The hint under an agency's name is
+  // shown only when the agency itself did NOT match, so typing an agency name
+  // changes nothing about how this page already looked.
+  const staffMatches = useAgencyStaffSearch()
+  const selfMatch = (a: Agency) => matchesSearch(search, a.name, a.city, a.contactName, a.officeName)
+  const staffHint = (a: Agency) => (selfMatch(a) ? [] : staffMatches(a.id, search))
+
+  const filtered = agencies.filter(
+    a => selfMatch(a) || staffMatches(a.id, search).length > 0,
   )
 
   const inactive = filtered.filter(a => a.status === 'Inactive')
@@ -241,7 +254,7 @@ export default function InactiveAgenciesPage() {
       </header>
 
       <div style={{ padding: '28px 32px' }}>
-        <input type="text" placeholder="Search agencies..." value={search} onChange={e => setSearch(e.target.value)}
+        <input type="text" placeholder="Search agencies or staff..." value={search} onChange={e => setSearch(e.target.value)}
           style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', width: '260px', outline: 'none', marginBottom: '20px', display: 'block', background: 'white' }} />
         {loading ? (
           <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899' }}>Loading...</div>
@@ -249,8 +262,8 @@ export default function InactiveAgenciesPage() {
           <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899', fontSize: '14px' }}>No inactive or rejected agencies.</div>
         ) : (
           <>
-            <GroupSection title="Inactive Agencies" agencies={inactive} accent="#7A8899" onStatusChange={handleStatusChange} defaultOpen={true} />
-            <GroupSection title="Rejected Applications" agencies={rejected} accent="#C0392B" onStatusChange={handleStatusChange} defaultOpen={false} />
+            <GroupSection title="Inactive Agencies" agencies={inactive} accent="#7A8899" onStatusChange={handleStatusChange} staffHint={staffHint} defaultOpen={true} />
+            <GroupSection title="Rejected Applications" agencies={rejected} accent="#C0392B" onStatusChange={handleStatusChange} staffHint={staffHint} defaultOpen={false} />
           </>
         )}
       </div>

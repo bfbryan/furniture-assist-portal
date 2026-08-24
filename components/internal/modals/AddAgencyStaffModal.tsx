@@ -5,8 +5,17 @@
 // Two cases, one modal:
 //   1. New person at an agency we already have  -> pick the agency,
 //      fill in the person
-//   2. New agency entirely                      -> type the agency name
-//      and email, fill in the person
+//   2. New agency entirely                      -> type the agency name,
+//      fill in the person
+//
+// A new agency is created from its NAME alone. There used to be a required
+// "Agency Email" here for the agency's general inbox; nothing ever stored it.
+// createUnclaimedAgency() in app/api/dawson/referrals/submit/route.ts takes
+// only the name, and the Agencies table has had no general-email column since
+// the June 2026 migration moved agency contact details onto the Primary Admin
+// link. It was a required field that was validated and then dropped on the
+// floor, so it is gone. The STAFF email below is a different field and is
+// stored - it is what the Agency Users row is deduped on.
 //
 // The agency field is a combobox over the already-loaded agency list
 // rather than a plain text input. That is deliberate: the most common
@@ -23,6 +32,7 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { matchesSearch } from '@/lib/search'
+import { FIELD_BORDER_STYLE } from '@/lib/ui/field-border'
 
 export type Agency = {
   id: string
@@ -47,7 +57,7 @@ export type AddStaffResult =
     }
   | {
       mode: 'newAgency'
-      newAgency: { name: string; email: string }
+      newAgency: { name: string }
       staff: NewStaffDraft
     }
 
@@ -72,11 +82,15 @@ const LABEL: React.CSSProperties = {
   marginBottom: '6px',
 }
 
+// This modal opens on top of the Add Referral form, so its fields have to
+// carry the same outline as the ones behind it - see lib/ui/field-border.ts.
+// The modal's own card, dropdown and button borders are unchanged; only the
+// text fields moved.
 const INPUT: React.CSSProperties = {
   width: '100%',
   padding: '10px 12px',
   borderRadius: '7px',
-  border: '1px solid #EDE9E1',
+  border: FIELD_BORDER_STYLE,
   fontSize: '13px',
   color: '#2C3A4A',
   fontFamily: 'var(--font-montserrat)',
@@ -149,7 +163,6 @@ export default function AddAgencyStaffModal({
     initialAgency?.name ?? (seedIsPerson ? '' : initialQuery.trim())
   )
   const [agencyDropdownOpen, setAgencyDropdownOpen] = useState(false)
-  const [newAgencyEmail, setNewAgencyEmail] = useState('')
 
   const [staff, setStaff] = useState<NewStaffDraft>({
     firstName: seedIsPerson ? seedWords[0] ?? '' : '',
@@ -198,27 +211,17 @@ export default function AddAgencyStaffModal({
     setSelectedAgency(agency)
     setAgencyQuery(agency.name)
     setAgencyDropdownOpen(false)
-    setNewAgencyEmail('')
     setError('')
   }
 
   function clearAgency() {
     setSelectedAgency(null)
     setAgencyQuery('')
-    setNewAgencyEmail('')
   }
 
   function handleSave() {
     if (!selectedAgency && !trimmedAgencyQuery) {
       setError('Pick an existing agency or type a new agency name.')
-      return
-    }
-    if (isNewAgency && !newAgencyEmail.trim()) {
-      setError('New agencies need an agency email.')
-      return
-    }
-    if (isNewAgency && !EMAIL_RE.test(newAgencyEmail.trim())) {
-      setError('That agency email does not look valid.')
       return
     }
     if (!staff.firstName.trim()) {
@@ -252,7 +255,7 @@ export default function AddAgencyStaffModal({
     } else {
       onSave({
         mode: 'newAgency',
-        newAgency: { name: trimmedAgencyQuery, email: newAgencyEmail.trim() },
+        newAgency: { name: trimmedAgencyQuery },
         staff: cleanStaff,
       })
     }
@@ -411,48 +414,18 @@ export default function AddAgencyStaffModal({
               Existing agency — only the staff member will be created.
             </div>
           )}
+          {/* The mirror of the line above. The New Agency panel that used to
+              sit below this said the same thing by existing; with its one
+              (unstored) field gone there was nothing left to say it, and the
+              only remaining signal that an agency was about to be created was
+              a row inside a dropdown that has since closed. */}
+          {isNewAgency && (
+            <div style={{ marginTop: '7px', fontSize: '12px', color: '#2A7F6F', fontWeight: 600 }}>
+              New agency: “{trimmedAgencyQuery}” will be created with this staff member.
+            </div>
+          )}
         </div>
 
-        {/* New agency email, only when actually creating one */}
-        {isNewAgency && (
-          <div
-            style={{
-              background: '#FAF8F4',
-              border: '1px solid #EDE9E1',
-              borderRadius: '10px',
-              padding: '16px',
-              marginBottom: '18px',
-            }}
-          >
-            <div
-              style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                color: '#2A7F6F',
-                marginBottom: '12px',
-                textTransform: 'uppercase',
-                letterSpacing: '0.06em',
-              }}
-            >
-              New Agency
-            </div>
-            <label style={LABEL}>Agency Email *</label>
-            <input
-              style={INPUT}
-              type="email"
-              value={newAgencyEmail}
-              onChange={e => {
-                setNewAgencyEmail(e.target.value)
-                setError('')
-              }}
-              placeholder="agency@example.com"
-            />
-            <div style={{ marginTop: '7px', fontSize: '12px', color: '#7A8899', lineHeight: 1.5 }}>
-              General inbox for the agency. The staff email below is the person
-              who made this referral.
-            </div>
-          </div>
-        )}
 
         {/* Staff fields */}
         <div

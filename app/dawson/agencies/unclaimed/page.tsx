@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
+import { useAgencyStaffSearch } from '@/components/internal/useAgencyStaffSearch'
+import StaffMatchHint from '@/components/internal/StaffMatchHint'
 import { cityStateZip } from '@/lib/address'
 import { formatEasternTimestamp } from '@/lib/dates'
 
@@ -192,7 +194,7 @@ function InviteModal({ agency, onClose, onInvited }: {
   )
 }
 
-function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: string) => void }) {
+function UnclaimedCard({ agency, matchedStaff, onInvited }: { agency: Agency; matchedStaff: string[]; onInvited: (id: string) => void }) {
   const [modalOpen, setModalOpen] = useState(false)
   const blockReason = inviteBlockReason(agency)
   const isInvited = agency.status === 'Invited'
@@ -243,6 +245,7 @@ function UnclaimedCard({ agency, onInvited }: { agency: Agency; onInvited: (id: 
               {agency.website.replace(/^https?:\/\//, '')}
             </a>
           )}
+          <StaffMatchHint names={matchedStaff} />
         </div>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, paddingTop: '14px' }}>
@@ -314,8 +317,17 @@ export default function UnclaimedAgenciesPage() {
     }
   }
 
+  // Searching a PERSON keeps their agency on screen. `selfMatch` is the test
+  // this page always had; `staffMatches` adds the people who work there, from
+  // one read of Agency Users per page load. The hint under an agency's name is
+  // shown only when the agency itself did NOT match, so typing an agency name
+  // changes nothing about how this page already looked.
+  const staffMatches = useAgencyStaffSearch()
+  const selfMatch = (a: Agency) => matchesSearch(search, a.name, a.city, a.officeName)
+  const staffHint = (a: Agency) => (selfMatch(a) ? [] : staffMatches(a.id, search))
+
   const filtered = agencies
-    .filter(a => matchesSearch(search, a.name, a.city, a.officeName))
+    .filter(a => selfMatch(a) || staffMatches(a.id, search).length > 0)
     .sort((a, b) => {
       let val = 0
       if (sortKey === 'name') val = a.name.localeCompare(b.name)
@@ -348,7 +360,7 @@ export default function UnclaimedAgenciesPage() {
       <div style={{ padding: '28px 32px' }}>
         <input
           type="text"
-          placeholder="Search agencies..."
+          placeholder="Search agencies or staff..."
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', width: '260px', outline: 'none', marginBottom: '16px', display: 'block', background: 'white' }}
@@ -374,7 +386,7 @@ export default function UnclaimedAgenciesPage() {
             {search ? 'No agencies match your search.' : 'No unclaimed agencies — everything is accounted for 🎉'}
           </div>
         ) : (
-          filtered.map(a => <UnclaimedCard key={a.id} agency={a} onInvited={handleInvited} />)
+          filtered.map(a => <UnclaimedCard key={a.id} agency={a} matchedStaff={staffHint(a)} onInvited={handleInvited} />)
         )}
       </div>
     </div>
