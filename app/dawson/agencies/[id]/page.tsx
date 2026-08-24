@@ -20,6 +20,53 @@ type AgencyUser = {
   isPrimaryAdmin: boolean      // June 2026: derived from Agency.Primary Admin link
 }
 
+// ---------------------------------------------------------------------------
+// Portal Staff grouping
+// ---------------------------------------------------------------------------
+// Ben asked for the staff area split into unclaimed, active and invited, in
+// that order, which is also the order a person moves through: imported off a
+// referral slip (Unclaimed), sent a magic link (Invited), signed in (Active).
+// Listed here as he named them.
+//
+// GROUP_ORDER is deliberately not the whole Status option set. An Agency User
+// can also be 'Pending' (legacy pre-invite accounts) or 'Inactive', and a row
+// in either state must not silently disappear from the one page whose job is to
+// say who is attached to this agency. Anything outside the three named groups
+// is collected into a trailing group per status, rendered only when it has
+// somebody in it, so the ordinary case is exactly the three Ben asked for and
+// nothing is ever dropped.
+const GROUP_ORDER: Array<{ key: string; label: string; color: string }> = [
+  { key: 'Unclaimed', label: 'Unclaimed', color: '#7A8899' },
+  { key: 'Active',    label: 'Active',    color: '#2A7F6F' },
+  { key: 'Invited',   label: 'Invited',   color: '#5B8DB8' },
+]
+
+function staffGroups(users: AgencyUser[]) {
+  const named = GROUP_ORDER.map(g => ({ ...g, users: [] as AgencyUser[] }))
+  const extras = new Map<string, AgencyUser[]>()
+
+  for (const u of users) {
+    const group = named.find(g => g.key === u.status)
+    if (group) {
+      group.users.push(u)
+      continue
+    }
+    const key = u.status || 'No status'
+    if (!extras.has(key)) extras.set(key, [])
+    extras.get(key)!.push(u)
+  }
+
+  return [
+    ...named.filter(g => g.users.length > 0),
+    ...Array.from(extras.entries()).map(([key, us]) => ({
+      key,
+      label: key,
+      color: '#7A8899',
+      users: us,
+    })),
+  ]
+}
+
 type Referral = {
   id: string
   clientName: string
@@ -457,54 +504,80 @@ useEffect(() => {
           </div>
 
           <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #EDE9E1' }}>
+            <div style={{ padding: '16px 20px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '10px' }}>
               <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B' }}>Portal Staff</div>
+              {agency.users.length > 0 && (
+                <div style={{ fontSize: '11px', color: '#7A8899' }}>
+                  {agency.users.length} {agency.users.length === 1 ? 'person' : 'people'}
+                </div>
+              )}
             </div>
             {agency.users.length === 0 ? (
               <div style={{ padding: '20px', textAlign: 'center', color: '#7A8899', fontSize: '13px' }}>No portal users yet</div>
             ) : (
-              agency.users.map(u => {
-                // Status colors expanded for the new Unclaimed/Invited statuses
-                // introduced in the June 2026 migration.
-                const userColors =
-                  u.status === 'Active'   ? { bg: 'rgba(42,127,111,0.12)', color: '#2A7F6F' } :
-                  u.status === 'Invited'  ? { bg: 'rgba(91,141,184,0.12)', color: '#5B8DB8' } :
-                  u.status === 'Pending'  ? { bg: 'rgba(201,168,76,0.15)', color: '#C9A84C' } :
-                                            { bg: '#F0F0F0',               color: '#7A8899' }
-                const displayName = u.name || `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || '—'
-                const uInitials = displayName.split(' ').map((w: string) => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase() || '?'
-                return (
-                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 20px', borderBottom: '1px solid #F7F5F1' }}>
-                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#1B2B4B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '11px', color: '#3AA08D', flexShrink: 0 }}>
-                      {uInitials}
-                    </div>
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: '13px', fontWeight: 600, color: '#1B2B4B', display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                        <span>{displayName}</span>
-                        {u.isPrimaryAdmin && (
-                          <span title="Primary Admin" style={{ fontSize: '9px', fontWeight: 800, padding: '1px 6px', borderRadius: '4px', background: 'rgba(42,127,111,0.15)', color: '#2A7F6F', letterSpacing: '0.06em' }}>
-                            ADMIN
-                          </span>
-                        )}
-                        {u.needsReview && (
-                          <span title="Created from Excel import without an email — needs admin review" style={{ fontSize: '9px', fontWeight: 800, padding: '1px 6px', borderRadius: '4px', background: 'rgba(201,168,76,0.18)', color: '#C9A84C', letterSpacing: '0.06em' }}>
-                            REVIEW
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ fontSize: '11px', color: '#7A8899' }}>
-                        {u.email || <em style={{ color: '#C9A84C' }}>no email on file</em>}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '3px' }}>
-                      <span style={{ fontSize: '10px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: userColors.bg, color: userColors.color, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                        {u.status}
-                      </span>
-                      <span style={{ fontSize: '10px', color: '#7A8899' }}>{u.role}</span>
-                    </div>
+              staffGroups(agency.users).map(group => (
+                <div key={group.key}>
+                  <div
+                    style={{
+                      padding: '9px 20px',
+                      background: '#FAF8F4',
+                      borderTop: '1px solid #EDE9E1',
+                      borderBottom: '1px solid #EDE9E1',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'space-between',
+                      gap: '8px',
+                    }}
+                  >
+                    <span style={{ fontSize: '10.5px', fontWeight: 800, letterSpacing: '0.08em', textTransform: 'uppercase', color: group.color }}>
+                      {group.label}
+                    </span>
+                    <span style={{ fontSize: '11px', fontWeight: 700, color: '#7A8899' }}>{group.users.length}</span>
                   </div>
-                )
-              })
+                  {group.users.map(u => {
+                    const displayName = u.name || `${u.firstName ?? ''} ${u.lastName ?? ''}`.trim() || '-'
+                    const uInitials = displayName.split(' ').map((w: string) => w[0]).filter(Boolean).join('').slice(0, 2).toUpperCase() || '?'
+                    return (
+                      <div key={u.id} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '11px 20px', borderBottom: '1px solid #F7F5F1' }}>
+                        <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#1B2B4B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '11px', color: '#3AA08D', flexShrink: 0 }}>
+                          {uInitials}
+                        </div>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: '13px', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                            {/* Every name is a way through to that person's own
+                                page. /dawson/staff/[id] has existed since June
+                                and was reachable only from a referral detail
+                                page until now. */}
+                            <a
+                              href={`/dawson/staff/${u.id}`}
+                              style={{ color: '#2A7F6F', textDecoration: 'none', overflowWrap: 'anywhere' }}
+                            >
+                              {displayName}
+                            </a>
+                            {u.isPrimaryAdmin && (
+                              <span title="Primary Admin" style={{ fontSize: '9px', fontWeight: 800, padding: '1px 6px', borderRadius: '4px', background: 'rgba(42,127,111,0.15)', color: '#2A7F6F', letterSpacing: '0.06em' }}>
+                                ADMIN
+                              </span>
+                            )}
+                            {u.needsReview && (
+                              <span title="Created from Excel import without an email - needs admin review" style={{ fontSize: '9px', fontWeight: 800, padding: '1px 6px', borderRadius: '4px', background: 'rgba(201,168,76,0.18)', color: '#C9A84C', letterSpacing: '0.06em' }}>
+                                REVIEW
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: '11px', color: '#7A8899', overflowWrap: 'anywhere' }}>
+                            {u.email || <em style={{ color: '#C9A84C' }}>no email on file</em>}
+                          </div>
+                        </div>
+                        {/* The status pill that used to sit here now says the
+                            same word as the group header directly above it, so
+                            only the role is left. */}
+                        <span style={{ fontSize: '10px', color: '#7A8899', flexShrink: 0 }}>{u.role}</span>
+                      </div>
+                    )
+                  })}
+                </div>
+              ))
             )}
           </div>
         </div>

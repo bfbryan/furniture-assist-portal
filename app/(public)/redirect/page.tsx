@@ -10,6 +10,14 @@
 //
 // It is also where Last Login is stamped, on every sign-in rather than only
 // the first.
+//
+// And it is where "first login goes to the profile page, every login after
+// that goes to the dashboard" is decided. That is NOT a Clerk setting and
+// cannot be one: Clerk's after-sign-in URL is a single static value (it is set
+// to this page, via NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL), and Clerk has no
+// knowledge of whether this is someone's first time in the PORTAL - that fact
+// lives in Airtable, as Agency Users.Claimed Date. This page already had to
+// read it in order to stamp it, so the decision costs nothing extra here.
 
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
@@ -51,7 +59,16 @@ export default async function RedirectPage() {
   //
   // Stamping first means a failure leaves Status alone and the next sign-in
   // simply retries the whole block.
+  //
+  // `isFirstLogin` is deliberately "we stamped the Claimed Date on THIS
+  // request", not "their status is Invited" and not "Claimed Date is empty".
+  // It is true exactly once per person, for the same reason stampFirstLogin is
+  // a no-op after the first run, so it cannot send a returning user to the
+  // profile page a second time - and it cannot strand someone on it forever if
+  // their row somehow never reaches 'Invited'.
+  let isFirstLogin = false
   if (agencyUser && (agencyUser.status === 'Invited' || agencyUser.status === 'Pending')) {
+    isFirstLogin = !agencyUser.claimedDate
     await stampFirstLogin(agencyUser)
     await updateAgencyUserStatus(agencyUser.id, 'Active')
   }
@@ -67,6 +84,13 @@ export default async function RedirectPage() {
   // Dawson users returned at the top: Last Login is an Agency Users field and
   // they have no row in that table.
   if (agencyUser) await stampLastLogin(agencyUser.id)
+
+  // Ben: land on the profile page the first time, the dashboard every time
+  // after. The first thing a newly-claimed account is asked to do is confirm
+  // who they are and what agency they belong to, and the profile page is where
+  // that happens; sending them to the dashboard first buries it behind a nav
+  // click most people never make.
+  if (isFirstLogin) redirect('/profile')
 
   redirect('/dashboard')
 }

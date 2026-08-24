@@ -12,7 +12,8 @@ import {
   getReferralsByStaffName,
   getReferralsByAgencyId,
 } from '@/lib/airtable'
-import HistoryClient from './HistoryClient'
+import HistoryClient, { HistoryHeroStats, type Referral } from './HistoryClient'
+import { StaffFilterProvider } from '@/components/agency/ActiveReferralsFilter'
 import { cityStateZip } from '@/lib/address'
 
 // Terminal statuses only.
@@ -67,26 +68,18 @@ export default async function HistoryPage() {
       ? await getReferralsByAgencyId(agency.name)
       : await getReferralsByStaffName(agency.name, agencyUser.name)
 
-  const historyReferrals = allReferrals.filter(isTerminal)
+  const historyReferrals = allReferrals.filter(isTerminal) as Referral[]
 
-  // Counts for hero KPI tiles.
-  const completedCount = historyReferrals.filter(
-    (r: any) => r.appointmentStatus === 'Completed'
-  ).length
-  const missedCount = historyReferrals.filter(
-    (r: any) => r.appointmentStatus === 'No Show'
-  ).length
-  const cancelledCount = historyReferrals.filter(
-    (r: any) => r.appointmentStatus === 'Cancelled'
-  ).length
-  // Fourth tile so the set is an even 2x2 on a phone rather than stranding one.
-  // Rejected is already a first-class outcome here — it has a filter chip and an
-  // outcome pill — and matches how outcomeOf() classifies a referral.
-  const rejectedCount = historyReferrals.filter(
-    (r: any) => r.referralReview === 'Rejected'
-  ).length
-
+  // The four hero KPI tiles used to be counted right here, across the whole
+  // agency, while the "Filter by staff" dropdown inside HistoryClient filtered
+  // the list in the browser - so picking a staff member changed the list and
+  // left the numbers above it still. This is the same fix the Active page
+  // already had: one StaffFilterProvider wrapping the hero AND the body, with
+  // the tiles reading the filtered set. Tiles are HistoryHeroStats; the
+  // fourth (Rejected) is still there for the same reason it was added, which
+  // is that four tiles make an even 2x2 on a phone.
   return (
+    <StaffFilterProvider referrals={historyReferrals}>
     <div className="min-h-screen bg-[#F7F5F1]">
       {/* Hero — same layout as Active/Dashboard */}
       <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-9">
@@ -131,51 +124,18 @@ export default async function HistoryPage() {
             </div>
           </div>
 
-          {/* Right — KPI tiles */}
-          <div className="fa-hero-stats flex items-center gap-4 flex-wrap">
-            <div className="bg-white/8 border border-[rgba(58,160,141,0.4)] rounded-xl px-5 py-3 text-center min-w-[80px]">
-              <div className="font-montserrat font-extrabold text-2xl text-[#3AA08D] leading-none mb-1">
-                {completedCount}
-              </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-white/45">
-                Completed
-              </div>
-            </div>
-            <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
-              <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
-                {missedCount}
-              </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-white/45">
-                Missed
-              </div>
-            </div>
-            <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
-              <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
-                {cancelledCount}
-              </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-white/45">
-                Cancelled
-              </div>
-            </div>
-            <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
-              <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
-                {rejectedCount}
-              </div>
-              <div className="text-xs font-bold uppercase tracking-wider text-white/45">
-                Rejected
-              </div>
-            </div>
-          </div>
+          {/* Right - KPI tiles. Same four, same order; they moved into a
+              client component only so they can see the staff filter. */}
+          <HistoryHeroStats />
+
         </div>
       </div>
 
       {/* Body — search + chips + week buckets */}
       <main className="max-w-6xl mx-auto px-8 py-9">
-        <HistoryClient
-          referrals={historyReferrals}
-          isAdmin={agencyUser.role === 'Admin'}
-        />
+        <HistoryClient isAdmin={agencyUser.role === 'Admin'} />
       </main>
     </div>
+    </StaffFilterProvider>
   )
 }

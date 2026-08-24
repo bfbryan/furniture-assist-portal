@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
+import { useAgencyStaffSearch } from '@/components/internal/useAgencyStaffSearch'
+import StaffMatchHint from '@/components/internal/StaffMatchHint'
 import { cityStateZip } from '@/lib/address'
 
 // Optional Airtable fields are string | null — Airtable omits blank fields,
@@ -83,7 +85,7 @@ function SortHeader({ label, sortKey, current, dir, onClick, width }: {
   )
 }
 
-function ActiveCard({ agency, onStatusChange }: { agency: Agency; onStatusChange: (id: string) => void }) {
+function ActiveCard({ agency, matchedStaff, onStatusChange }: { agency: Agency; matchedStaff: string[]; onStatusChange: (id: string) => void }) {
   const [loading, setLoading] = useState(false)
   const [modal, setModal] = useState(false)
 
@@ -136,6 +138,7 @@ function ActiveCard({ agency, onStatusChange }: { agency: Agency; onStatusChange
       {agency.website.replace(/^https?:\/\//, '')}
     </a>
   )}
+  <StaffMatchHint names={matchedStaff} />
 </div>
 
         <div style={{ display: 'flex', alignItems: 'flex-start', flex: 1, paddingTop: '14px' }}>
@@ -209,8 +212,17 @@ export default function ActiveAgenciesPage() {
     return -1
   }
 
+  // Searching a PERSON keeps their agency on screen. `selfMatch` is the test
+  // this page always had; `staffMatches` adds the people who work there, from
+  // one read of Agency Users per page load. The hint under an agency's name is
+  // shown only when the agency itself did NOT match, so typing an agency name
+  // changes nothing about how this page already looked.
+  const staffMatches = useAgencyStaffSearch()
+  const selfMatch = (a: Agency) => matchesSearch(search, a.name, a.city, a.contactName, a.officeName)
+  const staffHint = (a: Agency) => (selfMatch(a) ? [] : staffMatches(a.id, search))
+
   const filtered = agencies
-    .filter(a => matchesSearch(search, a.name, a.city, a.contactName, a.officeName))
+    .filter(a => selfMatch(a) || staffMatches(a.id, search).length > 0)
     .sort((a, b) => {
       let val = 0
       if (sortKey === 'name') val = a.name.localeCompare(b.name)
@@ -241,7 +253,7 @@ export default function ActiveAgenciesPage() {
       <div style={{ padding: '28px 32px' }}>
         <input
           type="text"
-          placeholder="Search agencies..."
+          placeholder="Search agencies or staff..."
           value={search}
           onChange={e => setSearch(e.target.value)}
           style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', width: '260px', outline: 'none', marginBottom: '16px', display: 'block', background: 'white' }}
@@ -268,7 +280,7 @@ export default function ActiveAgenciesPage() {
         ) : filtered.length === 0 ? (
           <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899', fontSize: '14px' }}>No active agencies found.</div>
         ) : (
-          filtered.map(a => <ActiveCard key={a.id} agency={a} onStatusChange={handleStatusChange} />)
+          filtered.map(a => <ActiveCard key={a.id} agency={a} matchedStaff={staffHint(a)} onStatusChange={handleStatusChange} />)
         )}
       </div>
     </div>

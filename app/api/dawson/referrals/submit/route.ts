@@ -167,6 +167,12 @@ async function getReferral(id: string): Promise<any | null> {
 }
 
 // Create an Agency in 'Unclaimed' status (Source = Created via Referral).
+//
+// Name only, and that is not an omission. The Add Referral form used to collect
+// a required "Agency Email" alongside it; this function never read it, and
+// Agencies has had no general-email column since the June 2026 migration moved
+// agency contact details onto the Primary Admin link. The field has been
+// removed from both places that asked for it.
 async function createUnclaimedAgency(name: string): Promise<{ id: string; name: string }> {
   const url = `https://api.airtable.com/v0/${BASE_ID}/Agencies`
   const res = await fetch(url, {
@@ -187,6 +193,15 @@ async function createUnclaimedAgency(name: string): Promise<{ id: string; name: 
 }
 
 // Create an Agency User in 'Unclaimed' status, linked to the given Agency.
+//
+// OPEN QUESTION (raised in the PR, deliberately not decided here): when this
+// runs as part of creating a NEW agency, the person is created with Role
+// 'Staff' and the Agency is left with no Primary Admin. Ben has described this
+// person both as "staff" and as "admin name and email to start". The two are
+// not the same: the invite flow cascades an agency to Approved through its
+// Primary Admin (see stampFirstLogin in lib/airtable/agency-users.ts), so an
+// agency created this way currently has nobody who can claim it. Role is
+// UNCHANGED until Ben says which he meant.
 async function createUnclaimedAgencyUser(params: {
   agencyId: string
   firstName: string
