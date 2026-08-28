@@ -8,7 +8,7 @@ import {
   IconBtn, RescheduleIcon, CancelIcon, RESCHEDULE_COLOR, CANCEL_COLOR,
 } from '@/components/internal/IconBtn'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
-import { easternTodayISO } from '@/lib/dates'
+import { easternTodayISO, formatDob } from '@/lib/dates'
 import { NO_SHOW_RESCHEDULE_WINDOW_DAYS } from '@/lib/referrals/no-show-window'
 
 
@@ -854,7 +854,10 @@ function ClientInfoCard({
         firstName: clientPayload.firstName,
         lastName: clientPayload.lastName,
         clientName: `${clientPayload.firstName} ${clientPayload.lastName}`.trim(),
-        dob: clientPayload.dob || null,
+        // ISO, not clientPayload.dob: the PATCH body writes M/D/YYYY (Airtable
+        // storage) but the read lookup returns ISO, so the in-memory copy must
+        // be ISO to match a refetch.
+        dob: form.dob || null,
         phone: clientPayload.phone || null,
         language: clientPayload.language || null,
         address: clientPayload.address || null,
@@ -898,7 +901,9 @@ function ClientInfoCard({
           ) : null
         } />
         <InfoRow label="Phone" value={referral.phone} />
-        <InfoRow label="Date of Birth" value={formatDate(referral.dob)} />
+        {/* formatDob tolerates both ISO (read lookup) and M/D/YYYY (edit
+            round-trip), so DOB stays formatted across a save. */}
+        <InfoRow label="Date of Birth" value={formatDob(referral.dob)} />
         <InfoRow label="Language" value={referral.language} />
         {/* Household size and children collapsed onto one row. Children is
             almost meaningless without the household total next to it, so the

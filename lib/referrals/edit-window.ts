@@ -69,6 +69,34 @@ export type EditWindow =
       cutoffDate: string | null
     }
 
+// "Your Notes" (External Notes) edits later into a referral's life than the
+// identity / items / household fields do. Those freeze on the Monday before the
+// appointment because the warehouse builds its pick list off them mid-week; a
+// note carries no such downstream action, so it has no Monday cutoff — only a
+// terminal-state one. Editable while the review is Pending or Approved AND the
+// appointment has not reached a terminal Airtable status.
+//
+// Expressed on the raw Airtable fields (not the portal status) because that is
+// the form the rule was given in, and getPortalStatus() collapses distinctions
+// this rule needs — e.g. Approved + Reschedule and Approved + Unscheduled both
+// stay note-editable but map to portal statuses outside EDITABLE_STATUSES.
+//
+// Enforced in PATCH /api/referrals/[id] as well as used to show the Edit button.
+export const NOTES_EDITABLE_REVIEW = ['Pending', 'Approved'] as const
+export const NOTES_EDITABLE_APPOINTMENT_STATUS = [
+  'Unscheduled',
+  'Pending Schedule',
+  'Scheduled',
+  'Reschedule',
+] as const
+
+export function agencyNotesEditable(review: string, appointmentStatus: string): boolean {
+  return (
+    (NOTES_EDITABLE_REVIEW as readonly string[]).includes(review) &&
+    (NOTES_EDITABLE_APPOINTMENT_STATUS as readonly string[]).includes(appointmentStatus)
+  )
+}
+
 export function agencyEditWindow({
   portalStatus,
   appointmentDate,
