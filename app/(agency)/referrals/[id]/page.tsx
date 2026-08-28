@@ -25,6 +25,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
+import { formatDob } from '@/lib/dates'
 import { agencyEditWindow, agencyNotesEditable, getPortalStatus } from '@/lib/referrals/edit-window'
 import { withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
 // Shared with components/agency/ReferralTable.tsx, which fills the same blank
@@ -142,13 +143,16 @@ function formatDateTime(dateStr: string | null, time: string | null) {
 }
 
 // The Appointment card is a single row now, and what the stored date means
-// depends on the referral's state. Reschedule is handled separately (Currently
-// / Requested via RequestedRows); Rejected and Withdrawn carry no appointment
-// story worth a row, so they get none.
+// depends on the referral's state. One colour / size / weight for the date in
+// every state (navy, 16px, bold); Cancelled adds a strikethrough, which is what
+// marks it void. Scheduled gets no row label — "Appointment" would just repeat
+// the card title; the other labels carry something the title doesn't.
+// Reschedule is handled separately (Currently / Requested via RequestedRows);
+// Rejected and Withdrawn carry no appointment story worth a row, so none.
 function appointmentSummary(
   status: string,
   referral: Referral,
-): { label: string; value: string; muted?: boolean } | null {
+): { label: string | null; value: string; struck?: boolean } | null {
   if (status === 'Rejected' || status === 'Withdrawn') return null
 
   const live = formatDateTime(referral.appointmentDate, referral.appointmentTime)
@@ -156,7 +160,7 @@ function appointmentSummary(
 
   switch (status) {
     case 'Scheduled':
-      return { label: 'Appointment', value: live ?? '—' }
+      return { label: null, value: live ?? '—' }
     case 'Completed':
       return { label: 'Completed', value: live ?? '—' }
     case 'Missed Appointment':
@@ -164,7 +168,7 @@ function appointmentSummary(
     case 'Cancelled':
       // Appointment Date (a lookup through Saturday Schedule) is empty once the
       // slot was released; the Original * fields are what's left.
-      return { label: 'Original', value: (live ?? original) ?? '—', muted: true }
+      return { label: 'Original', value: (live ?? original) ?? '—', struck: true }
     case 'Submitted':
     case 'Scheduling':
       return { label: 'Appointment', value: live ?? 'Not yet scheduled' }
@@ -436,7 +440,10 @@ function ClientInfoCard({ referral, locked, showLockedBadge, accent, onSaved }: 
       onSaved({
         firstName: form.firstName, lastName: form.lastName,
         clientName: `${form.firstName} ${form.lastName}`.trim(),
-        dob: inputValueToMDY(form.dob) || null, phone: form.phone || null,
+        // ISO here, not inputValueToMDY(form.dob): the PATCH body above writes
+        // M/D/YYYY (Airtable's storage format) but the read lookup returns ISO,
+        // so the in-memory copy has to be ISO to match a refetch.
+        dob: form.dob || null, phone: form.phone || null,
         language: form.language || null, address: form.address || null,
         address2: form.address2 || null, city: form.city || null,
         state: form.state || null, zip: form.zip || null, county: form.county || null,
@@ -461,10 +468,10 @@ function ClientInfoCard({ referral, locked, showLockedBadge, accent, onSaved }: 
             globals.css (.fa-inforow-pairs). */}
         <div className="fa-inforow-pairs">
           <InfoRow label="Full Name" value={referral.clientName} />
-          {/* Same call the Dawson detail page makes for DOB — see its
-              formatDate(). The DOB lookup comes back ISO, so this renders
-              "Mar 3, 1998", matching Submitted / Appointment dates. */}
-          <InfoRow label="Date of Birth" value={formatDate(referral.dob)} />
+          {/* formatDob (shared with the Dawson detail page) tolerates both the
+              ISO the read lookup returns and the M/D/YYYY the edit round-trip
+              writes back, so it stays "Mar 3, 1998" across a save. */}
+          <InfoRow label="Date of Birth" value={formatDob(referral.dob)} />
           <InfoRow label="Phone" value={referral.phone} />
           <InfoRow label="Language" value={referral.language} />
           <InfoRow label="Address" fullWidth value={
@@ -1185,11 +1192,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
                 raw Airtable value ("No Show", "Pending Schedule") only diverged
                 from it and read as a second, contradictory status.
 
-                Date and Time are one row now, labelled for what the date means
-                in the current state (Appointment / Completed / Missed /
-                Original) and weighted up — for most states it's the only row in
-                the card and the single most important fact for an agency user.
-                See appointmentSummary().
+                Date and Time are one row now, weighted up (navy, 16px, bold in
+                every state) — for most states it's the only row in the card and
+                the single most important fact for an agency user. The label
+                says what the date means (Completed / Missed / Original); the
+                Scheduled state drops it because "Appointment" would only repeat
+                the card title. See appointmentSummary().
 
                 Reschedule keeps its own two-row Currently / Requested treatment
                 via RequestedRows: a request changes nothing until Dawson acts,
@@ -1199,13 +1207,17 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               <RequestedRows referral={referral} />
             ) : appointment && (
               <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1' }}>
-                <div className="fa-inforow-label" style={{ flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em', paddingTop: '3px' }}>
-                  {appointment.label}
-                </div>
+                {appointment.label && (
+                  <div className="fa-inforow-label" style={{ flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em', paddingTop: '3px' }}>
+                    {appointment.label}
+                  </div>
+                )}
                 <div style={{
-                  fontSize: '16px', fontWeight: 700, flex: 1, minWidth: 0,
-                  color: appointment.muted ? '#7A8899' : '#1B2B4B',
-                  textDecoration: appointment.muted && appointment.value !== '—' ? 'line-through' : undefined,
+                  fontSize: '16px', fontWeight: 700, flex: 1, minWidth: 0, color: '#1B2B4B',
+                  // Labelless (Scheduled) — the date has the whole row, so centre
+                  // it. Every other state keeps the label + left-aligned value.
+                  textAlign: appointment.label ? undefined : 'center',
+                  textDecoration: appointment.struck && appointment.value !== '—' ? 'line-through' : undefined,
                 }}>
                   {appointment.value}
                 </div>

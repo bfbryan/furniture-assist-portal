@@ -98,6 +98,25 @@ export function formatDateOnly(
   return date.toLocaleDateString('en-US', { ...options, timeZone: 'UTC' })
 }
 
+/**
+ * A birth date for display: "Mar 3, 1998", or "—" for anything unreadable.
+ *
+ * The Clients `DOB` cell is free text and has held both ISO ('1998-03-03') and
+ * M/D/YYYY ('3/3/1998') — and the detail-page edit round-trip writes M/D/YYYY
+ * back while the read lookup returns ISO — so this accepts either. Shared by
+ * the agency and Dawson referral detail pages, which both render DOB and both
+ * had the same load-vs-save format mismatch.
+ */
+export function formatDob(raw: string | null | undefined): string {
+  if (!raw) return '—'
+  const trimmed = String(raw).trim()
+  const mdy = trimmed.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/)
+  const iso = mdy
+    ? `${mdy[3]}-${mdy[1].padStart(2, '0')}-${mdy[2].padStart(2, '0')}`
+    : trimmed
+  return formatDateOnly(iso, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
 /** Shift a 'YYYY-MM-DD' by whole days, returning 'YYYY-MM-DD'. */
 export function addDaysISO(iso: string, days: number): string {
   const date = parseDateOnly(iso)
