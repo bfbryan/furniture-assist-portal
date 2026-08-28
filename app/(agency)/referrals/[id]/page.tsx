@@ -1214,9 +1214,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
                 )}
                 <div style={{
                   fontSize: '16px', fontWeight: 700, flex: 1, minWidth: 0, color: '#1B2B4B',
-                  // Labelless (Scheduled) — the date has the whole row, so centre
-                  // it. Every other state keeps the label + left-aligned value.
-                  textAlign: appointment.label ? undefined : 'center',
                   textDecoration: appointment.struck && appointment.value !== '—' ? 'line-through' : undefined,
                 }}>
                   {appointment.value}
