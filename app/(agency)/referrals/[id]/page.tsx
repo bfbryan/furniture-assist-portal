@@ -25,6 +25,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
+import { AGENCY_CONTACT_EMAIL, ONLINE_SUBMISSION_COMING_SOON } from '@/lib/contact'
 import { formatDob } from '@/lib/dates'
 import { agencyEditWindow, agencyNotesEditable, getPortalStatus } from '@/lib/referrals/edit-window'
 import { withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
@@ -116,14 +117,18 @@ const LANGUAGES = ['English', 'Spanish', 'Haitian Creole', 'French', 'Arabic', '
 const STATES = ['NJ', 'NY', 'PA', 'CT', 'DE']
 
 // Card header accents. Every box on this page carries one, so the sections
-// read as separate things rather than as one long white run — Ben's ask, and
-// the Client Information card already worked this way (it takes the status
-// colour, which is why it keeps its own accent below rather than one of these).
+// read as separate things rather than as one long white run — Ben's ask.
 //
 // The two values and their meaning are lifted from the internal detail page
 // (app/dawson/referrals/[id]/page.tsx), which uses this same Card component:
 // teal marks a card you can edit, muted grey a card that is read-only. Same
 // pattern, second portal — not a new one.
+//
+// Strictly: teal only while the card actually accepts an edit. Once the edit
+// window closes — past the Monday cutoff or a terminal status — the three
+// editable cards go grey too, and status colour lives solely in the header
+// pill. (Your Notes has no Monday cutoff, so it stays teal a little longer
+// than the other two — see agencyNotesEditable.)
 const EDIT_ACCENT = '#2A7F6F'  // teal — editable card
 const READ_ACCENT = '#7A8899'  // muted grey — read-only card
 
@@ -177,6 +182,28 @@ function appointmentSummary(
   }
 }
 
+// Foot of the Appointment card on terminal referrals — the page otherwise just
+// stops without saying what to do next. Nothing for a no-show still inside the
+// reschedule window: the Reschedule button is the next step there.
+function resubmitGuidance(
+  status: string,
+  missedInRescheduleWindow: boolean,
+): { prefix: string; suffix: string | null } | null {
+  if (status === 'Cancelled' || status === 'Withdrawn') {
+    return { prefix: 'To restart this request, email', suffix: ONLINE_SUBMISSION_COMING_SOON }
+  }
+  if (status === 'Rejected') {
+    return { prefix: 'To discuss this referral or submit a new one, email', suffix: null }
+  }
+  if (status === 'Missed Appointment' && !missedInRescheduleWindow) {
+    return {
+      prefix: 'The reschedule window has closed. To restart this request, email',
+      suffix: ONLINE_SUBMISSION_COMING_SOON,
+    }
+  }
+  return null
+}
+
 // DOB is stored as MDY text on Clients; <input type="date"> wants ISO.
 function dobToInputValue(dob: string | null): string {
   if (!dob) return ''
@@ -219,20 +246,20 @@ function parseItemsToSet(items: unknown): Set<string> {
 //
 // The amber statuses fill with #8B7724, not the brand gold #C9A84C: white text
 // on #C9A84C fails contrast, #8B7724 clears it.
-const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText: string }> = {
-  Submitted:  { accent: '#C9A84C', badgeBg: '#8B7724', badgeText: '#FFFFFF' },
-  Scheduling: { accent: '#5B8DB8', badgeBg: '#5B8DB8', badgeText: '#FFFFFF' },
-  Scheduled:  { accent: '#2A7F6F', badgeBg: '#2A7F6F', badgeText: '#FFFFFF' },
+const STATUS_COLORS: Record<string, { badgeBg: string; badgeText: string }> = {
+  Submitted:  { badgeBg: '#8B7724', badgeText: '#FFFFFF' },
+  Scheduling: { badgeBg: '#5B8DB8', badgeText: '#FFFFFF' },
+  Scheduled:  { badgeBg: '#2A7F6F', badgeText: '#FFFFFF' },
   // Reached once an agency has asked for a new date and Furniture Assist has
   // not acted on it yet.
-  Reschedule: { accent: '#C9A84C', badgeBg: '#8B7724', badgeText: '#FFFFFF' },
+  Reschedule: { badgeBg: '#8B7724', badgeText: '#FFFFFF' },
   // Airtable's 'No Show', softened to "Missed Appointment" for the agency (see
   // the status remap in the page body) — a lapsed visit that may still be
   // picked back up inside the window, not a hard failure.
-  'Missed Appointment': { accent: '#C9A84C', badgeBg: '#8B7724', badgeText: '#FFFFFF' },
-  Completed:  { accent: '#1B2B4B', badgeBg: '#1B2B4B', badgeText: '#FFFFFF' },
-  Cancelled:  { accent: '#C0392B', badgeBg: '#C0392B', badgeText: '#FFFFFF' },
-  Rejected:   { accent: '#C0392B', badgeBg: '#C0392B', badgeText: '#FFFFFF' },
+  'Missed Appointment': { badgeBg: '#8B7724', badgeText: '#FFFFFF' },
+  Completed:  { badgeBg: '#1B2B4B', badgeText: '#FFFFFF' },
+  Cancelled:  { badgeBg: '#C0392B', badgeText: '#FFFFFF' },
+  Rejected:   { badgeBg: '#C0392B', badgeText: '#FFFFFF' },
 }
 
 // ---------------------------------------------------------------- UI atoms
@@ -395,11 +422,10 @@ function toClientEditState(r: Referral): ClientEditState {
   }
 }
 
-function ClientInfoCard({ referral, locked, showLockedBadge, accent, onSaved }: {
+function ClientInfoCard({ referral, locked, showLockedBadge, onSaved }: {
   referral: Referral
   locked: boolean
   showLockedBadge: boolean
-  accent: string
   onSaved: (u: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -460,7 +486,7 @@ function ClientInfoCard({ referral, locked, showLockedBadge, accent, onSaved }: 
   if (!editing) {
     return (
       <Card
-        accent={accent}
+        accent={locked ? READ_ACCENT : EDIT_ACCENT}
         title="Client Information"
         headerRight={locked ? (showLockedBadge ? <LockedBadge /> : null) : <EditButton onClick={startEdit} />}
       >
@@ -626,7 +652,7 @@ function ItemsRequestedCard({ referral, locked, showLockedBadge, onSaved }: {
     const list = [...parseItemsToSet(referral.items)]
     return (
       <Card
-        accent={EDIT_ACCENT}
+        accent={locked ? READ_ACCENT : EDIT_ACCENT}
         title="Items Requested"
         headerRight={locked ? (showLockedBadge ? <LockedBadge /> : null) : <EditButton onClick={startEdit} />}
       >
@@ -728,7 +754,7 @@ function YourNotesCard({ referral, editable, onSaved }: {
   if (!editing) {
     return (
       <Card
-        accent={EDIT_ACCENT}
+        accent={editable ? EDIT_ACCENT : READ_ACCENT}
         title="Your Notes"
         headerRight={editable ? <EditButton onClick={startEdit} label={referral.externalNotes ? 'Edit' : '+ Add'} /> : undefined}
       >
@@ -1005,7 +1031,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // here, at the portal boundary — the same place 'Pending Schedule' becomes
   // 'Scheduling'. Everything below keys off `status`.
   const status = rawStatus === 'No Show' ? 'Missed Appointment' : rawStatus
-  const colors = STATUS_COLORS[status] ?? { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' }
+  const colors = STATUS_COLORS[status] ?? { badgeBg: '#F0F0F0', badgeText: '#7A8899' }
 
   // The Appointment card's single combined row. Null for Reschedule (which uses
   // RequestedRows instead) and for Rejected / Withdrawn (no row at all).
@@ -1053,6 +1079,8 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // attachment URL is present.
   const missedInRescheduleWindow =
     status === 'Missed Appointment' && withinNoShowRescheduleWindow(referral.appointmentDate)
+
+  const guidance = resubmitGuidance(status, missedInRescheduleWindow)
 
   const isReschedulable =
     status === 'Scheduling' || status === 'Scheduled' || missedInRescheduleWindow
@@ -1167,7 +1195,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             </div>
           )}
 
-          <ClientInfoCard referral={referral} locked={locked} showLockedBadge={showLockedBadge} accent={colors.accent} onSaved={applyUpdate} />
+          <ClientInfoCard referral={referral} locked={locked} showLockedBadge={showLockedBadge} onSaved={applyUpdate} />
           <ItemsRequestedCard referral={referral} locked={locked} showLockedBadge={showLockedBadge} onSaved={applyUpdate} />
           {showItemsReceived && <ItemsReceivedCard disbursed={referral.itemsDisbursed} />}
         </div>
@@ -1231,6 +1259,22 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             {referral.dataPageUrl && status === 'Completed' && (
               <div style={{ paddingTop: '8px' }}>
                 <DocLink href={referral.dataPageUrl} label="View Completed Form" color="#5B8DB8" />
+              </div>
+            )}
+
+            {/* Terminal-state guidance. A footnote, not a data row — hence the
+                rule above it (only when there's a row to separate from; on
+                Rejected / Withdrawn the card has no date row and this is the
+                only line). */}
+            {guidance && (
+              <div style={{
+                ...(appointment ? { borderTop: '1px solid #EDE9E1', marginTop: '12px', paddingTop: '12px' } : {}),
+                fontSize: '12.5px', color: '#7A8899', lineHeight: 1.6,
+              }}>
+                {guidance.prefix}{' '}
+                <a href={`mailto:${AGENCY_CONTACT_EMAIL}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>
+                  {AGENCY_CONTACT_EMAIL}
+                </a>.{guidance.suffix ? ` ${guidance.suffix}` : ''}
               </div>
             )}
           </Card>
