@@ -28,6 +28,8 @@
 
 import { differenceInDaysISO, easternTodayISO } from '../dates'
 import { isDoNotServeStatus } from '../clients/do-not-serve'
+// Shared with the agency reschedule button and POST /api/referrals/[id]/reschedule.
+import { NO_SHOW_RESCHEDULE_WINDOW_DAYS } from './no-show-window'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -57,10 +59,10 @@ const REFERRALS_TABLE = 'Client Referrals'
 //
 // 25 days (not 21) -- confirmed Aug 2026: realistically 14 days, but
 // sometimes we're closed for a holiday, so padded out further to absorb
-// that.
+// that. NO_SHOW_RESCHEDULE_WINDOW_DAYS now lives in ./no-show-window and is
+// imported above so the agency-side gate cannot drift from this one.
 const COMPLETED_WINDOW_DAYS = 365
 const NO_SHOW_WINDOW_DAYS = 365
-const NO_SHOW_RESCHEDULE_WINDOW_DAYS = 25
 const CANCELLED_WINDOW_DAYS = 365
 
 // Real Appointment Status values (confirmed Aug 2026): Unscheduled,

@@ -594,6 +594,13 @@ h1, h2, h3, h4, h5, h6 {
     position: static;
   }
 
+  /* The status pill carries a 20px left margin to hold it off the action
+     buttons on one line. Once the header wraps, the pill can land first on its
+     own line, where that margin reads as a stray indent — drop it here. */
+  .fa-detail-status-pill {
+    margin-left: 0 !important;
+  }
+
   /* Populated referral and history cards: stacking every cell into its own
      full-width block turned a card into ~16 lines of label-over-value, which
      read as a jumble once there was real data in it. Instead each cell becomes

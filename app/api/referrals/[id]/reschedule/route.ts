@@ -29,6 +29,10 @@ import { NextRequest, NextResponse } from 'next/server'
 import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
 import { VALID_TIMES } from '@/lib/schedule/capacity'
 import {
+  NO_SHOW_RESCHEDULE_WINDOW_DAYS,
+  withinNoShowRescheduleWindow,
+} from '@/lib/referrals/no-show-window'
+import {
   assertReferralClientMayBeRescheduled,
   doNotServeUnverifiedMessage,
   DoNotServeError,
@@ -77,6 +81,25 @@ export async function POST(
         ),
       },
       { status: 502 },
+    )
+  }
+
+  // A missed appointment (Airtable 'No Show', shown to agencies as "Missed
+  // Appointment") can still be picked back up from the agency side, but only
+  // inside the reschedule window — past that it is a closed record and a fresh
+  // referral is the right move. The detail page hides the Reschedule button on
+  // the same rule; enforced here as well because this route is reachable
+  // directly and a hidden button is not access control — the same reasoning
+  // lib/referrals/edit-window.ts gives for the edit cutoff.
+  if (
+    access.referral.appointmentStatus === 'No Show' &&
+    !withinNoShowRescheduleWindow(access.referral.appointmentDate)
+  ) {
+    return NextResponse.json(
+      {
+        error: `This appointment was missed more than ${NO_SHOW_RESCHEDULE_WINDOW_DAYS} days ago. Please submit a new referral instead.`,
+      },
+      { status: 409 },
     )
   }
 

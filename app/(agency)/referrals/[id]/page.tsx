@@ -26,6 +26,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
 import { agencyEditWindow, getPortalStatus } from '@/lib/referrals/edit-window'
+import { withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
 // Shared with components/agency/ReferralTable.tsx, which fills the same blank
 // on the same referral from the same three Airtable fields.
 import { requestedSlot } from '@/lib/referrals/requested-slot'
@@ -162,17 +163,27 @@ function parseItemsToSet(items: unknown): Set<string> {
   return new Set()
 }
 
+// The pill is a solid fill now (see the header render), so badgeBg is a real
+// colour and badgeText is white throughout. `accent` — the 4px card top-border
+// on the Client Information card — is unchanged; it is still a tint-friendly
+// value used on white.
+//
+// The amber statuses fill with #8B7724, not the brand gold #C9A84C: white text
+// on #C9A84C fails contrast, #8B7724 clears it.
 const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText: string }> = {
-  Submitted:  { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)',  badgeText: '#C9A84C' },
-  Scheduling: { accent: '#5B8DB8', badgeBg: 'rgba(91,141,184,0.12)',  badgeText: '#5B8DB8' },
-  Scheduled:  { accent: '#2A7F6F', badgeBg: 'rgba(42,127,111,0.12)',  badgeText: '#2A7F6F' },
-  // Gold, the colour reschedule already carries everywhere else in the portal.
+  Submitted:  { accent: '#C9A84C', badgeBg: '#8B7724', badgeText: '#FFFFFF' },
+  Scheduling: { accent: '#5B8DB8', badgeBg: '#5B8DB8', badgeText: '#FFFFFF' },
+  Scheduled:  { accent: '#2A7F6F', badgeBg: '#2A7F6F', badgeText: '#FFFFFF' },
   // Reached once an agency has asked for a new date and Furniture Assist has
   // not acted on it yet.
-  Reschedule: { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)',  badgeText: '#C9A84C' },
-  Completed:  { accent: '#1B2B4B', badgeBg: 'rgba(27,43,75,0.08)',    badgeText: '#1B2B4B' },
-  Cancelled:  { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',    badgeText: '#C0392B' },
-  Rejected:   { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)',    badgeText: '#C0392B' },
+  Reschedule: { accent: '#C9A84C', badgeBg: '#8B7724', badgeText: '#FFFFFF' },
+  // Airtable's 'No Show', softened to "Missed Appointment" for the agency (see
+  // the status remap in the page body) — a lapsed visit that may still be
+  // picked back up inside the window, not a hard failure.
+  'Missed Appointment': { accent: '#C9A84C', badgeBg: '#8B7724', badgeText: '#FFFFFF' },
+  Completed:  { accent: '#1B2B4B', badgeBg: '#1B2B4B', badgeText: '#FFFFFF' },
+  Cancelled:  { accent: '#C0392B', badgeBg: '#C0392B', badgeText: '#FFFFFF' },
+  Rejected:   { accent: '#C0392B', badgeBg: '#C0392B', badgeText: '#FFFFFF' },
 }
 
 // ---------------------------------------------------------------- UI atoms
@@ -234,6 +245,49 @@ function LockedBadge() {
       Locked
     </span>
   )
+}
+
+// Header action buttons. Three tiers, all sharing one geometry — 7px 16px,
+// radius 7px, Montserrat 700 at 11px, transparent fill — so the row reads as
+// one outlined control group whatever mix of buttons a given status shows:
+//
+//   doc    — navy outline, for the "here is your paperwork" links
+//            (Appointment Slip, Client Receipt). Opens in a new tab.
+//   amber  — the reschedule request.
+//   danger — cancel / withdraw.
+//
+// Hover is the one thing an inline style can't carry, so the tint rides on
+// local state. #FDF8EC (amber) and #FDF2F0 (danger) are Ben's picks and are
+// not otherwise in the codebase; #F7F5F1 is the brand cream.
+//
+// The amber border sits at 0.9 rather than the 0.55 the navy and red carry:
+// gold reads lighter at equal opacity and needs the extra weight to hold the
+// same visual level in the row.
+const HEADER_BTN_TIERS = {
+  doc:    { hoverBg: '#F7F5F1', border: 'rgba(27,43,75,0.55)',   color: '#1B2B4B' },
+  amber:  { hoverBg: '#FDF8EC', border: 'rgba(201,168,76,0.9)',  color: '#7A6A28' },
+  danger: { hoverBg: '#FDF2F0', border: 'rgba(192,57,43,0.55)',  color: '#C0392B' },
+} as const
+
+function HeaderButton({ tier, onClick, href, children }: {
+  tier: keyof typeof HEADER_BTN_TIERS
+  onClick?: () => void
+  href?: string
+  children: React.ReactNode
+}) {
+  const t = HEADER_BTN_TIERS[tier]
+  const [hover, setHover] = useState(false)
+  const style: React.CSSProperties = {
+    padding: '7px 16px', borderRadius: '7px', border: `1px solid ${t.border}`,
+    background: hover ? t.hoverBg : 'transparent', color: t.color,
+    fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px',
+    cursor: 'pointer', textDecoration: 'none', display: 'inline-flex', alignItems: 'center',
+    flexShrink: 0,
+  }
+  const hoverProps = { onMouseEnter: () => setHover(true), onMouseLeave: () => setHover(false) }
+  return href
+    ? <a href={href} target="_blank" rel="noreferrer" style={style} {...hoverProps}>{children}</a>
+    : <button type="button" onClick={onClick} style={style} {...hoverProps}>{children}</button>
 }
 
 const inputStyle: React.CSSProperties = {
@@ -881,7 +935,13 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
   if (!referral) return null
 
-  const status = getPortalStatus(referral.referralReview, referral.appointmentStatus)
+  const rawStatus = getPortalStatus(referral.referralReview, referral.appointmentStatus)
+  // Airtable calls a lapsed appointment 'No Show'; the agency portal shows the
+  // softer "Missed Appointment". getPortalStatus() passes 'No Show' straight
+  // through (it is already the Airtable value), so the relabelling happens
+  // here, at the portal boundary — the same place 'Pending Schedule' becomes
+  // 'Scheduling'. Everything below keys off `status`.
+  const status = rawStatus === 'No Show' ? 'Missed Appointment' : rawStatus
   const colors = STATUS_COLORS[status] ?? { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' }
 
   const editWindow = agencyEditWindow({
@@ -890,11 +950,30 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   })
   const locked = !editWindow.editable
 
-  // Same gating ReferralTable uses for its row actions, so the two surfaces
-  // offer an agency user the same thing for the same referral.
+  // Header actions, by portal status:
+  //
+  //   Scheduled          Appointment Slip · Reschedule · Cancel
+  //   Scheduling         Reschedule · Cancel
+  //   Submitted          Withdraw Referral
+  //   Reschedule         Cancel
+  //   Completed          Client Receipt
+  //   Missed Appointment Reschedule, only within the 25-day window
+  //   Cancelled/Rejected —
+  //
+  // Reschedule and Cancel still line up with what ReferralTable offers for the
+  // same referral. The two document buttons render only when the underlying
+  // attachment URL is present.
+  const missedInRescheduleWindow =
+    status === 'Missed Appointment' && withinNoShowRescheduleWindow(referral.appointmentDate)
+
+  const isReschedulable =
+    status === 'Scheduling' || status === 'Scheduled' || missedInRescheduleWindow
+  const isCancellable =
+    status === 'Scheduling' || status === 'Scheduled' || status === 'Reschedule'
   const isWithdrawable = status === 'Submitted'
-  const isCancellable = status === 'Scheduling' || status === 'Scheduled'
-  const isReschedulable = status === 'Scheduling' || status === 'Scheduled'
+
+  const showApptSlipButton = status === 'Scheduled' && !!referral.appointmentSlipUrl
+  const showClientReceiptButton = status === 'Completed' && !!referral.clientReceiptUrl
 
   const showItemsReceived = status === 'Completed'
 
@@ -928,48 +1007,53 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           Sticky at 1280 and up only — see .fa-detail-header in globals.css.
           Below that the shell's own navy top bar is the sticky one, and this
           header scrolls with the page. Everything wraps, so on a phone the
-          name takes the first line and the status + buttons the next.
+          name takes the first line and the buttons + status the next.
+
+          Right-hand group reads left to right: action buttons first, status
+          pill last.
       ------------------------------------------------------------------- */}
-      <header className="fa-detail-header" style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '12px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', minWidth: 0 }}>
+      <header className="fa-detail-header" style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '18px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
           <button
             type="button"
             onClick={() => {
               if (window.history.length > 1) router.back()
               else router.push('/referrals/active')
             }}
-            style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}
+            style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.7)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}
           >
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             Back
           </button>
-          <span style={{ color: '#EDE9E1', flexShrink: 0 }}>→</span>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B', minWidth: 0 }}>{referral.clientName}</div>
+          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '20px', color: '#1B2B4B', minWidth: 0 }}>{referral.clientName}</div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
-          <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
-            {status}
-          </span>
-
+          {showApptSlipButton && (
+            <HeaderButton tier="doc" href={referral.appointmentSlipUrl!}>Appointment Slip</HeaderButton>
+          )}
           {isReschedulable && (
-            <button onClick={() => setRescheduleModal({ open: true, id: referral.id, name: referral.clientName })}
-              style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(201,168,76,0.4)', background: 'rgba(201,168,76,0.12)', color: '#8B7724', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+            <HeaderButton tier="amber" onClick={() => setRescheduleModal({ open: true, id: referral.id, name: referral.clientName })}>
               Reschedule
-            </button>
+            </HeaderButton>
           )}
           {isCancellable && (
-            <button onClick={() => setConfirmModal({ open: true, type: 'cancel', id: referral.id, name: referral.clientName })}
-              style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
-              Cancel Appointment
-            </button>
+            <HeaderButton tier="danger" onClick={() => setConfirmModal({ open: true, type: 'cancel', id: referral.id, name: referral.clientName })}>
+              Cancel
+            </HeaderButton>
           )}
           {isWithdrawable && (
-            <button onClick={() => setConfirmModal({ open: true, type: 'withdraw', id: referral.id, name: referral.clientName })}
-              style={{ padding: '7px 16px', borderRadius: '7px', border: '1px solid rgba(192,57,43,0.35)', background: 'rgba(192,57,43,0.08)', color: '#C0392B', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
+            <HeaderButton tier="danger" onClick={() => setConfirmModal({ open: true, type: 'withdraw', id: referral.id, name: referral.clientName })}>
               Withdraw Referral
-            </button>
+            </HeaderButton>
           )}
+          {showClientReceiptButton && (
+            <HeaderButton tier="doc" href={referral.clientReceiptUrl!}>Client Receipt</HeaderButton>
+          )}
+
+          <span className="fa-detail-status-pill" style={{ marginLeft: '20px', padding: '6px 16px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
+            {status}
+          </span>
         </div>
       </header>
 
@@ -1032,37 +1116,13 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               </>
             )}
 
-            {/* The slip is the "here is your appointment" document, so it is
-                shown only while there is a settled future appointment to hold:
-
-                  • COMPLETED — the visit has happened. The receipt below is
-                    the record of it, and the slip is a stale instruction to
-                    turn up on a date already past.
-                  • RESCHEDULE — the agency has asked to move this date, so
-                    the slip names a time nobody intends to keep. It returns by
-                    itself once Dawson lands the request on a real date.
-
-                Nothing is deleted in either case; the attachment stays on the
-                record and the internal page still links to it. */}
-            {referral.appointmentSlipUrl && status !== 'Completed' && status !== 'Reschedule' && (
-              <div style={{ paddingTop: '12px' }}>
-                <DocLink href={referral.appointmentSlipUrl} label="View Appointment Slip" color="#2A7F6F" />
-              </div>
-            )}
-
-            {/* Generated by the client-receipt cron into an Airtable
-                attachment once the visit is done. Completed-only, because
-                that is the only state in which it exists. */}
-            {status === 'Completed' && referral.clientReceiptUrl && (
-              <div style={{ paddingTop: '8px' }}>
-                {/* Teal, matching the appointment slip link directly above it.
-                    These two are the same kind of thing — a PDF about this
-                    appointment — and the navy made the receipt read as a
-                    different class of link. */}
-                <DocLink href={referral.clientReceiptUrl} label="View Client Receipt" color="#2A7F6F" />
-              </div>
-            )}
-
+            {/* The appointment slip and the client receipt used to link from
+                here. Both are header buttons now (Scheduled → Appointment Slip,
+                Completed → Client Receipt), so the card would only have shown
+                the same link twice. The completed data-page link below has no
+                header equivalent and stays. Nothing is deleted on the record —
+                the attachments are untouched and the internal page still links
+                to them. */}
             {referral.dataPageUrl && status === 'Completed' && (
               <div style={{ paddingTop: '8px' }}>
                 <DocLink href={referral.dataPageUrl} label="View Completed Form" color="#5B8DB8" />
