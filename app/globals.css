@@ -409,6 +409,29 @@ h1, h2, h3, h4, h5, h6 {
   position: sticky;
   top: 0;
   z-index: 40;
+  display: flex;
+  align-items: center;
+  /* 8px so the last button -> pill gap is 8 + the pill's own 20px = 28px, the
+     same as when the pill sat inside the actions group. left -> actions is
+     absorbed by margin-left: auto, so this value is only ever the button/pill
+     gap on desktop. */
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+/* Desktop: one row. The left group stays put; margin-left: auto on the actions
+   group pushes it and the pill after it to the right edge, pill last. Below
+   1280 this whole thing restacks — see the media query. */
+.fa-detail-header-actions {
+  margin-left: auto;
+}
+
+.fa-detail-header-name {
+  font-size: 20px;
+}
+
+.fa-detail-status-pill {
+  margin-left: 20px;
 }
 
 /* Read-mode Client Information: two InfoRows per line, so the card is half as
@@ -589,9 +612,35 @@ h1, h2, h3, h4, h5, h6 {
     max-width: 960px;
   }
 
-  /* The shell's navy top bar is the only sticky header on a phone. */
+  /* Explicit vertical stack instead of relying on flex-wrap, so the row order
+     is deterministic:  [Back + name]  /  status pill  /  action buttons.
+     The shell's navy top bar is the only sticky header on a phone, so this one
+     goes static. */
   .fa-detail-header {
     position: static;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 10px;
+  }
+
+  /* 20px is tuned for the desktop bar; a touch smaller once stacked. */
+  .fa-detail-header-name {
+    font-size: 17px;
+  }
+
+  /* Pill on its own row — the desktop 20px left margin only makes sense
+     horizontally. */
+  .fa-detail-status-pill {
+    margin-left: 0;
+  }
+
+  /* Buttons drop below the pill (source order has them last; order:1 keeps the
+     pill above) and keep wrapping to a second line on narrow phones. */
+  .fa-detail-header-actions {
+    order: 1;
+    align-self: stretch;
+    margin-left: 0;
+    margin-top: 2px;
   }
 
   /* Populated referral and history cards: stacking every cell into its own

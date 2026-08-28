@@ -4,6 +4,7 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import { addDaysISO, differenceInDaysISO, easternTodayISO } from '@/lib/dates'
+import { NO_SHOW_RESCHEDULE_WINDOW_DAYS } from '@/lib/referrals/no-show-window'
 import CancelModal from '@/components/internal/modals/CancelModal'
 import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
 import { matchesSearch } from '@/lib/search'
@@ -66,12 +67,11 @@ function daysAgo(days: number) {
 }
 
 
-// Same 25-day window as the reschedule-eligibility rule in
-// lib/referrals/match.ts (NO_SHOW_RESCHEDULE_WINDOW_DAYS) -- kept in sync so
-// a No Show that's aged out of "reschedule in place" on the Add Referral
-// flow doesn't still offer that action here. Null (no Appointment Date on
-// record) is treated as NOT eligible, matching that same file's
-// daysAgo()-returns-null-so-skip-it behavior.
+// Whole days from an Appointment Date to today, Eastern. Feeds the no-show
+// reschedule-window check below; see NO_SHOW_RESCHEDULE_WINDOW_DAYS in
+// lib/referrals/no-show-window.ts for the window itself. Null (no Appointment
+// Date on record) is treated as NOT eligible. Same shape as that module's
+// daysSinceAppointment().
 function daysSince(dateStr: string | null): number | null {
   return differenceInDaysISO(dateStr, easternTodayISO())
 }
@@ -147,11 +147,14 @@ function ReferralRow({ r, onReschedule, onCancel }: {
   const s = STATUS_STYLES[r.appointmentStatus] ?? { bg: '#F0F0F0', color: '#7A8899' }
   const isNoShow = r.appointmentStatus === 'No Show'
   const noShowAge = isNoShow ? daysSince(r.appointmentDate) : null
-  // Only offer Reschedule/Cancel from here within the same 25-day window
+  // Only offer Reschedule/Cancel from here within the same reschedule window
   // the Add Referral flow uses to decide whether a No Show is still
   // "reschedule in place" eligible -- past that, it's just history, same
   // as everywhere else these two views need to agree with each other.
-  const canManageNoShow = isNoShow && noShowAge !== null && noShowAge <= 25
+  // (Kept as `<= WINDOW` rather than withinNoShowRescheduleWindow() so the
+  // result is byte-identical to before -- the helper also rejects a
+  // future-dated Appointment Date, which this comparison does not.)
+  const canManageNoShow = isNoShow && noShowAge !== null && noShowAge <= NO_SHOW_RESCHEDULE_WINDOW_DAYS
   return (
     <div style={{ display: 'grid', gridTemplateColumns: GRID, gap: '16px', alignItems: 'center', padding: '14px 28px', borderBottom: '1px solid #F0EDE5', background: 'white' }}>
       {/* Client — indented 16px */}
@@ -211,11 +214,11 @@ function ReferralRow({ r, onReschedule, onCancel }: {
       </div>
 
 
-      {/* Action buttons — only on No Show rows within the 25-day
+      {/* Action buttons — only on No Show rows inside the no-show
           reschedule window. Follow-up (voicemail/email) often arrives
           days after the missed appt, so Dawson needs to transition
           No Show → Scheduled (reschedule) or → Cancelled from this page.
-          Both fire the existing backend + Zap triggers. Past 25 days, a
+          Both fire the existing backend + Zap triggers. Past the window, a
           No Show is just history here too -- same as the Add Referral
           flow, which stops offering "reschedule in place" at that point
           and treats it as a fresh referral instead. */}
