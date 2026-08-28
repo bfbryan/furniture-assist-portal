@@ -1006,14 +1006,20 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
           Sticky at 1280 and up only — see .fa-detail-header in globals.css.
           Below that the shell's own navy top bar is the sticky one, and this
-          header scrolls with the page. Everything wraps, so on a phone the
-          name takes the first line and the buttons + status the next.
+          header scrolls with the page.
 
-          Right-hand group reads left to right: action buttons first, status
-          pill last.
+          The flex layout lives in globals.css, not here, so the media query can
+          reshape it. Desktop is one row — name at the left, actions + pill
+          clustered right (.fa-detail-header-actions carries margin-left: auto),
+          pill last with a 20px gap. Below 1280 it becomes three stacked rows:
+          [Back + name] / status pill / action buttons — the pill is ordered
+          above the buttons there.
+
+          The three children are siblings for that reason: the pill can't stay
+          inside the actions group or it couldn't take its own row.
       ------------------------------------------------------------------- */}
-      <header className="fa-detail-header" style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '18px 32px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
+      <header className="fa-detail-header" style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '18px 32px' }}>
+        <div className="fa-detail-header-left" style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
           <button
             type="button"
             onClick={() => {
@@ -1025,10 +1031,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             Back
           </button>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '20px', color: '#1B2B4B', minWidth: 0 }}>{referral.clientName}</div>
+          <div className="fa-detail-header-name" style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, color: '#1B2B4B', minWidth: 0 }}>{referral.clientName}</div>
         </div>
 
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+        <div className="fa-detail-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
           {showApptSlipButton && (
             <HeaderButton tier="doc" href={referral.appointmentSlipUrl!}>Appointment Slip</HeaderButton>
           )}
@@ -1050,11 +1056,11 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           {showClientReceiptButton && (
             <HeaderButton tier="doc" href={referral.clientReceiptUrl!}>Client Receipt</HeaderButton>
           )}
-
-          <span className="fa-detail-status-pill" style={{ marginLeft: '20px', padding: '6px 16px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
-            {status}
-          </span>
         </div>
+
+        <span className="fa-detail-status-pill" style={{ padding: '6px 16px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
+          {status}
+        </span>
       </header>
 
       {/* Column tracks and the width cap live in globals.css
