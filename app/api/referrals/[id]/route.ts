@@ -22,7 +22,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { updateClient } from '@/lib/airtable'
 import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
-import { agencyEditWindow, getPortalStatus } from '@/lib/referrals/edit-window'
+import { agencyEditWindow, agencyNotesEditable, getPortalStatus } from '@/lib/referrals/edit-window'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -80,26 +80,46 @@ export async function PATCH(
 
   const { referral } = access
 
-  const window = agencyEditWindow({
-    portalStatus: getPortalStatus(referral.referralReview, referral.appointmentStatus),
-    appointmentDate: referral.appointmentDate,
-  })
-
-  if (!window.editable) {
-    return NextResponse.json(
-      {
-        error:
-          window.reason === 'status'
-            ? 'This referral can no longer be edited.'
-            : 'Editing closed on the Monday before the appointment. Contact Furniture Assist to make a change.',
-        reason: window.reason,
-        cutoffDate: window.cutoffDate,
-      },
-      { status: 409 },
-    )
-  }
-
   const body = await req.json().catch(() => ({} as Record<string, unknown>))
+
+  // "Your Notes" (External Notes) has a laxer rule than everything else: no
+  // warehouse pick list rides on a note, so it edits until the referral reaches
+  // a terminal state, with no Monday cutoff — see agencyNotesEditable(). Every
+  // other field stays on agencyEditWindow (portal status + Monday cutoff). A
+  // payload touching both is held to the stricter agencyEditWindow; the portal
+  // never sends a mixed one (each card saves on its own).
+  const touchesOther =
+    'items' in body || 'hhSize' in body || 'children' in body ||
+    !!(body.client && typeof body.client === 'object')
+  const notesOnly = 'externalNotes' in body && !touchesOther
+
+  if (notesOnly) {
+    if (!agencyNotesEditable(referral.referralReview, referral.appointmentStatus)) {
+      return NextResponse.json(
+        { error: 'This referral can no longer be edited.', reason: 'status', cutoffDate: null },
+        { status: 409 },
+      )
+    }
+  } else {
+    const window = agencyEditWindow({
+      portalStatus: getPortalStatus(referral.referralReview, referral.appointmentStatus),
+      appointmentDate: referral.appointmentDate,
+    })
+
+    if (!window.editable) {
+      return NextResponse.json(
+        {
+          error:
+            window.reason === 'status'
+              ? 'This referral can no longer be edited.'
+              : 'Editing closed on the Monday before the appointment. Contact Furniture Assist to make a change.',
+          reason: window.reason,
+          cutoffDate: window.cutoffDate,
+        },
+        { status: 409 },
+      )
+    }
+  }
 
   // ---- Fields on the Client Referrals row itself.
   const fields: Record<string, unknown> = {}

@@ -25,7 +25,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
-import { agencyEditWindow, getPortalStatus } from '@/lib/referrals/edit-window'
+import { agencyEditWindow, agencyNotesEditable, getPortalStatus } from '@/lib/referrals/edit-window'
 import { withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
 // Shared with components/agency/ReferralTable.tsx, which fills the same blank
 // on the same referral from the same three Airtable fields.
@@ -75,6 +75,10 @@ type Referral = {
   appointmentStatus: string
   appointmentDate: string | null
   appointmentTime: string | null
+  // The slot the referral held before a cancel/withdraw released it — the only
+  // date/time left once Appointment Date (a lookup) has gone empty.
+  originalAppointmentDate: string | null
+  originalAppointmentTime: string | null
   // Reschedule requests only — what the agency asked for.
   preferredDate: string | null
   preferredTime: string | null
@@ -126,6 +130,47 @@ function formatDate(dateStr: string | null) {
   if (!dateStr) return '—'
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// "Sep 26, 2026 at 10am", or just the date when there's no time, or null when
+// there's no date at all. Used for the Appointment card's one combined row —
+// RequestedRows keeps its own inline "·" format for the reschedule case.
+function formatDateTime(dateStr: string | null, time: string | null) {
+  if (!dateStr) return null
+  const d = formatDate(dateStr)
+  return time ? `${d} at ${time}` : d
+}
+
+// The Appointment card is a single row now, and what the stored date means
+// depends on the referral's state. Reschedule is handled separately (Currently
+// / Requested via RequestedRows); Rejected and Withdrawn carry no appointment
+// story worth a row, so they get none.
+function appointmentSummary(
+  status: string,
+  referral: Referral,
+): { label: string; value: string; muted?: boolean } | null {
+  if (status === 'Rejected' || status === 'Withdrawn') return null
+
+  const live = formatDateTime(referral.appointmentDate, referral.appointmentTime)
+  const original = formatDateTime(referral.originalAppointmentDate, referral.originalAppointmentTime)
+
+  switch (status) {
+    case 'Scheduled':
+      return { label: 'Appointment', value: live ?? '—' }
+    case 'Completed':
+      return { label: 'Completed', value: live ?? '—' }
+    case 'Missed Appointment':
+      return { label: 'Missed', value: live ?? '—' }
+    case 'Cancelled':
+      // Appointment Date (a lookup through Saturday Schedule) is empty once the
+      // slot was released; the Original * fields are what's left.
+      return { label: 'Original', value: (live ?? original) ?? '—', muted: true }
+    case 'Submitted':
+    case 'Scheduling':
+      return { label: 'Appointment', value: live ?? 'Not yet scheduled' }
+    default:
+      return { label: 'Appointment', value: live ?? '—' }
+  }
 }
 
 // DOB is stored as MDY text on Clients; <input type="date"> wants ISO.
@@ -346,9 +391,10 @@ function toClientEditState(r: Referral): ClientEditState {
   }
 }
 
-function ClientInfoCard({ referral, locked, accent, onSaved }: {
+function ClientInfoCard({ referral, locked, showLockedBadge, accent, onSaved }: {
   referral: Referral
   locked: boolean
+  showLockedBadge: boolean
   accent: string
   onSaved: (u: Partial<Referral>) => void
 }) {
@@ -409,13 +455,16 @@ function ClientInfoCard({ referral, locked, accent, onSaved }: {
       <Card
         accent={accent}
         title="Client Information"
-        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
+        headerRight={locked ? (showLockedBadge ? <LockedBadge /> : null) : <EditButton onClick={startEdit} />}
       >
         {/* Two rows per line above 1280px, one below. Column count lives in
             globals.css (.fa-inforow-pairs). */}
         <div className="fa-inforow-pairs">
           <InfoRow label="Full Name" value={referral.clientName} />
-          <InfoRow label="Date of Birth" value={referral.dob} />
+          {/* Same call the Dawson detail page makes for DOB — see its
+              formatDate(). The DOB lookup comes back ISO, so this renders
+              "Mar 3, 1998", matching Submitted / Appointment dates. */}
+          <InfoRow label="Date of Birth" value={formatDate(referral.dob)} />
           <InfoRow label="Phone" value={referral.phone} />
           <InfoRow label="Language" value={referral.language} />
           <InfoRow label="Address" fullWidth value={
@@ -517,9 +566,10 @@ function ClientInfoCard({ referral, locked, accent, onSaved }: {
 
 // -------------------------------------------------------- Items Requested
 
-function ItemsRequestedCard({ referral, locked, onSaved }: {
+function ItemsRequestedCard({ referral, locked, showLockedBadge, onSaved }: {
   referral: Referral
   locked: boolean
+  showLockedBadge: boolean
   onSaved: (u: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -571,7 +621,7 @@ function ItemsRequestedCard({ referral, locked, onSaved }: {
       <Card
         accent={EDIT_ACCENT}
         title="Items Requested"
-        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
+        headerRight={locked ? (showLockedBadge ? <LockedBadge /> : null) : <EditButton onClick={startEdit} />}
       >
         {list.length > 0 ? (
           // Two bullets per line above 1280px, one below. Column count lives in
@@ -624,9 +674,15 @@ function ItemsRequestedCard({ referral, locked, onSaved }: {
 
 // -------------------------------------------------------------- Your Notes
 
-function YourNotesCard({ referral, locked, onSaved }: {
+// Rendered only when editable, or when read-only with notes already on file
+// (the caller gates that — see showNotesCard). `editable` follows
+// agencyNotesEditable, which is laxer than the other cards' lock: no Monday
+// cutoff, just a terminal-state one. Read-only means content but no Edit
+// button and no lock badge — an empty read-only card says nothing, so it
+// isn't shown at all.
+function YourNotesCard({ referral, editable, onSaved }: {
   referral: Referral
-  locked: boolean
+  editable: boolean
   onSaved: (u: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -667,7 +723,7 @@ function YourNotesCard({ referral, locked, onSaved }: {
       <Card
         accent={EDIT_ACCENT}
         title="Your Notes"
-        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} label={referral.externalNotes ? 'Edit' : '+ Add'} />}
+        headerRight={editable ? <EditButton onClick={startEdit} label={referral.externalNotes ? 'Edit' : '+ Add'} /> : undefined}
       >
         {referral.externalNotes ? (
           <div style={{ fontSize: '14px', color: '#2C3A4A', lineHeight: 1.7, whiteSpace: 'pre-wrap' }}>{referral.externalNotes}</div>
@@ -944,11 +1000,36 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const status = rawStatus === 'No Show' ? 'Missed Appointment' : rawStatus
   const colors = STATUS_COLORS[status] ?? { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' }
 
+  // The Appointment card's single combined row. Null for Reschedule (which uses
+  // RequestedRows instead) and for Rejected / Withdrawn (no row at all).
+  const appointment = status === 'Reschedule' ? null : appointmentSummary(status, referral)
+
+  // Review Status row (Referral Details card): whether Furniture Assist has
+  // approved the referral is a live question while it's in flight, but a
+  // terminal outcome supersedes it — Rejected excepted, since there the review
+  // IS the outcome. Submitted / Referred By still render in every state.
+  const showReviewStatus =
+    status === 'Submitted' || status === 'Scheduling' || status === 'Scheduled' ||
+    status === 'Reschedule' || status === 'Rejected'
+
+  // Your Notes: editable on its own laxer rule (agencyNotesEditable — no Monday
+  // cutoff, just terminal states). On a terminal referral the card is read-only
+  // if notes exist and hidden entirely if they don't — an empty read-only card
+  // is just wasted rail space.
+  const notesEditable = agencyNotesEditable(referral.referralReview, referral.appointmentStatus)
+  const showNotesCard = notesEditable || !!referral.externalNotes
+
   const editWindow = agencyEditWindow({
     portalStatus: status,
     appointmentDate: referral.appointmentDate,
   })
   const locked = !editWindow.editable
+  // The Locked badge is only worth showing when editing was actively cut off
+  // while the referral was still live — a Scheduled referral past the Monday
+  // deadline, which also gets the explanatory banner below. On a Completed or
+  // Cancelled referral there is nothing to "lock": the record is closed, the
+  // status pill already says so, and the badge was just noise.
+  const showLockedBadge = locked && status !== 'Completed' && status !== 'Cancelled'
 
   // Header actions, by portal status:
   //
@@ -1079,8 +1160,8 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             </div>
           )}
 
-          <ClientInfoCard referral={referral} locked={locked} accent={colors.accent} onSaved={applyUpdate} />
-          <ItemsRequestedCard referral={referral} locked={locked} onSaved={applyUpdate} />
+          <ClientInfoCard referral={referral} locked={locked} showLockedBadge={showLockedBadge} accent={colors.accent} onSaved={applyUpdate} />
+          <ItemsRequestedCard referral={referral} locked={locked} showLockedBadge={showLockedBadge} onSaved={applyUpdate} />
           {showItemsReceived && <ItemsReceivedCard disbursed={referral.itemsDisbursed} />}
         </div>
 
@@ -1090,36 +1171,45 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           <Card accent={READ_ACCENT} title="Referral Details">
             <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
             <InfoRow label="Referred By" value={referral.referredBy} />
-            <InfoRow label="Review Status" value={
-              <span style={{ fontWeight: 700, color: referral.referralReview === 'Approved' ? '#2A7F6F' : referral.referralReview === 'Rejected' ? '#C0392B' : '#C9A84C' }}>
-                {referral.referralReview}
-              </span>
-            } />
+            {showReviewStatus && (
+              <InfoRow label="Review Status" value={
+                <span style={{ fontWeight: 700, color: referral.referralReview === 'Approved' ? '#2A7F6F' : referral.referralReview === 'Rejected' ? '#C0392B' : '#C9A84C' }}>
+                  {referral.referralReview}
+                </span>
+              } />
+            )}
           </Card>
 
           <Card accent={READ_ACCENT} title="Appointment">
-            <InfoRow label="Status" value={<span style={{ fontWeight: 700, color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>} />
+            {/* No Status row — the header pill already carries status, and the
+                raw Airtable value ("No Show", "Pending Schedule") only diverged
+                from it and read as a second, contradictory status.
 
-            {/* While a reschedule request is with Furniture Assist, both rows
-                showed an em dash — they were gated on 'Scheduled' or
-                'Completed'. The same blank the Reschedule Requested cards had,
-                on the same referral, which is why both are fixed here.
+                Date and Time are one row now, labelled for what the date means
+                in the current state (Appointment / Completed / Missed /
+                Original) and weighted up — for most states it's the only row in
+                the card and the single most important fact for an agency user.
+                See appointmentSummary().
 
-                Two rows rather than the list card's one, because this page has
-                the room and the list card does not. A request changes nothing
-                until Dawson acts: the client still has the appointment they
-                had, and an agency reading only "Requested Oct 3" could tell
-                them not to come on Sep 26. Showing what they hold next to what
-                they asked for is the reading that cannot go wrong, and it
-                matches the internal review screen's own Currently / Requested
-                pair. */}
+                Reschedule keeps its own two-row Currently / Requested treatment
+                via RequestedRows: a request changes nothing until Dawson acts,
+                and an agency reading only "Requested Oct 3" could tell a client
+                not to come on the Sep 26 they still hold. */}
             {status === 'Reschedule' ? (
               <RequestedRows referral={referral} />
-            ) : (
-              <>
-                <InfoRow label="Date" value={status === 'Scheduled' || status === 'Completed' ? formatDate(referral.appointmentDate) : '—'} />
-                <InfoRow label="Time" value={status === 'Scheduled' || status === 'Completed' ? referral.appointmentTime : '—'} />
-              </>
+            ) : appointment && (
+              <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1' }}>
+                <div className="fa-inforow-label" style={{ flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em', paddingTop: '3px' }}>
+                  {appointment.label}
+                </div>
+                <div style={{
+                  fontSize: '16px', fontWeight: 700, flex: 1, minWidth: 0,
+                  color: appointment.muted ? '#7A8899' : '#1B2B4B',
+                  textDecoration: appointment.muted && appointment.value !== '—' ? 'line-through' : undefined,
+                }}>
+                  {appointment.value}
+                </div>
+              </div>
             )}
 
             {/* The appointment slip and the client receipt used to link from
@@ -1146,7 +1236,9 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               stopped, so notes ran off the bottom of a screen that had a column
               of empty space beside it. Below 1280px the two columns stack into
               one, so on a phone this only moves notes further down the page. */}
-          <YourNotesCard referral={referral} locked={locked} onSaved={applyUpdate} />
+          {showNotesCard && (
+            <YourNotesCard referral={referral} editable={notesEditable} onSaved={applyUpdate} />
+          )}
 
           {referral.possibleDuplicate && (
             <div style={{ background: 'rgba(192,57,43,0.06)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '12px', padding: '16px 20px' }}>

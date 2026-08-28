@@ -354,6 +354,14 @@ export async function getReferralById(referralId: string) {
     appointmentStatus: f['Appointment Status'] as string,
     appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
     appointmentTime: (f['Appointment Time'] as string) ?? null,
+    // What the referral last held before a cancel/withdraw released the slot —
+    // written by lib/referrals/end-referral.ts. The live Appointment Date
+    // lookup goes empty once the Saturday Schedule link is cleared, so the
+    // agency Appointment card falls back to these to show the cancelled slot.
+    originalAppointmentDate: Array.isArray(f['Original Appointment Date'])
+      ? ((f['Original Appointment Date'] as string[])[0] ?? null)
+      : ((f['Original Appointment Date'] as string) ?? null),
+    originalAppointmentTime: (f['Original Appointment Time'] as string) ?? null,
     // Same three fields the list shape carries, for the same reason: the
     // agency detail page's Appointment card left Date and Time blank on a
     // referral awaiting a reschedule. See lib/referrals/requested-slot.ts.
