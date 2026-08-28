@@ -9,6 +9,7 @@ import {
 } from '@/components/internal/IconBtn'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
 import { easternTodayISO } from '@/lib/dates'
+import { NO_SHOW_RESCHEDULE_WINDOW_DAYS } from '@/lib/referrals/no-show-window'
 
 
 type ItemsDisbursed = {
@@ -134,11 +135,11 @@ const LANGUAGES = ['English', 'Spanish', 'Haitian Creole', 'French', 'Arabic', '
 const STATES = ['NJ', 'NY', 'PA', 'CT', 'DE']
 
 
-// Same 25-day window as lib/referrals/match.ts's NO_SHOW_RESCHEDULE_WINDOW_DAYS
-// and the History page's own gating. Kept in sync everywhere so a No Show
-// that's aged out of "reschedule in place" on Add Referral / History doesn't
-// still show live Reschedule/Cancel actions -- or editable fields -- here.
-const NO_SHOW_ACTION_WINDOW_DAYS = 25
+// The gate for whether a No Show is still fresh enough to act on / edit here
+// is the shared no-show reschedule window — NO_SHOW_RESCHEDULE_WINDOW_DAYS,
+// imported above. Same window the Add Referral flow and the History page use,
+// so a No Show that's aged out of "reschedule in place" there doesn't still
+// show live Reschedule/Cancel actions -- or editable fields -- here.
 
 
 // ---------------------------------------------------------------------------
@@ -319,7 +320,7 @@ function EditButton({ onClick, label = 'Edit' }: { onClick: () => void; label?: 
 
 
 // Shown in place of the Edit button once a record is locked (Completed with
-// the post-appt email sent, or a No Show past the 25-day window). Purely a
+// the post-appt email sent, or a No Show past the reschedule window). Purely a
 // visual signal — there's no "unlock" affordance yet.
 function LockedBadge() {
   return (
@@ -1675,7 +1676,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // A No Show older than the window is a closed record everywhere else in the
   // app (Add Referral duplicate-check, History page) — same rule applies
   // here: no more Reschedule/Cancel below, and no more field edits.
-  const noShowAged = status === 'No Show' && daysSinceNoShow !== null && daysSinceNoShow > NO_SHOW_ACTION_WINDOW_DAYS
+  const noShowAged = status === 'No Show' && daysSinceNoShow !== null && daysSinceNoShow > NO_SHOW_RESCHEDULE_WINDOW_DAYS
 
 
   // ---------------------------------------------------------------------

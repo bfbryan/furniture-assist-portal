@@ -4,19 +4,25 @@
 // rather than re-referred from scratch. Airtable's Appointment Status value is
 // 'No Show'; the agency portal shows it as "Missed Appointment".
 //
-// This is enforced in two places that must not drift:
+// Everything that gates on this window now imports from here, so a change to
+// the number moves every surface together:
 //
-//   • app/(agency)/referrals/[id]/page.tsx hides the Reschedule button once a
-//     missed appointment is past the window.
-//   • POST /api/referrals/[id]/reschedule refuses the request for the same
-//     reason — a hidden button is presentation, not permission, the same
+//   • app/(agency)/referrals/[id]/page.tsx      — hides the agency Reschedule
+//     button once a missed appointment is past the window.
+//   • POST /api/referrals/[id]/reschedule       — refuses the request for the
+//     same reason. A hidden button is presentation, not permission — the same
 //     argument lib/referrals/edit-window.ts makes for the edit cutoff.
+//   • app/dawson/referrals/[id]/page.tsx        — `noShowAged` gate (locks the
+//     record, drops the Reschedule/Cancel meta actions).
+//   • app/dawson/referrals/history/page.tsx     — `canManageNoShow` (the
+//     Reschedule/Cancel buttons on a No Show row).
+//   • lib/referrals/match.ts                    — `eligibleForReschedule` on
+//     the Add Referral duplicate-check scenarios.
 //
-// COPIES THIS REPO STILL CARRIES (flagged, not yet converged — all Dawson-side,
-// all currently agreeing at 25 days):
-//   • app/dawson/referrals/[id]/page.tsx      — NO_SHOW_ACTION_WINDOW_DAYS
-//   • app/dawson/referrals/history/page.tsx   — a bare `<= 25`
-// lib/referrals/match.ts now imports NO_SHOW_RESCHEDULE_WINDOW_DAYS from here.
+// The Dawson pages keep their own `daysSince…` computations and compare against
+// the constant directly rather than calling withinNoShowRescheduleWindow(); the
+// helper additionally rejects a future-dated appointment, which those call
+// sites historically did not, and this was a behaviour-preserving refactor.
 //
 // All dates are Eastern. `todayISO` is injected so a caller can pass one value
 // for a whole render or request rather than re-reading the clock, and so this
