@@ -349,6 +349,18 @@ h1, h2, h3, h4, h5, h6 {
    name inside it. Pairs with the ⋯ hover above. The label row is excluded. */
 .fa-active-row:not(.fa-active-row--head):hover { background: #FAFAF8; }
 
+/* Staff filter inside the controls row. Wide: label + select sit together at
+   the right end of the row (search grows to fill the rest). Narrow: see the
+   media query — it stacks flush-left under the search input, label dropped so
+   it matches the search box (placeholder only). */
+.fa-active-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
 @media (max-width: 1279.98px) {
   /* Stack, don't compress: client / referred by / date each on their own
      line, ⋯ pinned to the row's top-right. */
@@ -372,6 +384,18 @@ h1, h2, h3, h4, h5, h6 {
     letter-spacing: 0.06em;
     color: #7A8899;
   }
+
+  /* Controls stack: search on top, staff filter directly under it, both flush
+     with the container (and so with the cards below). The "Filter by Staff"
+     label is dropped so the two controls match — the select's "All Staff"
+     option carries the meaning, the same way the search input leans on its
+     placeholder. */
+  .fa-active-filter {
+    margin-left: 0;
+    width: 100%;
+  }
+  .fa-active-filter-label { display: none; }
+  .fa-active-filter-select { flex: 1; }
 }
 
 /* History cards. The same bug as the active card above, in miniature, on the

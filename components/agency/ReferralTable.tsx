@@ -472,13 +472,20 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
           style={{ flex: '1 1 240px', minWidth: 0, padding: '8px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', background: 'white', fontFamily: 'inherit', outline: 'none' }}
         />
         {isAdmin && staffNames.length > 0 && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, marginLeft: 'auto' }}>
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#1B2B4B', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
+          <div className="fa-active-filter">
+            <label
+              htmlFor="fa-active-staff-filter"
+              className="fa-active-filter-label"
+              style={{ fontSize: '12px', fontWeight: 700, color: '#1B2B4B', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}
+            >
               Filter by Staff
             </label>
             <select
+              id="fa-active-staff-filter"
+              aria-label="Filter by Staff"
               value={staffFilter}
               onChange={e => setStaffFilter(e.target.value)}
+              className="fa-active-filter-select"
               style={{ padding: '8px 14px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', background: 'white', fontFamily: 'inherit', cursor: 'pointer' }}
             >
               <option value="all">All Staff</option>
