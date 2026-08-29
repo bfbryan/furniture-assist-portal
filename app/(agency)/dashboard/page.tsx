@@ -1,6 +1,5 @@
 // app/(agency)/dashboard/page.tsx
 // Agency Dashboard — home page for the agency portal.
-// - Hero: universal AgencyPageHeader with stats (Total / Active / Completed)
 // - Left: Upcoming Appointments grouped by Saturday (scheduled/pending, future dates only)
 // - Right: Quick Actions
 //
@@ -18,7 +17,6 @@ import {
   getReferralsByAgencyId,
   getReferralsByStaffName,
 } from '@/lib/airtable'
-import AgencyPageHeader from '@/components/agency/AgencyPageHeader'
 import {
   differenceInDaysISO,
   easternTodayISO,
@@ -111,23 +109,6 @@ export default async function DashboardPage() {
     : await getReferralsByStaffName(agency.name, agencyUser.name)
 
 
-  // Stats — same shape as Profile/Active/History
-  const totalCount = scopedReferrals.length
-  // Pending uses the same definition as the Active page: awaiting our review.
-  const pendingCount = scopedReferrals.filter(
-    (r: any) => r.referralReview === 'Pending'
-  ).length
-  const activeCount = scopedReferrals.filter((r: any) => {
-    if (r.referralReview === 'Rejected') return false
-    const s = r.appointmentStatus
-    if (s === 'Completed' || s === 'Cancelled' || s === 'No Show') return false
-    return true
-  }).length
-  const completedCount = scopedReferrals.filter(
-    (r: any) => r.appointmentStatus === 'Completed'
-  ).length
-
-
   // One Eastern "today" for the whole render, so the filter below and the
   // day labels further down cannot straddle midnight.
   const todayISO = easternTodayISO()
@@ -161,26 +142,6 @@ export default async function DashboardPage() {
 
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
-      <AgencyPageHeader
-        agencyName={agency.name}
-        agencyAddress={agency.address}
-        agencyAddress2={agency.address2}
-        agencyCity={agency.city}
-        agencyState={agency.state}
-        agencyZip={agency.zip}
-        agencyPhone={agency.phone}
-        userName={agencyUser.name}
-        userPhone={agencyUser.phone ?? 'No phone on file'}
-        userRole={agencyUser.role}
-        stats={[
-          { label: 'Pending', value: pendingCount },
-          { label: 'Active', value: activeCount, emphasized: true },
-          { label: 'Completed', value: completedCount },
-          { label: 'Total', value: totalCount },
-        ]}
-      />
-
-
       {/* Column tracks live in globals.css (.fa-dashboard-grid) so they can stack below 1280px. */}
       <main
         className="fa-dashboard-grid max-w-7xl mx-auto px-8 py-9 grid gap-7"

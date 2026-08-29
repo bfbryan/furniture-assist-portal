@@ -1,5 +1,5 @@
 // app/(agency)/profile/page.tsx
-// Agency Profile — uses universal AgencyPageHeader (no stat tiles).
+// Agency Profile.
 // Two-column body: Agency Info + My Profile on the left, Primary Admin on the right.
 
 
@@ -9,7 +9,6 @@ import {
   getAgencyUserByClerkId,
   getAgencyById,
 } from '@/lib/airtable'
-import AgencyPageHeader from '@/components/agency/AgencyPageHeader'
 import ProfileClient from './ProfileClient'
 
 
@@ -47,21 +46,6 @@ export default async function ProfilePage() {
 
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
-      <AgencyPageHeader
-        agencyName={agency.name}
-        agencyAddress={agency.address}
-        agencyAddress2={agency.address2}
-        agencyCity={agency.city}
-        agencyState={agency.state}
-        agencyZip={agency.zip}
-        agencyPhone={agency.phone}
-        userName={agencyUser.name}
-        userPhone={agencyUser.phone ?? 'No phone on file'}
-        userRole={agencyUser.role}
-        stats={null}
-      />
-
-
       <main className="max-w-6xl mx-auto px-8 py-9">
         <ProfileClient
           agency={agency}

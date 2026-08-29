@@ -71,6 +71,60 @@ h1, h2, h3, h4, h5, h6 {
   display: none;
 }
 
+/* ---------- Page bar (AgencyPageBar) ---------- */
+
+/* The slim bar that replaced the tall hero. Flat #1B2B4B — the exact sidebar
+   value, no gradient, so the two don't seam where they meet — with the old
+   hero's 4px teal rule underneath. Not sticky: it scrolls with the page, so
+   it can't fight the referral detail page's own sticky sub-header for top:0.
+   flex-wrap lets the right-hand group (New Referral + avatar) drop to a second
+   line on a narrow phone rather than push the title off-screen. Below 1280 the
+   side padding tightens and the avatar hides — see the media query.
+
+   The transparent top border mirrors the teal bottom rule, so the content
+   centres in the full visible bar rather than sitting 2px high (border-box
+   otherwise charges the whole 4px teal to the bottom). */
+.fa-pagebar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  min-height: 60px;
+  padding: 8px 32px;
+  background: #1B2B4B;
+  border-top: 4px solid transparent;
+  border-bottom: 4px solid #2A7F6F;
+}
+
+.fa-pagebar-title {
+  flex: 1 1 120px;
+}
+
+.fa-pagebar-avatar {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.18);
+  color: white;
+  font-family: var(--font-montserrat), sans-serif;
+  font-weight: 500;
+  font-size: 11px;
+  letter-spacing: 0.02em;
+}
+.fa-pagebar-avatar:hover {
+  background: rgba(255, 255, 255, 0.28);
+}
+.fa-pagebar-avatar:focus-visible {
+  outline: 2px solid #2A7F6F;
+  outline-offset: 2px;
+}
+
 /* ---------- Card / list grids ---------- */
 
 /* Active client cards — replaced by the grouped list in components/agency/
@@ -557,17 +611,13 @@ h1, h2, h3, h4, h5, h6 {
     padding: 10px 12px !important;
   }
 
-  /* Hero stat tiles: three tiles at their natural width overflow a phone and
-     wrap 2 + 1, leaving an orphan. An even two-up grid wraps deliberately
-     instead, with an odd last tile spanning the full width. */
-  .fa-hero-stats {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    width: 100%;
+  /* Page bar: tighter side padding on a phone, and the desktop-only avatar
+     hides (the mobile top bar above already carries a Clerk avatar). */
+  .fa-pagebar {
+    padding: 8px 20px;
   }
-
-  .fa-hero-stats > :last-child:nth-child(odd) {
-    grid-column: 1 / -1;
+  .fa-pagebar-avatar {
+    display: none;
   }
 
   /* Section title and its action button compressed into each other; let the

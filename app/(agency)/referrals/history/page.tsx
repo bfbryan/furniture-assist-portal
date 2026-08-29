@@ -14,7 +14,6 @@ import {
 } from '@/lib/airtable'
 import HistoryClient, { type Referral } from './HistoryClient'
 import { StaffFilterProvider } from '@/components/agency/ActiveReferralsFilter'
-import { cityStateZip } from '@/lib/address'
 
 // Terminal statuses only.
 //
@@ -71,60 +70,12 @@ export default async function HistoryPage() {
   const historyReferrals = allReferrals.filter(isTerminal) as Referral[]
 
   // StaffFilterProvider wraps the body so the staff dropdown, the outcome-pill
-  // counts and the list all read one selection. The four hero KPI tiles that
-  // used to sit here were removed in the History rework: they duplicated the
-  // outcome pills (which now carry the counts) and the two disagreed — the
-  // tiles omitted Withdrawn, the pills include it.
+  // counts and the list all read one selection. The navy hero that used to sit
+  // here (KPI tiles + agency/user identity) was replaced by the shell's slim
+  // page bar — see AgencyPortalShell / AgencyPageBar.
   return (
     <StaffFilterProvider referrals={historyReferrals}>
     <div className="min-h-screen bg-[#F7F5F1]">
-      {/* Hero — same layout as Active/Dashboard */}
-      <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-7">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-6">
-          {/* Left — Agency + Staff info blocks */}
-          <div className="flex gap-10 flex-wrap">
-            <div>
-              <span className="text-xs font-bold tracking-widest uppercase text-[#3AA08D] mb-2 block">
-                Agency Partner
-              </span>
-              <h1 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
-                {agency.name}
-              </h1>
-              {/* Joined rather than interpolated — see the same block on
-                  app/(agency)/referrals/active/page.tsx. */}
-              <p className="text-sm text-white/50 font-light">
-                {[[agency.address, agency.address2].filter(Boolean).join(', '),
-                  cityStateZip(agency.city, agency.state, agency.zip)].filter(Boolean).join(', ')}
-              </p>
-              <p className="text-sm text-white/50 font-light">{agency.phone}</p>
-            </div>
-
-            <div
-              style={{
-                width: '1px',
-                background: 'rgba(255,255,255,0.12)',
-                alignSelf: 'stretch',
-              }}
-            />
-
-            <div>
-              <span className="text-xs font-bold tracking-widest uppercase text-[#3AA08D] mb-2 block">
-                Logged In As
-              </span>
-              <h2 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
-                {agencyUser.name}
-              </h2>
-              <p className="text-sm text-white/50 font-light">
-                {agencyUser.phone ?? 'No phone on file'}
-              </p>
-              <p className="text-sm text-white/50 font-light">{agencyUser.role}</p>
-            </div>
-          </div>
-
-        </div>
-      </div>
-
-      {/* Body — search + chips + week buckets */}
       <main className="max-w-6xl mx-auto px-8 py-9">
         <HistoryClient isAdmin={agencyUser.role === 'Admin'} />
       </main>
