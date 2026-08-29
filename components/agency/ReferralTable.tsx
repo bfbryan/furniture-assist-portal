@@ -106,9 +106,13 @@ const COL_HEADER: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
   textTransform: 'uppercase', color: '#7A8899',
 }
+// Top margin sets the gap between one Saturday's last row and the next date
+// heading inside the Scheduled card. Was 14px — close enough to the within-
+// section row spacing that consecutive Saturdays ran together. First section
+// overrides this back down (it opens the card, nothing to separate from).
 const DATE_HEADING: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
-  textTransform: 'uppercase', color: '#2A7F6F', margin: '14px 0 2px',
+  textTransform: 'uppercase', color: '#2A7F6F', margin: '34px 0 2px',
 }
 
 function Icon({ path, size = 15 }: { path: React.ReactNode; size?: number }) {
@@ -248,24 +252,46 @@ function Row({
   )
 }
 
+// The CLIENT / REFERRED BY / … label row. Rendered once at the top of a card
+// by default; the Scheduled card passes hideHead and instead drops one of
+// these under each Saturday heading (see below), so the date always
+// introduces its own columns.
+function ColumnHead({ columns }: { columns: string[] }) {
+  return (
+    <div className="fa-active-row fa-active-row--head" style={{ padding: '6px 0' }}>
+      {columns.map((c, i) => <div key={i} style={COL_HEADER}>{c}</div>)}
+      <div />
+    </div>
+  )
+}
+
+// `accent` marks a "waiting on Furniture Assist" group — gold left bar
+// (#C9A84C, 3px) and a gold heading (#8B7724) instead of teal. Scheduled, the
+// only "confirmed" group, leaves it off. The 3px bar is border-box, so the
+// left padding drops to 15px to keep row content on the same vertical line as
+// the non-accented cards.
 function GroupCard({
-  title, count, columns, children,
+  title, count, columns, children, accent = false, hideHead = false,
 }: {
   title: string
   count: number
   columns: string[]
   children: React.ReactNode
+  accent?: boolean
+  hideHead?: boolean
 }) {
   return (
-    <section style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 12px rgba(27,43,75,0.07)', marginBottom: '20px', padding: '14px 18px' }}>
+    <section style={{
+      background: 'white', borderRadius: '12px',
+      boxShadow: '0 2px 12px rgba(27,43,75,0.07)', marginBottom: '20px',
+      padding: accent ? '14px 18px 14px 15px' : '14px 18px',
+      borderLeft: accent ? '3px solid #C9A84C' : undefined,
+    }}>
       <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
-        <span style={SECTION_TITLE}>{title}</span>
+        <span style={{ ...SECTION_TITLE, color: accent ? '#8B7724' : '#2A7F6F' }}>{title}</span>
         <span style={SECTION_COUNT}>{count}</span>
       </div>
-      <div className="fa-active-row fa-active-row--head" style={{ padding: '6px 0' }}>
-        {columns.map((c, i) => <div key={i} style={COL_HEADER}>{c}</div>)}
-        <div />
-      </div>
+      {!hideHead && <ColumnHead columns={columns} />}
       {children}
     </section>
   )
@@ -431,12 +457,20 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
         submitError={actionError}
       />
 
-      {/* Controls — staff filter (admin) + client-name search. Wrapping lives
-          in globals.css (.fa-active-controls). */}
-      <div className="fa-active-controls" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
+      {/* Controls — client-name search (left, fills the row) + staff filter
+          (admin only, pinned right). The 18px side padding lines both ends up
+          with the card content beneath, not the card's outer edge. */}
+      <div className="fa-active-controls" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', padding: '0 18px', marginBottom: '24px' }}>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by client name"
+          style={{ flex: '1 1 240px', minWidth: 0, padding: '8px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', background: 'white', fontFamily: 'inherit', outline: 'none' }}
+        />
         {isAdmin && staffNames.length > 0 && (
-          <>
-            <label style={{ fontSize: '12px', fontWeight: 700, color: '#1B2B4B', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0, marginLeft: 'auto' }}>
+            <label style={{ fontSize: '12px', fontWeight: 700, color: '#1B2B4B', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>
               Filter by Staff
             </label>
             <select
@@ -447,15 +481,8 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
               <option value="all">All Staff</option>
               {staffNames.map(name => <option key={name} value={name}>{name}</option>)}
             </select>
-          </>
+          </div>
         )}
-        <input
-          type="text"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          placeholder="Search by client name"
-          style={{ flex: '1 1 220px', maxWidth: '320px', padding: '8px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', background: 'white', fontFamily: 'inherit', outline: 'none' }}
-        />
       </div>
 
       {allActive.length === 0 ? (
@@ -477,7 +504,7 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
       ) : (
         <>
           {buckets.pending.length > 0 && (
-            <GroupCard title="Awaiting approval" count={buckets.pending.length} columns={['Client', 'Referred by', 'Requested']}>
+            <GroupCard title="Awaiting approval" count={buckets.pending.length} accent columns={['Client', 'Referred by', 'Requested']}>
               {buckets.pending.map(r => (
                 <Row
                   key={r.id}
@@ -493,32 +520,12 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
             </GroupCard>
           )}
 
-          {buckets.scheduled.length > 0 && (
-            <GroupCard title="Scheduled" count={buckets.scheduled.length} columns={['Client', 'Referred by', 'Time']}>
-              {scheduledGroups.map(g => (
-                <div key={g.date}>
-                  <div style={DATE_HEADING}>
-                    {g.date === 'zzzz' ? 'NO DATE' : dateHeading(g.date)} · {g.rows.length}
-                  </div>
-                  {g.rows.map(r => (
-                    <Row
-                      key={r.id}
-                      {...rowProps(r, 'scheduled')}
-                      dateLabel="Time"
-                      dateCell={
-                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#1B2B4B' }}>
-                          {r.appointmentTime ?? '—'}
-                        </span>
-                      }
-                    />
-                  ))}
-                </div>
-              ))}
-            </GroupCard>
-          )}
-
+          {/* Reschedule requested sits above Scheduled: the page exists mainly
+              so an agency can see a just-submitted referral landed and where it
+              stands. The waiting groups answer that; Scheduled is the routine
+              case and reads below them. */}
           {buckets.reschedule.length > 0 && (
-            <GroupCard title="Reschedule requested" count={buckets.reschedule.length} columns={['Client', 'Referred by', 'Currently / Requested']}>
+            <GroupCard title="Reschedule requested" count={buckets.reschedule.length} accent columns={['Client', 'Referred by', 'Currently / Requested']}>
               {buckets.reschedule.map(r => (
                 <Row
                   key={r.id}
@@ -536,6 +543,34 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
                     </span>
                   }
                 />
+              ))}
+            </GroupCard>
+          )}
+
+          {buckets.scheduled.length > 0 && (
+            <GroupCard title="Scheduled" count={buckets.scheduled.length} hideHead columns={['Client', 'Referred by', 'Time']}>
+              {scheduledGroups.map((g, gi) => (
+                <div key={g.date}>
+                  {/* Date heading introduces the section; column headers sit
+                      beneath it, repeated per Saturday so each block is
+                      self-labelling however many there are. */}
+                  <div style={gi === 0 ? { ...DATE_HEADING, marginTop: '6px' } : DATE_HEADING}>
+                    {g.date === 'zzzz' ? 'NO DATE' : dateHeading(g.date)} · {g.rows.length}
+                  </div>
+                  <ColumnHead columns={['Client', 'Referred by', 'Time']} />
+                  {g.rows.map(r => (
+                    <Row
+                      key={r.id}
+                      {...rowProps(r, 'scheduled')}
+                      dateLabel="Time"
+                      dateCell={
+                        <span style={{ fontSize: '13px', fontWeight: 700, color: '#1B2B4B' }}>
+                          {r.appointmentTime ?? '—'}
+                        </span>
+                      }
+                    />
+                  ))}
+                </div>
               ))}
             </GroupCard>
           )}
