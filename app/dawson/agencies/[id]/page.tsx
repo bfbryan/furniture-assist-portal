@@ -180,10 +180,10 @@ function NotesModal({ currentNotes, onSave, onCancel, saving }: {
 }
 
 // Map the existing Referral type (from the API) to AgencyReferral (for the
-// panel component). July 2026: statuses now pass through 1:1 from Airtable
-// Appointment Status (Unscheduled | Pending Schedule | Scheduled | Cancelled |
-// Completed | No Show). The old “Pending Review” label was retired —
-// pre-review referrals now live natively as Appointment Status = Unscheduled.
+// panel component). Statuses pass through 1:1 from Airtable Appointment Status
+// (Pending Schedule | Scheduled | Cancelled | Completed | No Show). The old
+// “Pending Review” label was retired — a referral with no slot assigned lives
+// as Appointment Status = Pending Schedule.
 function toAgencyReferral(r: Referral): AgencyReferral {
   const isRejected  = r.referralReview === 'Rejected'
   const isWithdrawn = r.referralReview === 'Withdrawn'
@@ -194,14 +194,13 @@ function toAgencyReferral(r: Referral): AgencyReferral {
     status = 'Cancelled'
   } else {
     const map: Record<string, ReferralStatus> = {
-      'Unscheduled':      'Unscheduled',
       'Pending Schedule': 'Pending Schedule',
       'Scheduled':        'Scheduled',
       'Cancelled':        'Cancelled',
       'Completed':        'Completed',
       'No Show':          'No Show',
     }
-    status = map[r.appointmentStatus] ?? 'Unscheduled'
+    status = map[r.appointmentStatus] ?? 'Pending Schedule'
   }
 
   return {

@@ -65,15 +65,14 @@ const COMPLETED_WINDOW_DAYS = 365
 const NO_SHOW_WINDOW_DAYS = 365
 const CANCELLED_WINDOW_DAYS = 365
 
-// Real Appointment Status values (confirmed Aug 2026): Unscheduled,
-// Pending Schedule, Scheduled, Cancelled, Reschedule, Completed, No Show.
-// "Reschedule" is vestigial -- not used anymore, status gets flipped
-// directly instead of routed through a view. "Unscheduled" may fall out
-// of use going forward but is kept here defensively. "Pending Schedule"
-// is what an agency-submitted referral sits in before Dawson reviews it.
-// All three represent "not yet resolved" -- the active-appointment guard
+// Real Appointment Status values: Pending Schedule, Scheduled, Cancelled,
+// Reschedule, Completed, No Show. "Reschedule" is only produced by the agency
+// reschedule request; the internal flow flips status directly. "Pending
+// Schedule" is what a referral sits in before a Saturday + time is assigned
+// (an agency submission, or a Dawson-approved referral not yet booked). Both
+// it and "Scheduled" are "not yet resolved" -- the active-appointment guard
 // below treats them the same way.
-const ACTIVE_STATUSES = ['Scheduled', 'Pending Schedule', 'Unscheduled']
+const ACTIVE_STATUSES = ['Scheduled', 'Pending Schedule']
 
 export type ClientRecord = {
   id: string
@@ -99,7 +98,7 @@ export type ReferralHistoryItem = {
   id: string
   appointmentStatus: string
   appointmentDate: string // as stored on the record; expected ISO-ish
-  preferredDate: string // fallback display for Unscheduled records, which usually have no Appointment Date yet
+  preferredDate: string // fallback display for Pending Schedule records, which usually have no Appointment Date yet
   referringAgency: string // lookup off Referring Staff Link -- also used to gate the no-show "reschedule" option to same-agency only
   referringStaff: string // lookup off Referring Staff Link
   // Carried along so the Add Referral form can prefill these onto a new
@@ -112,7 +111,7 @@ export type ReferralHistoryItem = {
 }
 
 export type MatchScenario = {
-  // 'active' = a currently Scheduled or Unscheduled referral -- the guard
+  // 'active' = a currently Scheduled or Pending Schedule referral -- the guard
   // against booking a second appointment on top of one that's already
   // pending. No date window applies to this one; it's just true or false
   // right now.
@@ -361,9 +360,8 @@ function bucketHistory(history: ReferralHistoryItem[]): MatchScenario[] {
 
   for (const item of history) {
     // Active guard first, and deliberately before the date check below --
-    // an Unscheduled/Pending Schedule referral usually has no Appointment
-    // Date at all yet, so gating on daysAgo() would silently skip it
-    // entirely otherwise.
+    // a Pending Schedule referral usually has no Appointment Date at all
+    // yet, so gating on daysAgo() would silently skip it entirely otherwise.
     if (ACTIVE_STATUSES.includes(item.appointmentStatus)) {
       scenarios.push({ type: 'active', referral: item })
       continue

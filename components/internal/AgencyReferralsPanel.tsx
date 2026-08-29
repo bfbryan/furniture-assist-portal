@@ -6,11 +6,11 @@ import { formatDateOnly } from "@/lib/dates";
 import { matchesSearch } from "@/lib/search";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-// July 2026: statuses now match the six Airtable Appointment Status values
-// 1:1. Order in the union = display order in filter pills and STATUS_CONFIG.
+// Statuses match the Airtable Appointment Status values 1:1. Order in the union
+// = display order in filter pills and STATUS_CONFIG. A referral with no slot
+// assigned is 'Pending Schedule'.
 
 export type ReferralStatus =
-  | "Unscheduled"
   | "Pending Schedule"
   | "Scheduled"
   | "Cancelled"
@@ -45,11 +45,6 @@ type StatusStyle = {
 };
 
 const STATUS_CONFIG: Record<ReferralStatus, StatusStyle> = {
-  Unscheduled: {
-    label: "Unscheduled",
-    pill: "bg-amber-50 text-amber-800 border-amber-200",
-    dot: "bg-amber-400",
-  },
   "Pending Schedule": {
     label: "Pending schedule",
     pill: "bg-sky-50 text-sky-800 border-sky-200",
@@ -151,14 +146,6 @@ export default function AgencyReferralsPanel({
           <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-gray-100 text-gray-500 border border-gray-200">
             {referrals.length} total
           </span>
-          {/* Unscheduled alert badge — visible even when collapsed.
-              This is the new "attention required" state, replacing the
-              old Pending Review badge. */}
-          {(counts["Unscheduled"] ?? 0) > 0 && (
-            <span className="text-xs font-medium px-2.5 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
-              {counts["Unscheduled"]} unscheduled
-            </span>
-          )}
         </div>
         <svg
           className={`w-4 h-4 text-gray-400 transition-transform duration-200 ${

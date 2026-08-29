@@ -16,7 +16,7 @@
 // attachSlipToAirtable's clear step — not built here since it wasn't asked
 // for and cancellations are already rare/manual-adjacent.)
 //
-// A first-time Unscheduled -> Cancelled transition (never had a real
+// A first-time Pending Schedule -> Cancelled transition (never had a real
 // appointment to report) is NOT what this is for — the caller only invokes
 // sendCancellationNotice() when `wasScheduled` was true (see the cancel
 // route), same guard as the reschedule flow.

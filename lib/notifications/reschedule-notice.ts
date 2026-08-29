@@ -12,7 +12,7 @@
 // it only checks Enabled, so it can still be switched off from Airtable
 // without a redeploy.
 //
-// An Unscheduled -> Scheduled transition (first-time scheduling) is NOT a
+// A Pending Schedule -> Scheduled transition (first-time scheduling) is NOT a
 // reschedule and should not call this — that's covered by the Wednesday
 // Appointment Confirmation flow instead. The caller decides that by only
 // invoking sendRescheduleNotice() when there was a previous appointment to

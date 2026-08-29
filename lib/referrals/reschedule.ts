@@ -193,7 +193,7 @@ export async function rescheduleReferral({
   // ---- Snapshot current values for the Original Appointment fields.
   //   Policy: overwrite every time. Only writes when the referral is
   //   currently scheduled (has a Saturday Schedule link + Time). If it's
-  //   currently Unscheduled/Reschedule, there's nothing to snapshot.
+  //   currently Pending Schedule/Reschedule, there's nothing to snapshot.
   const current = await getReferral(referralId)
   const currentScheduleLinks: string[] = current?.fields?.['Saturday Schedule'] ?? []
   const currentApptDateLookup: string[] | string | undefined =
@@ -360,7 +360,7 @@ export async function rescheduleReferral({
   // ---- Fire the Reschedule Notice.
   //   Only when this referral was already Scheduled (shouldSnapshot true) --
   //   i.e. there's a genuine previous appointment to report. A first-time
-  //   Unscheduled -> Scheduled transition is handled by the Wednesday
+  //   Pending Schedule -> Scheduled transition is handled by the Wednesday
   //   Appointment Confirmation cron instead, not here.
   //   sendRescheduleNotice never throws; it reports its own failure, and a
   //   failed email must not undo a committed Airtable write.

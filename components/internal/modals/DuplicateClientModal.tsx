@@ -15,8 +15,8 @@
 //   1. 'reschedule' -- a No Show within the reschedule window, same
 //      agency, nothing already active. Amber/actionable: booking this
 //      reschedules the existing record in place.
-//   2. 'active'      -- a Scheduled / Pending Schedule / Unscheduled
-//      appointment already exists. Red/urgent, and takes priority over
+//   2. 'active'      -- a Scheduled / Pending Schedule appointment
+//      already exists. Red/urgent, and takes priority over
 //      #1 (nothing to reschedule if they're already back on the books).
 //      Booking a new one anyway requires an explicit acknowledgment
 //      checkbox first -- a soft block, not a hard one.
@@ -33,7 +33,7 @@
 //     25 days from the SAME agency currently submitting, AND only when
 //     there's no currently active appointment already on file. Reopens
 //     that exact Client Referrals record (new date, status back to
-//     Unscheduled) instead of creating a new one.
+//     Pending Schedule) instead of creating a new one.
 //   - onResolve('book-new', match)   -> creates a new Client Referrals
 //     record linked to this existing Client. The page prefills DOB,
 //     phone, and address/city/state/zip/language from the matched
@@ -119,7 +119,6 @@ const STATUS_COLOR: Record<string, string> = {
   'No Show': '#C0392B',
   Cancelled: '#7A8899',
   Scheduled: '#1B2B4B',
-  Unscheduled: '#C9A84C',
   'Pending Schedule': '#C9A84C',
 }
 
@@ -159,8 +158,8 @@ function formatAgo(dateStr: string): string {
   return `${Math.round(days / 30)}mo ago`
 }
 
-// Unscheduled records usually have no Appointment Date yet -- fall back to
-// Preferred Date so the active-appointment warning isn't just blank.
+// Pending Schedule records usually have no Appointment Date yet -- fall back
+// to Preferred Date so the active-appointment warning isn't just blank.
 function displayDate(h: ReferralHistoryItem): string {
   return h.appointmentDate || h.preferredDate
 }
@@ -223,10 +222,10 @@ function MatchCard({
   const noShowScenario = match.scenarios.find(s => s.type === 'no-show')
   const activeScenario = match.scenarios.find(s => s.type === 'active')
   // Active always takes priority over the reschedule offer -- if they're
-  // already back on the books (Scheduled / Pending Schedule /
-  // Unscheduled), there's nothing left to reschedule. In practice this is
-  // the expected case where a no-show within the window got manually
-  // rebooked through a fresh appointment rather than the reschedule flow.
+  // already back on the books (Scheduled / Pending Schedule), there's
+  // nothing left to reschedule. In practice this is the expected case where
+  // a no-show within the window got manually rebooked through a fresh
+  // appointment rather than the reschedule flow.
   const canReschedule =
     !activeScenario &&
     !!noShowScenario &&

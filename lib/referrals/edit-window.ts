@@ -78,13 +78,12 @@ export type EditWindow =
 //
 // Expressed on the raw Airtable fields (not the portal status) because that is
 // the form the rule was given in, and getPortalStatus() collapses distinctions
-// this rule needs — e.g. Approved + Reschedule and Approved + Unscheduled both
-// stay note-editable but map to portal statuses outside EDITABLE_STATUSES.
+// this rule needs — e.g. Approved + Reschedule and Approved + Pending Schedule
+// both stay note-editable but map to portal statuses outside EDITABLE_STATUSES.
 //
 // Enforced in PATCH /api/referrals/[id] as well as used to show the Edit button.
 export const NOTES_EDITABLE_REVIEW = ['Pending', 'Approved'] as const
 export const NOTES_EDITABLE_APPOINTMENT_STATUS = [
-  'Unscheduled',
   'Pending Schedule',
   'Scheduled',
   'Reschedule',
