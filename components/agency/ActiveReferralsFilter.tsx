@@ -93,34 +93,7 @@ export function StaffFilterProvider<T extends FilterableReferral>({
   return <Ctx.Provider value={value as StaffFilterValue}>{children}</Ctx.Provider>
 }
 
-/**
- * The Pending / Scheduled tiles in the page hero.
- *
- * Both definitions are lifted unchanged from the server page they replace —
- * Pending is `Referral Review = 'Pending'` and Scheduled is
- * `Appointment Status = 'Scheduled'` — so the only thing that has changed is
- * the set they are counted over.
- */
-export function ActiveHeroStats() {
-  const { filtered } = useStaffFilter()
-
-  const pendingCount = filtered.filter(r => r.referralReview === 'Pending').length
-  const scheduledCount = filtered.filter(r => r.appointmentStatus === 'Scheduled').length
-
-  return (
-    <div className="fa-hero-stats flex items-center gap-4 flex-wrap">
-      <div className="bg-white/8 border border-white/12 rounded-xl px-5 py-3 text-center min-w-[80px]">
-        <div className="font-montserrat font-extrabold text-2xl text-white leading-none mb-1">
-          {pendingCount}
-        </div>
-        <div className="text-xs font-bold uppercase tracking-wider text-white/45">Pending</div>
-      </div>
-      <div className="bg-white/8 border border-[rgba(58,160,141,0.4)] rounded-xl px-5 py-3 text-center min-w-[80px]">
-        <div className="font-montserrat font-extrabold text-2xl text-[#3AA08D] leading-none mb-1">
-          {scheduledCount}
-        </div>
-        <div className="text-xs font-bold uppercase tracking-wider text-white/45">Scheduled</div>
-      </div>
-    </div>
-  )
-}
+// ActiveHeroStats (the Pending / Scheduled tiles) lived here — removed with the
+// Active page layout rework: the two counts duplicated the dashboard and
+// neither was actionable. The provider now only serves the staff filter and
+// the active set to ReferralTable.

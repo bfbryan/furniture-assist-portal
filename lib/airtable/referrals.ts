@@ -34,9 +34,17 @@ function attachmentUrl(value: unknown): string | null {
 // Link lookups (post-migration) rather than the deleted plaintext fields.
 function shapeReferralListItem(record: any) {
   const f = record.fields
+  // First Name / Last Name / Address / Address 2 / City / State / Zip / Phone
+  // are LOOKUPS through the Client link (June 2026) — they arrive as arrays,
+  // not strings. safeLookupString unwraps the first value and rejects a
+  // rec-ID string from a misconfigured link. Same coercion getReferralById
+  // already uses; this shape had been left on bare `as string` casts, which
+  // handed the UI an array and blew up the first `.trim()` on it.
+  const first = safeLookupString(f['First Name']) ?? ''
+  const last = safeLookupString(f['Last Name']) ?? ''
   return {
     id: record.id,
-    clientName: `${f['First Name'] ?? ''} ${f['Last Name'] ?? ''}`.trim(),
+    clientName: `${first} ${last}`.trim(),
     referralDate: f['Referral Date'] as string,
     appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
     appointmentTime: (f['Appointment Time'] as string) ?? null,
@@ -52,12 +60,12 @@ function shapeReferralListItem(record: any) {
     schedulingFlexibility: (f['Scheduling Flexibility'] as string) ?? null,
     referredBy: safeLookupString(f['Referring Staff']),
     dataPageUrl: f['Data Page URL'] as string,
-    address: (f['Address'] as string) ?? null,
-    address2: (f['Address 2'] as string) ?? null,
-    city: (f['City'] as string) ?? null,
-    state: (f['State'] as string) ?? null,
-    zip: (f['Zip'] as string) ?? null,
-    phone: (f['Phone'] as string) ?? null,
+    address: safeLookupString(f['Address']),
+    address2: safeLookupString(f['Address 2']),
+    city: safeLookupString(f['City']),
+    state: safeLookupString(f['State']),
+    zip: safeLookupString(f['Zip']),
+    phone: safeLookupString(f['Phone']),
   }
 }
 
@@ -160,8 +168,11 @@ export async function getAllReferrals(filters?: {
 
   const records = data.records.map((record: any) => {
     const f = record.fields
-    const firstName = (f['First Name'] as string) ?? ''
-    const lastName = (f['Last Name'] as string) ?? ''
+    // First/Last Name and the address fields below are LOOKUPS through the
+    // Client link — arrays at runtime, not strings. safeLookupString unwraps
+    // them the same way shapeReferralListItem and getReferralById do.
+    const firstName = safeLookupString(f['First Name']) ?? ''
+    const lastName = safeLookupString(f['Last Name']) ?? ''
 
     // Referring Agency / Staff / Phone are LOOKUPS post-migration.
     // safeLookupString returns null for rec-ID strings (caught by guard)
@@ -229,11 +240,11 @@ export async function getAllReferrals(filters?: {
       referringStaffId,                    // resolved from Referring Staff Link
       agencyName,
       dataPageUrl: (f['Data Page URL'] as string) ?? null,
-      address: (f['Address'] as string) ?? null,
-      city: (f['City'] as string) ?? null,
-      state: (f['State'] as string) ?? null,
-      zip: (f['Zip'] as string) ?? null,
-      phone: (f['Phone'] as string) ?? null,
+      address: safeLookupString(f['Address']),
+      city: safeLookupString(f['City']),
+      state: safeLookupString(f['State']),
+      zip: safeLookupString(f['Zip']),
+      phone: safeLookupString(f['Phone']),
     }
   })
 

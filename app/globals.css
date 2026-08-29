@@ -290,6 +290,128 @@ h1, h2, h3, h4, h5, h6 {
   overflow-wrap: anywhere;
 }
 
+/* ---------------------------------------------------------------------------
+   Agency Active referrals — grouped-list rework (Sep 2026).
+
+   One row shape across all four groups: client block | referred by | a
+   group-specific date column | the ⋯ menu. Column labels live once per
+   section (the .fa-active-row--head row), not on every row. The old
+   per-referral .fa-referral-card-grid card above is no longer used by that
+   page (only .fa-history-card-grid still is); its rules are left in place for
+   a separate cleanup.
+   --------------------------------------------------------------------------- */
+.fa-active-row {
+  display: grid;
+  grid-template-columns:
+    minmax(0, 2.2fr)     /* client (name + address) */
+    minmax(90px, 1fr)    /* referred by             */
+    minmax(120px, 1.5fr) /* date column             */
+    36px;                /* ⋯                        */
+  gap: 16px;
+  align-items: start;
+  padding: 12px 0;       /* was inline on every Row; here so mobile can raise it.
+                            The .fa-active-row--head keeps its own inline 6px. */
+}
+
+.fa-active-mobile-label { display: none; }
+
+.fa-active-menu-item:hover { background: #F7F5F1; }
+
+/* The ⋯ trigger reads as a button before it's hovered: a fixed 32px box, a
+   rest colour dark enough to look tappable, cursor:pointer. Hover and the
+   menu-open state share one fill so it's obvious which row owns an open menu.
+   The fill is #EDE9E1 — the border colour used elsewhere, a step darker than
+   the row hover (#FAFAF8) so the button keeps a visible edge against it.
+   Styled entirely here — an inline background would outrank :hover. */
+.fa-active-menu-trigger {
+  width: 32px;
+  height: 32px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  color: #5A6878;
+}
+.fa-active-menu-trigger:hover,
+.fa-active-menu-trigger[aria-expanded='true'] {
+  background: #EDE9E1;
+  color: #1B2B4B;
+}
+/* Keyboard focus only — mouse clicks don't get the ring. */
+.fa-active-menu-trigger:focus-visible {
+  outline: 2px solid #2A7F6F;
+  outline-offset: 2px;
+}
+
+/* Whole-row hover so a row reads as one live region, not just the linked
+   name inside it. Pairs with the ⋯ hover above. The label row is excluded. */
+.fa-active-row:not(.fa-active-row--head):hover { background: #FAFAF8; }
+
+/* Staff filter inside the controls row. Wide: label + select sit together at
+   the right end of the row (search grows to fill the rest). Narrow: see the
+   media query — it stacks flush-left under the search input, label dropped so
+   it matches the search box (placeholder only). */
+.fa-active-filter {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+@media (max-width: 1279.98px) {
+  /* Stack, don't compress: client / referred by / date each on their own
+     line, ⋯ pinned to the row's top-right.
+
+     Spacing has three tiers so the hierarchy reads at a glance:
+       - 8px row-gap between the stacked fields (close but distinct)
+       - +6px above the first labelled field, because the name + address
+         above it are one unit and the labelled fields are separate facts
+       - 16px block padding on the row, so the space between one client's
+         last field and the next client's divider is clearly the largest. */
+  .fa-active-row {
+    grid-template-columns: minmax(0, 1fr) 36px;
+    gap: 8px 12px;
+    padding: 16px 0;
+  }
+  .fa-active-row > :nth-child(1) { grid-column: 1; grid-row: 1; }
+  .fa-active-row > :nth-child(2) { grid-column: 1; grid-row: 2; margin-top: 6px; }
+  .fa-active-row > :nth-child(3) { grid-column: 1; grid-row: 3; }
+  .fa-active-row > :nth-child(4) { grid-column: 2; grid-row: 1; }
+
+  /* Reschedule requested: the value is two lines under an inline label, so
+     the label needs air beneath it or it reads as line one of the value. */
+  .fa-active-reschedule-value { margin-top: 4px; }
+
+  /* Column labels don't survive the stack — each field carries its own inline
+     label instead. */
+  .fa-active-row--head { display: none; }
+  .fa-active-mobile-label {
+    display: inline;
+    font-weight: 700;
+    text-transform: uppercase;
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    color: #7A8899;
+  }
+
+  /* Controls stack: search on top, staff filter directly under it, both flush
+     with the container (and so with the cards below). The "Filter by Staff"
+     label is dropped so the two controls match — the select's "All Staff"
+     option carries the meaning, the same way the search input leans on its
+     placeholder. */
+  .fa-active-filter {
+    margin-left: 0;
+    width: 100%;
+  }
+  .fa-active-filter-label { display: none; }
+  .fa-active-filter-select { flex: 1; }
+}
+
 /* History cards. The same bug as the active card above, in miniature, on the
    page right next to it — so retuned the same way rather than left to scroll.
 

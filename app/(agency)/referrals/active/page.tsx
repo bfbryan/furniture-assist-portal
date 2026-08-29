@@ -11,10 +11,7 @@ import {
   getReferralsByAgencyId,
 } from '@/lib/airtable'
 import ReferralTable from '@/components/agency/ReferralTable'
-import {
-  StaffFilterProvider,
-  ActiveHeroStats,
-} from '@/components/agency/ActiveReferralsFilter'
+import { StaffFilterProvider } from '@/components/agency/ActiveReferralsFilter'
 import { cityStateZip } from '@/lib/address'
 
 // Active = not yet approved OR upcoming appointment.
@@ -73,22 +70,20 @@ export default async function ActiveReferralsPage() {
 
   const activeReferrals = allReferrals.filter(isActive)
 
-  // The Pending / Scheduled counts used to be computed right here, over the
-  // whole agency, and rendered into the hero below — while the Filter by Staff
-  // dropdown inside ReferralTable filtered the list in the browser. The two
-  // never met, so the numbers sat still while the list changed underneath
-  // them. Both now read one filtered list held by StaffFilterProvider, which
-  // is why it wraps the hero and the table together. Definitions themselves
-  // are unchanged; see components/agency/ActiveReferralsFilter.tsx.
+  // StaffFilterProvider holds the active set + the staff filter; the table
+  // (and its search) read from it. It used to also feed Pending / Scheduled
+  // count tiles in the hero — those were removed (they duplicated the
+  // dashboard and neither was actionable), which is what gives the navy
+  // header back its height.
   return (
     <StaffFilterProvider referrals={activeReferrals}>
     <div className="min-h-screen bg-[#F7F5F1]">
 
       {/* Hero */}
-      <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-9">
+      <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-7">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-6">
 
-          {/* Left — Agency + Staff info blocks */}
+          {/* Agency + Staff info blocks */}
           <div className="flex gap-10 flex-wrap">
 
             {/* Agency block */}
@@ -127,10 +122,6 @@ export default async function ActiveReferralsPage() {
             </div>
 
           </div>
-
-          {/* Right — Stats. Same two tiles, same markup; they moved into a
-              client component only so they can see the staff filter. */}
-          <ActiveHeroStats />
 
         </div>
       </div>
