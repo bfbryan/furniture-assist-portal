@@ -1,74 +1,68 @@
 // app/(agency)/referrals/history/HistoryClient.tsx
-// Agency history — search and filter chips over a flat list of ClientCard-style
-// rows (same visual as Active/Dashboard), most recent first.
 //
-// Ordered by appointment date, falling back to the referral date for rejected
-// referrals, which never get an appointment.
+// Agency history — a sibling of the Active page (components/agency/
+// ReferralTable.tsx): one grouped list, one header row per section, the same
+// ⋯ overflow menu. Grouped by month, newest first; History is uniformly past,
+// so there is no per-group accent colour the way Active has.
 //
-// The staff filter is NOT local state any more. It lives in the same
-// StaffFilterProvider the Active page uses (components/agency/
-// ActiveReferralsFilter.tsx), because the four header tiles are rendered by the
-// page's hero, outside this component, and had no way to see a selection made
-// down here - so picking a staff member re-drew the list and left the numbers
-// above it untouched, exactly as it used to on Active. HistoryHeroStats below
-// is the hero's half of that; everything else on this page filters on top of
-// what the provider hands back.
+// The staff filter lives in the StaffFilterProvider the Active page also uses
+// (components/agency/ActiveReferralsFilter.tsx); this component reads the
+// staff-scoped set from it and layers search, a date-range dropdown and the
+// outcome pills on top — none of which move client-side filtering off the
+// server-side role scoping the page already applied.
 
 'use client'
 
-import { useState, useMemo } from 'react'
-import { addDaysISO, easternTodayISO } from '@/lib/dates'
+import { useState, useMemo, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { addDaysISO, easternTodayISO, formatDateOnly } from '@/lib/dates'
 import { matchesSearch } from '@/lib/search'
+import { clientAddressLine } from '@/lib/address'
+import { effectiveAppointmentDate } from '@/lib/referrals/effective-date'
+import { withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
+import { agencyReferralActions } from '@/lib/referrals/agency-actions'
 import { useStaffFilter } from '@/components/agency/ActiveReferralsFilter'
+import {
+  RescheduleModal,
+  type AvailableDate,
+  type RescheduleModalState,
+} from '@/components/agency/ReferralActionModals'
+import {
+  OverflowMenu,
+  ColumnHead,
+  DOC_ICON,
+  RESCHEDULE_ICON,
+  type MenuItem,
+} from '@/components/agency/referral-list-ui'
 
 export type Referral = {
   id: string
   clientName: string
   referralDate: string
   appointmentDate: string | null
-  appointmentTime: string | null
+  originalAppointmentDate: string | null
   referralReview: string
   appointmentStatus: string
-  appointmentSlipUrl: string
   clientReceiptUrl: string | null
-  dataPageUrl: string
   referredBy: string | null
   address: string | null
   address2: string | null
   city: string | null
   state: string | null
   zip: string | null
-  phone: string | null
 }
 
-type StatusFilter = 'all' | 'completed' | 'missed' | 'cancelled' | 'rejected' | 'withdrawn'
+type OutcomeKey = 'completed' | 'missed' | 'cancelled' | 'rejected' | 'withdrawn'
+type StatusFilter = 'all' | OutcomeKey
 type DateRange = '30' | '60' | '90' | '180' | 'all'
 
-// ---------- helpers ----------
+// -------------------------------------------------------------- classification
 
-function formatShortDate(iso: string | null): string {
-  if (!iso) return '—'
-  const [y, m, d] = iso.split('-').map(Number)
-  const dt = new Date(y, m - 1, d, 12, 0, 0)
-  return dt.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
-}
-
-// The date a referral is filed under: when the appointment happened, or when it
-// was submitted if it never got one (rejected referrals have no appointment).
-function activityDate(r: Referral): string {
-  return r.appointmentDate ?? r.referralDate ?? ''
-}
-
-function outcomeOf(r: Referral): 'completed' | 'missed' | 'cancelled' | 'rejected' | 'withdrawn' | 'other' {
+function outcomeOf(r: Referral): OutcomeKey | 'other' {
   if (r.referralReview === 'Rejected') return 'rejected'
-  // Withdrawn is the agency's own doing, not a refusal. Without its own
-  // outcome it fell through to 'other', which OUTCOME_META resolves to the
-  // Cancelled styling and label — so a referral the agency withdrew read back
-  // to them as "Cancelled", i.e. as something Furniture Assist did.
+  // Withdrawn is the agency's own doing, not a refusal — it needs its own
+  // outcome or it reads back to them as "Cancelled", i.e. as something
+  // Furniture Assist did.
   if (r.referralReview === 'Withdrawn') return 'withdrawn'
   if (r.appointmentStatus === 'Completed') return 'completed'
   if (r.appointmentStatus === 'No Show') return 'missed'
@@ -76,39 +70,57 @@ function outcomeOf(r: Referral): 'completed' | 'missed' | 'cancelled' | 'rejecte
   return 'other'
 }
 
-const OUTCOME_META: Record<
-  string,
-  { label: string; accent: string; pillBg: string; pillText: string }
-> = {
-  completed: { label: 'Completed',          accent: '#2A7F6F', pillBg: '#EAF4F2', pillText: '#2A7F6F' },
-  missed:    { label: 'Missed appointment', accent: '#C9A84C', pillBg: '#FEF6E7', pillText: '#B98A29' },
-  cancelled: { label: 'Cancelled',          accent: '#C0392B', pillBg: '#FDEDEC', pillText: '#C0392B' },
-  rejected:  { label: 'Rejected',           accent: '#C0392B', pillBg: '#FDEDEC', pillText: '#C0392B' },
-  withdrawn: { label: 'Withdrawn',          accent: '#7A8899', pillBg: '#F0F0F0', pillText: '#7A8899' },
+// The date a referral is filed under: the effective appointment date (live, or
+// the Original Appointment snapshot a cancel leaves behind), or the referral
+// date for outcomes that never had an appointment. Drives the month grouping,
+// the within-month sort and the date-range filter.
+function filingDate(r: Referral): string {
+  return effectiveAppointmentDate(r) ?? r.referralDate ?? ''
 }
 
-const STATUS_CHIPS: Array<{ key: StatusFilter; label: string }> = [
-  { key: 'all',       label: 'ALL' },
-  { key: 'completed', label: 'COMPLETED' },
-  { key: 'missed',    label: 'MISSED APPOINTMENT' },
-  { key: 'cancelled', label: 'CANCELLED' },
-  { key: 'rejected',  label: 'REJECTED' },
-  { key: 'withdrawn', label: 'WITHDRAWN' },
-]
+// ---------------------------------------------------------------------- styling
 
-// Shared by all three filter selects so they read as one set of controls.
+// Matches the referral detail page's header pill colours.
+const OUTCOME_PILL: Record<OutcomeKey, { label: string; bg: string; fg: string }> = {
+  completed: { label: 'Completed', bg: 'rgba(42,127,111,0.12)', fg: '#1E6B58' },
+  missed:    { label: 'Missed',    bg: 'rgba(201,168,76,0.18)', fg: '#8B7724' },
+  cancelled: { label: 'Cancelled', bg: 'rgba(192,57,43,0.10)', fg: '#A5342A' },
+  rejected:  { label: 'Rejected',  bg: 'rgba(192,57,43,0.10)', fg: '#A5342A' },
+  withdrawn: { label: 'Withdrawn', bg: '#EDEBE7',              fg: '#7A8899' },
+}
+
+// Sibling of ReferralTable's DATE_HEADING. Navy, not grey — the column header
+// row below it is small grey text, so a grey heading read as one block with it
+// rather than a tier above. Top margin opens the gap between months; bottom
+// margin separates the heading from the column labels. First month overrides
+// the top margin down — nothing sits above it but the card padding.
+const MONTH_HEADING: React.CSSProperties = {
+  fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
+  textTransform: 'uppercase', color: '#1B2B4B', margin: '34px 0 10px',
+}
+
 const FILTER_SELECT: React.CSSProperties = {
-  padding: '7px 14px',
-  borderRadius: '7px',
-  border: '1px solid #EDE9E1',
-  fontSize: '13px',
-  color: '#2C3A4A',
-  background: 'white',
-  cursor: 'pointer',
+  padding: '8px 14px', borderRadius: '7px', border: '1px solid #EDE9E1',
+  fontSize: '13px', color: '#2C3A4A', background: 'white', cursor: 'pointer',
   fontFamily: 'inherit',
 }
 
-const DATE_CHIPS: Array<{ key: DateRange; label: string }> = [
+const CARD: React.CSSProperties = {
+  background: 'white', borderRadius: '12px',
+  boxShadow: '0 2px 12px rgba(27,43,75,0.07)', padding: '14px 18px',
+}
+
+const EMPTY_BOX: React.CSSProperties = {
+  background: 'white', borderRadius: '12px', padding: '36px',
+  textAlign: 'center', color: '#7A8899', fontSize: '14px', lineHeight: 1.6,
+}
+
+const CLEAR_LINK: React.CSSProperties = {
+  background: 'none', border: 'none', color: '#2A7F6F', fontWeight: 700,
+  fontSize: '14px', cursor: 'pointer', padding: 0, textDecoration: 'underline',
+}
+
+const DATE_RANGES: Array<{ key: DateRange; label: string }> = [
   { key: '30',  label: 'Last 30 days' },
   { key: '60',  label: 'Last 60 days' },
   { key: '90',  label: 'Last 90 days' },
@@ -116,453 +128,354 @@ const DATE_CHIPS: Array<{ key: DateRange; label: string }> = [
   { key: 'all', label: 'All time' },
 ]
 
-// ---------- receipt icon ----------
-function ReceiptIcon({ url }: { url: string }) {
+const STATUS_PILLS: Array<{ key: StatusFilter; label: string }> = [
+  { key: 'all',       label: 'All' },
+  { key: 'completed', label: 'Completed' },
+  { key: 'missed',    label: 'Missed' },
+  { key: 'cancelled', label: 'Cancelled' },
+  { key: 'rejected',  label: 'Rejected' },
+  { key: 'withdrawn', label: 'Withdrawn' },
+]
+
+// ---------------------------------------------------------------------- cells
+
+function shortDate(iso: string): string {
+  return formatDateOnly(iso, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+// Completed / Missed → the appointment date, navy. Cancelled → the original
+// date, struck through and muted (or a dash if the cancel released no slot to
+// snapshot). Withdrawn / Rejected → a dash.
+function AppointmentCell({ r }: { r: Referral }) {
+  const o = outcomeOf(r)
+  if (o === 'withdrawn' || o === 'rejected') return <span style={{ color: '#9AA6B2' }}>—</span>
+  const d = effectiveAppointmentDate(r)
+  if (!d) return <span style={{ color: '#9AA6B2' }}>—</span>
+  if (o === 'cancelled') {
+    return <span style={{ color: '#7A8899', textDecoration: 'line-through' }}>{shortDate(d)}</span>
+  }
+  return <span style={{ color: '#1B2B4B', fontWeight: 700 }}>{shortDate(d)}</span>
+}
+
+function OutcomePill({ r }: { r: Referral }) {
+  const o = outcomeOf(r)
+  if (o === 'other') return <span style={{ color: '#9AA6B2' }}>—</span>
+  const m = OUTCOME_PILL[o]
   return (
-    <a
-      href={url}
-      target="_blank"
-      rel="noreferrer"
-      title="View Receipt"
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        width: '32px',
-        height: '32px',
-        borderRadius: '6px',
-        background: '#EAF4F2',
-        color: '#2A7F6F',
-        textDecoration: 'none',
-      }}
-    >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-      >
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-        <polyline points="14 2 14 8 20 8" />
-        <line x1="16" y1="13" x2="8" y2="13" />
-        <line x1="16" y1="17" x2="8" y2="17" />
-        <line x1="10" y1="9" x2="8" y2="9" />
-      </svg>
-    </a>
+    <span style={{
+      display: 'inline-block', fontSize: '11px', fontWeight: 700,
+      padding: '3px 10px', borderRadius: '999px', whiteSpace: 'nowrap',
+      background: m.bg, color: m.fg,
+    }}>
+      {m.label}
+    </span>
   )
 }
 
-// ---------- one card row ----------
-function HistoryCard({ r }: { r: Referral }) {
-  const outcome = outcomeOf(r)
-  const meta = OUTCOME_META[outcome] ?? OUTCOME_META.cancelled
-  const addressLine1 = [r.address, r.address2].filter(Boolean).join(', ')
-  const addressLine2 = [r.city, r.state, r.zip].filter(Boolean).join(' ')
+// ------------------------------------------------------------------------- row
 
+function HistoryRow({
+  r, items, menuOpen, onMenuOpen, onMenuClose,
+}: {
+  r: Referral
+  items: MenuItem[]
+  menuOpen: boolean
+  onMenuOpen: () => void
+  onMenuClose: () => void
+}) {
   return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '4px 1fr',
-        background: 'white',
-        borderRadius: '10px',
-        boxShadow: '0 1px 4px rgba(27,43,75,0.05)',
-        marginBottom: '8px',
-      }}
-    >
-      <div style={{ background: meta.accent, borderTopLeftRadius: '10px', borderBottomLeftRadius: '10px' }} />
-      {/* Column tracks live in globals.css (.fa-history-card-grid) so they can stack below 1280px. */}
-      <div
-        className="fa-history-card-grid"
-        style={{
-          display: 'grid',
-          alignItems: 'start',
-          gap: '10px',
-          padding: '14px 16px',
-        }}
-      >
-        {/* CLIENT NAME */}
-        <div>
-          <div style={labelStyle}>Client Name</div>
-          <a href={`/referrals/${r.id}`} style={{ textDecoration: 'none' }}>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 600, fontSize: '13px', color: '#2A7F6F' }}>
-              {r.clientName}
-            </div>
-          </a>
-          {r.phone && (
-            <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '2px' }}>{r.phone}</div>
-          )}
+    <div className="fa-history-row" style={{ borderTop: '1px solid #F3F0EA' }}>
+      <div style={{ minWidth: 0 }}>
+        {/* lineHeight 1.3 (Lato's default runs ~1.44) tightens the two-line
+            client block — part of the density pass; nothing else changes. */}
+        <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 600, lineHeight: 1.3, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
+          {r.clientName}
+        </a>
+        <div style={{ fontSize: '12px', lineHeight: 1.3, color: '#7A8899', marginTop: '1px', overflowWrap: 'anywhere' }}>
+          {clientAddressLine(r) || '—'}
         </div>
+      </div>
 
-        {/* ADDRESS */}
-        <div>
-          <div style={labelStyle}>Address</div>
-          {addressLine1 && <div style={valueStyle}>{addressLine1}</div>}
-          {addressLine2 && <div style={valueStyle}>{addressLine2}</div>}
-          {!addressLine1 && !addressLine2 && <div style={valueStyle}>—</div>}
-        </div>
+      <div style={{ fontSize: '12px', color: '#7A8899', minWidth: 0, overflowWrap: 'anywhere' }}>
+        <span className="fa-active-mobile-label">Referred by </span>{r.referredBy ?? '—'}
+      </div>
 
-        {/* REFERRED BY */}
-        <div>
-          <div style={labelStyle}>Referred By</div>
-          <div style={valueStyle}>{r.referredBy ?? '—'}</div>
-        </div>
+      <div style={{ minWidth: 0, fontSize: '12px' }}>
+        <span className="fa-active-mobile-label">Appointment </span><AppointmentCell r={r} />
+      </div>
 
-        {/* SUBMITTED */}
-        <div>
-          <div style={labelStyle}>Submitted</div>
-          <div style={valueStyle}>{formatShortDate(r.referralDate)}</div>
-        </div>
+      <div style={{ minWidth: 0, fontSize: '12px' }}>
+        <span className="fa-active-mobile-label">Outcome </span><OutcomePill r={r} />
+      </div>
 
-        {/* APPOINTMENT */}
-        <div>
-          <div style={labelStyle}>Appointment</div>
-          <div style={valueStyle}>{r.appointmentDate ? formatShortDate(r.appointmentDate) : '—'}</div>
-        </div>
-
-        {/* OUTCOME */}
-        <div>
-          <div style={labelStyle}>Outcome</div>
-          <span
-            style={{
-              display: 'inline-block',
-              fontSize: '11px',
-              fontWeight: 700,
-              padding: '3px 9px',
-              borderRadius: '12px',
-              background: meta.pillBg,
-              color: meta.pillText,
-            }}
-          >
-            {meta.label}
-          </span>
-        </div>
-
-        {/* ACTION — Receipt */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingTop: '14px' }}>
-          {outcome === 'completed' && r.clientReceiptUrl && <ReceiptIcon url={r.clientReceiptUrl} />}
-        </div>
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        {items.length > 0 && (
+          <OverflowMenu
+            open={menuOpen}
+            onOpen={onMenuOpen}
+            onClose={onMenuClose}
+            items={items}
+            label={`Actions for ${r.clientName}`}
+          />
+        )}
       </div>
     </div>
   )
 }
 
-const labelStyle: React.CSSProperties = {
-  fontSize: '11px',
-  fontWeight: 700,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  color: '#1B2B4B',
-  marginBottom: '6px',
-}
-const valueStyle: React.CSSProperties = {
-  fontSize: '11px',
-  color: '#7A8899',
-}
+// ------------------------------------------------------------------------ page
 
-// ---------- hero tiles ----------
-
-/**
- * The four KPI tiles in the page hero: Completed / Missed / Cancelled /
- * Rejected.
- *
- * Same four tiles, same order, same markup as the ones they replace in
- * app/(agency)/referrals/history/page.tsx - they moved into a client component
- * for one reason, which is that they now count the STAFF-FILTERED set instead
- * of the whole agency. That is what ActiveHeroStats does on the Active page and
- * this is the same provider.
- *
- * The one thing that did change: each count now goes through outcomeOf(), the
- * same classifier the filter chips and the outcome pills already use, rather
- * than testing a raw status inline. It is the same number today - no referral
- * in the base is both Rejected and Completed/Cancelled/No Show, which is the
- * only case where the two could disagree - and it means a tile and its chip
- * can no longer drift apart.
- */
-export function HistoryHeroStats() {
-  const { filtered } = useStaffFilter<Referral>()
-
-  const counts = useMemo(() => {
-    const c = { completed: 0, missed: 0, cancelled: 0, rejected: 0 }
-    for (const r of filtered) {
-      const o = outcomeOf(r)
-      if (o in c) c[o as keyof typeof c] += 1
-    }
-    return c
-  }, [filtered])
-
-  const tiles: Array<{ label: string; value: number; emphasized?: boolean }> = [
-    { label: 'Completed', value: counts.completed, emphasized: true },
-    { label: 'Missed', value: counts.missed },
-    { label: 'Cancelled', value: counts.cancelled },
-    { label: 'Rejected', value: counts.rejected },
-  ]
-
-  return (
-    <div className="fa-hero-stats flex items-center gap-4 flex-wrap">
-      {tiles.map(t => (
-        <div
-          key={t.label}
-          className={`bg-white/8 border rounded-xl px-5 py-3 text-center min-w-[80px] ${
-            t.emphasized ? 'border-[rgba(58,160,141,0.4)]' : 'border-white/12'
-          }`}
-        >
-          <div
-            className={`font-montserrat font-extrabold text-2xl leading-none mb-1 ${
-              t.emphasized ? 'text-[#3AA08D]' : 'text-white'
-            }`}
-          >
-            {t.value}
-          </div>
-          <div className="text-xs font-bold uppercase tracking-wider text-white/45">
-            {t.label}
-          </div>
-        </div>
-      ))}
-    </div>
-  )
-}
-
-// ---------- main ----------
 export default function HistoryClient({ isAdmin }: { isAdmin: boolean }) {
-  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
-  const [dateRange, setDateRange] = useState<DateRange>('60')
-  const [search, setSearch] = useState('')
-
-  // Referrals, the staff selection and the staff-name list all come from the
-  // provider now, so this list and the hero tiles above cannot disagree.
-  // `staffFiltered` is the set the tiles are counting; the three controls below
-  // narrow it further for the list only.
+  const router = useRouter()
   const {
-    staffFilter,
-    setStaffFilter,
-    staffNames,
-    filtered: staffFiltered,
+    staffFilter, setStaffFilter, staffNames,
+    referrals: allHistory, filtered: staffFiltered,
   } = useStaffFilter<Referral>()
 
-  // Apply search + status + date range on top of the staff selection.
-  const visible = useMemo(() => {
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [dateRange, setDateRange] = useState<DateRange>('60')
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+
+  // Reschedule flow — a missed appointment still inside the window can be
+  // picked back up. Same modal and endpoint the Active list and the detail
+  // page use.
+  const [rescheduleModal, setRescheduleModal] = useState<RescheduleModalState>({ open: false, id: '', name: '' })
+  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
+  const [loading, setLoading] = useState(false)
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
+      .then(res => res.json())
+      .then(data => setAvailableDates(Array.isArray(data) ? data : []))
+      .catch(() => {})
+  }, [])
+
+  const openReschedule = (id: string, name: string) => {
+    setActionError(null)
+    setRescheduleModal({ open: true, id, name })
+  }
+
+  const handleRescheduleConfirm = async (
+    preferredDate: string | null,
+    flexible: boolean,
+    preferredTime: string | null,
+  ) => {
+    setLoading(true)
+    setActionError(null)
+    try {
+      const res = await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ preferredDate, preferredTime, flexible }),
+      })
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        setActionError(body.error || 'That did not go through. Please try again.')
+        return
+      }
+      setRescheduleModal({ open: false, id: '', name: '' })
+      router.refresh()
+    } catch {
+      setActionError('Network error. Please try again.')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  // Search + date range on top of the staff selection. Status is applied AFTER
+  // this so the pill counts (computed from preStatus) don't collapse to the
+  // one status you clicked.
+  const preStatus = useMemo(() => {
     const q = search.trim().toLowerCase()
-    // Cutoff as an Eastern calendar date. It used to be a wall-clock instant on
-    // the ambient zone, which both put the boundary in the wrong place on
-    // Vercel and made the oldest day fall in or out depending on the time of
-    // day you happened to look.
     const cutoffISO =
       dateRange === 'all' ? null : addDaysISO(easternTodayISO(), -parseInt(dateRange, 10))
     return staffFiltered.filter(r => {
       if (!matchesSearch(q, r.clientName)) return false
-      const o = outcomeOf(r)
-      if (statusFilter !== 'all' && o !== statusFilter) return false
-
-      // date range checks appointment date (or referral date for rejected).
       if (cutoffISO) {
-        const dateStr = r.appointmentDate ?? r.referralDate
-        if (dateStr && dateStr.slice(0, 10) < cutoffISO) return false
+        const d = filingDate(r)
+        if (d && d.slice(0, 10) < cutoffISO) return false
       }
       return true
     })
-  }, [staffFiltered, search, statusFilter, dateRange])
+  }, [staffFiltered, search, dateRange])
 
-  // Flat list, most recent first. History is a lookup ("when did we refer this
-  // person, and what came of it"), not a schedule, so grouping by Saturday —
-  // which is how Dawson works week to week — buried each card under a header
-  // and, with only one or two referrals per Saturday, made the page mostly
-  // chrome. Recency plus the search box above answers both jobs directly.
-  const ordered = useMemo(() => {
-    return [...visible].sort((a, b) => {
-      const da = activityDate(a)
-      const db = activityDate(b)
-      if (da !== db) return da < db ? 1 : -1
-      return a.clientName.localeCompare(b.clientName)
+  const counts = useMemo(() => {
+    const c: Record<OutcomeKey, number> = { completed: 0, missed: 0, cancelled: 0, rejected: 0, withdrawn: 0 }
+    for (const r of preStatus) {
+      const o = outcomeOf(r)
+      if (o !== 'other') c[o] += 1
+    }
+    return c
+  }, [preStatus])
+
+  const visible = useMemo(
+    () => (statusFilter === 'all' ? preStatus : preStatus.filter(r => outcomeOf(r) === statusFilter)),
+    [preStatus, statusFilter],
+  )
+
+  // Group by month, newest first; within a month, newest appointment first.
+  const months = useMemo(() => {
+    const m = new Map<string, Referral[]>()
+    for (const r of visible) {
+      const d = filingDate(r)
+      const key = d ? d.slice(0, 7) : 'undated'
+      if (!m.has(key)) m.set(key, [])
+      m.get(key)!.push(r)
+    }
+    const keys = [...m.keys()].sort((a, z) => {
+      if (a === 'undated') return 1
+      if (z === 'undated') return -1
+      return a < z ? 1 : a > z ? -1 : 0
     })
+    return keys.map(key => ({
+      key,
+      label: key === 'undated'
+        ? 'UNDATED'
+        : formatDateOnly(`${key}-01`, { month: 'long', year: 'numeric' }).toUpperCase(),
+      rows: m.get(key)!.slice().sort((a, z) => {
+        const da = filingDate(a)
+        const db = filingDate(z)
+        if (da !== db) return da < db ? 1 : -1
+        return a.clientName.localeCompare(z.clientName)
+      }),
+    }))
   }, [visible])
+
+  const menuItemsFor = (r: Referral): MenuItem[] => {
+    const o = outcomeOf(r)
+    if (o === 'completed') {
+      return r.clientReceiptUrl
+        ? [{ label: 'Client Receipt', color: '#2A7F6F', icon: DOC_ICON, href: r.clientReceiptUrl }]
+        : []
+    }
+    if (o === 'missed') {
+      const within = withinNoShowRescheduleWindow(r.appointmentDate)
+      const { isReschedulable } = agencyReferralActions('Missed Appointment', within)
+      return isReschedulable
+        ? [{ label: 'Reschedule', color: '#C9A84C', icon: RESCHEDULE_ICON, onClick: () => openReschedule(r.id, r.clientName) }]
+        : []
+    }
+    return []
+  }
+
+  const clearFilters = () => {
+    setSearch('')
+    setStatusFilter('all')
+    setDateRange('all')
+    setStaffFilter('all')
+  }
 
   return (
     <>
-      {/* Staff filter — own line, admin only */}
-      {isAdmin && staffNames.length > 0 && (
-        <div style={{ marginBottom: '18px' }}>
-          <label
-            style={{
-              display: 'inline-block',
-              fontSize: '11px',
-              fontWeight: 700,
-              letterSpacing: '0.10em',
-              textTransform: 'uppercase',
-              color: '#7A8899',
-              marginRight: '10px',
-            }}
-          >
-            Filter by staff:
-          </label>
-          {/* Width lives in globals.css (.fa-history-staff-select): the label
-              plus a 200px select overflows a phone, so below 1280px the select
-              takes its own full-width line. */}
+      <RescheduleModal
+        modal={rescheduleModal}
+        availableDates={availableDates}
+        onConfirm={handleRescheduleConfirm}
+        onClose={() => { setActionError(null); setRescheduleModal({ open: false, id: '', name: '' }) }}
+        loading={loading}
+        submitError={actionError}
+      />
+
+      {/* Controls — search left (fills the row), then staff filter (admin) and
+          the date-range dropdown, pinned right. No side padding, so the ends
+          line up with the card below, same as Active. */}
+      <div className="fa-active-controls" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '16px' }}>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Search by client name"
+          style={{ flex: '1 1 240px', minWidth: 0, padding: '8px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#2C3A4A', background: 'white', fontFamily: 'inherit', outline: 'none' }}
+        />
+        <div className="fa-history-filters">
+          {isAdmin && staffNames.length > 0 && (
+            <select
+              aria-label="Filter by staff"
+              value={staffFilter}
+              onChange={e => setStaffFilter(e.target.value)}
+              style={FILTER_SELECT}
+            >
+              <option value="all">All Staff</option>
+              {staffNames.map(name => <option key={name} value={name}>{name}</option>)}
+            </select>
+          )}
           <select
-            className="fa-history-staff-select"
-            value={staffFilter}
-            onChange={e => setStaffFilter(e.target.value)}
+            aria-label="Date range"
+            value={dateRange}
+            onChange={e => setDateRange(e.target.value as DateRange)}
             style={FILTER_SELECT}
           >
-            <option value="all">All Staff</option>
-            {staffNames.map(name => (
-              <option key={name} value={name}>
-                {name}
-              </option>
-            ))}
+            {DATE_RANGES.map(d => <option key={d.key} value={d.key}>{d.label}</option>)}
           </select>
         </div>
-      )}
-
-      {/* Row 1 — search + date range chips */}
-      <div
-        style={{
-          display: 'flex',
-          flexWrap: 'wrap',
-          alignItems: 'center',
-          gap: '10px',
-          marginBottom: '10px',
-        }}
-      >
-        <div style={{ position: 'relative', flex: '1 1 240px', minWidth: '220px', maxWidth: '340px' }}>
-          <svg
-            width="14"
-            height="14"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="#7A8899"
-            strokeWidth="2"
-            strokeLinecap="round"
-            strokeLinejoin="round"
-            style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)' }}
-          >
-            <circle cx="11" cy="11" r="8" />
-            <line x1="21" y1="21" x2="16.65" y2="16.65" />
-          </svg>
-          <input
-            type="text"
-            placeholder="Search by client name..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-            style={{
-              width: '100%',
-              padding: '8px 12px 8px 34px',
-              borderRadius: '7px',
-              border: '1px solid #EDE9E1',
-              fontSize: '13px',
-              color: '#2C3A4A',
-              background: 'white',
-              outline: 'none',
-              fontFamily: 'inherit',
-            }}
-          />
-        </div>
-        {/* Wrapping lives in globals.css (.fa-history-chips): below 1280px both
-            chip rows become one-line horizontal strips instead of wrapping to
-            two rows each and pushing the results off screen. */}
-        <div className="fa-history-chips" style={{ gap: '6px' }}>
-          {DATE_CHIPS.map(c => {
-            const active = dateRange === c.key
-            return (
-              <button
-                key={c.key}
-                onClick={() => setDateRange(c.key)}
-                style={{
-                  padding: '7px 14px',
-                  borderRadius: '999px',
-                  border: `1px solid ${active ? '#1B2B4B' : '#EDE9E1'}`,
-                  background: active ? '#1B2B4B' : '#F5F1EA',
-                  color: active ? 'white' : '#2C3A4A',
-                  fontSize: '12px',
-                  fontWeight: active ? 700 : 500,
-                  cursor: 'pointer',
-                  fontFamily: 'inherit',
-                }}
-              >
-                {c.label}
-              </button>
-            )
-          })}
-        </div>
       </div>
 
-      {/* Below 1280px the two chip rows are replaced by these — same state, so
-          the desktop chips are untouched. Ten chips wrapped to four rows owned
-          most of the screen; as one-line strips they were compact but clipped
-          at the right edge, which read as broken. Two selects are compact and
-          complete, and match the staff filter directly above them. Their
-          options are self-labelling, so no extra label rows are needed. */}
-      <div className="fa-history-selects" style={{ gap: '8px', marginBottom: '22px' }}>
-        <select
-          value={dateRange}
-          onChange={e => setDateRange(e.target.value as DateRange)}
-          style={FILTER_SELECT}
-        >
-          {DATE_CHIPS.map(c => (
-            <option key={c.key} value={c.key}>
-              {c.label}
-            </option>
-          ))}
-        </select>
-        <select
-          value={statusFilter}
-          onChange={e => setStatusFilter(e.target.value as StatusFilter)}
-          style={FILTER_SELECT}
-        >
-          {STATUS_CHIPS.map(c => (
-            <option key={c.key} value={c.key}>
-              {c.key === 'all' ? 'All outcomes' : c.label}
-            </option>
-          ))}
-        </select>
-      </div>
-
-      {/* Row 2 — status chips */}
-      <div className="fa-history-chips" style={{ gap: '6px', marginBottom: '22px' }}>
-        {STATUS_CHIPS.map(c => {
-          const active = statusFilter === c.key
+      {/* Outcome pills with counts — the old stat cards and status tabs merged.
+          Counts are over the search + date-range set, so they don't collapse
+          when a pill is selected. Zero pills mute but stay clickable. */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px', marginBottom: '22px' }}>
+        {STATUS_PILLS.map(p => {
+          const n = p.key === 'all' ? preStatus.length : counts[p.key as OutcomeKey]
+          const active = statusFilter === p.key
+          const muted = n === 0 && p.key !== 'all' && !active
           return (
             <button
-              key={c.key}
-              onClick={() => setStatusFilter(c.key)}
+              key={p.key}
+              type="button"
+              aria-pressed={active}
+              onClick={() => setStatusFilter(p.key)}
               style={{
-                padding: '7px 14px',
-                borderRadius: '999px',
-                border: 'none',
-                background: active ? '#2A7F6F' : 'transparent',
-                color: active ? 'white' : '#7A8899',
-                fontSize: '11px',
-                fontWeight: 700,
-                letterSpacing: '0.06em',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
+                display: 'inline-flex', alignItems: 'baseline', gap: '6px',
+                padding: '6px 12px', borderRadius: '999px', cursor: 'pointer',
+                fontFamily: 'inherit', fontSize: '12px', fontWeight: 600,
+                border: `1px solid ${active ? '#1B2B4B' : '#EDE9E1'}`,
+                background: active ? '#1B2B4B' : 'white',
+                color: active ? 'white' : '#2C3A4A',
+                opacity: muted ? 0.45 : 1,
               }}
             >
-              {c.label}
+              {p.label}
+              <span style={{ fontWeight: 500, opacity: 0.65 }}>{n}</span>
             </button>
           )
         })}
       </div>
 
-      {ordered.length === 0 ? (
-        <div
-          style={{
-            background: 'white',
-            borderRadius: '12px',
-            padding: '36px',
-            textAlign: 'center',
-            color: '#7A8899',
-            fontSize: '14px',
-          }}
-        >
-          No referrals match your filters.
+      {allHistory.length === 0 ? (
+        <div style={EMPTY_BOX}>
+          No past referrals yet. Completed, cancelled and rejected referrals will appear here.
+        </div>
+      ) : months.length === 0 ? (
+        <div style={EMPTY_BOX}>
+          No referrals match your filters.{' '}
+          <button type="button" onClick={clearFilters} style={CLEAR_LINK}>Clear filters</button>
         </div>
       ) : (
-        ordered.map(r => <HistoryCard key={r.id} r={r} />)
+        <section style={CARD}>
+          {months.map((mo, mi) => (
+            <div key={mo.key}>
+              <div style={mi === 0 ? { ...MONTH_HEADING, marginTop: '2px' } : MONTH_HEADING}>
+                {mo.label}
+              </div>
+              <ColumnHead
+                columns={['Client', 'Referred by', 'Appointment', 'Outcome']}
+                className="fa-history-row fa-history-row--head"
+              />
+              {mo.rows.map(r => (
+                <HistoryRow
+                  key={r.id}
+                  r={r}
+                  items={menuItemsFor(r)}
+                  menuOpen={openMenu === r.id}
+                  onMenuOpen={() => setOpenMenu(r.id)}
+                  onMenuClose={() => setOpenMenu(null)}
+                />
+              ))}
+            </div>
+          ))}
+        </section>
       )}
     </>
   )

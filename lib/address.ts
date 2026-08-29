@@ -17,3 +17,22 @@ export function cityStateZip(
   const locality = [city, state].filter(Boolean).join(', ')
   return [locality, zip].filter(Boolean).join(' ')
 }
+
+/**
+ * One line — "12 Main St, Apt 2, Newark, NJ 07101" — from whichever client
+ * address parts are present. '' when none are. Shared by the Active and
+ * History referral lists, which print the address under the client name.
+ */
+export function clientAddressLine(parts: {
+  address: string | null | undefined
+  address2: string | null | undefined
+  city: string | null | undefined
+  state: string | null | undefined
+  zip: string | null | undefined
+}): string {
+  const stateZip = [parts.state, parts.zip].filter(Boolean).join(' ')
+  return [parts.address, parts.address2, parts.city, stateZip]
+    .map(s => (s ?? '').trim())
+    .filter(Boolean)
+    .join(', ')
+}

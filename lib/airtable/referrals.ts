@@ -66,6 +66,16 @@ function shapeReferralListItem(record: any) {
     state: safeLookupString(f['State']),
     zip: safeLookupString(f['Zip']),
     phone: safeLookupString(f['Phone']),
+    // History reads these. clientReceiptUrl gates the "Client Receipt" menu
+    // item on a completed referral; the Original Appointment snapshot is the
+    // fallback date for a cancelled one, whose live Appointment Date lookup
+    // goes empty when the Saturday link is cleared. Same shaping as
+    // getReferralById. See lib/referrals/effective-date.ts.
+    clientReceiptUrl: attachmentUrl(f['Client Receipt']),
+    originalAppointmentDate: Array.isArray(f['Original Appointment Date'])
+      ? ((f['Original Appointment Date'] as string[])[0] ?? null)
+      : ((f['Original Appointment Date'] as string) ?? null),
+    originalAppointmentTime: (f['Original Appointment Time'] as string) ?? null,
   }
 }
 
