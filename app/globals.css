@@ -81,7 +81,11 @@ h1, h2, h3, h4, h5, h6 {
    Agency History — grouped-list rework (Sep 2026), the sibling of .fa-active-row
    below. Five columns: client (name + address) | referred by | appointment |
    outcome pill | the ⋯ menu. One label row per month section.
-   --------------------------------------------------------------------------- */
+
+   Denser than .fa-active-row: History is a scanning list, so the block padding
+   is 4px rather than 12px, the address's top margin is 1px, and the client
+   block's line-height is tightened inline (see HistoryClient). Together that's
+   ~33% off the row height. Mobile keeps the roomier 16px — see the media query. */
 .fa-history-row {
   display: grid;
   grid-template-columns:
@@ -92,7 +96,7 @@ h1, h2, h3, h4, h5, h6 {
     36px;                /* ⋯                        */
   gap: 16px;
   align-items: start;
-  padding: 12px 0;
+  padding: 4px 0;
 }
 
 /* Search + staff filter + date range. Wide: the two selects sit together at the

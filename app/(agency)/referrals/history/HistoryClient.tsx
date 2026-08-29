@@ -89,12 +89,14 @@ const OUTCOME_PILL: Record<OutcomeKey, { label: string; bg: string; fg: string }
   withdrawn: { label: 'Withdrawn', bg: '#EDEBE7',              fg: '#7A8899' },
 }
 
-// Sibling of ReferralTable's DATE_HEADING, but grey rather than teal — History
-// is uniformly past. First month overrides the top margin down; nothing sits
-// above it but the card padding.
+// Sibling of ReferralTable's DATE_HEADING. Navy, not grey — the column header
+// row below it is small grey text, so a grey heading read as one block with it
+// rather than a tier above. Top margin opens the gap between months; bottom
+// margin separates the heading from the column labels. First month overrides
+// the top margin down — nothing sits above it but the card padding.
 const MONTH_HEADING: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
-  textTransform: 'uppercase', color: '#7A8899', margin: '24px 0 2px',
+  textTransform: 'uppercase', color: '#1B2B4B', margin: '34px 0 10px',
 }
 
 const FILTER_SELECT: React.CSSProperties = {
@@ -184,10 +186,12 @@ function HistoryRow({
   return (
     <div className="fa-history-row" style={{ borderTop: '1px solid #F3F0EA' }}>
       <div style={{ minWidth: 0 }}>
-        <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 600, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
+        {/* lineHeight 1.3 (Lato's default runs ~1.44) tightens the two-line
+            client block — part of the density pass; nothing else changes. */}
+        <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 600, lineHeight: 1.3, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
           {r.clientName}
         </a>
-        <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '2px', overflowWrap: 'anywhere' }}>
+        <div style={{ fontSize: '12px', lineHeight: 1.3, color: '#7A8899', marginTop: '1px', overflowWrap: 'anywhere' }}>
           {clientAddressLine(r) || '—'}
         </div>
       </div>
