@@ -99,17 +99,20 @@ const SECTION_TITLE: React.CSSProperties = {
   fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: 800,
   letterSpacing: '0.10em', textTransform: 'uppercase', color: '#2A7F6F',
 }
+// Last in the hierarchy — section heading, then the data, then these. They
+// label a structure that's already obvious, so: 10px, light weight, pale
+// grey. Not Montserrat, so 500 renders close to book weight.
 const COL_HEADER: React.CSSProperties = {
-  fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
-  textTransform: 'uppercase', color: '#7A8899',
+  fontSize: '10px', fontWeight: 500, letterSpacing: '0.08em',
+  textTransform: 'uppercase', color: '#9AA6B2',
 }
 // Top margin sets the gap between one Saturday's last row and the next date
-// heading inside the Scheduled card. Was 14px — close enough to the within-
-// section row spacing that consecutive Saturdays ran together. First section
-// overrides this back down (it opens the card, nothing to separate from).
+// heading inside the Scheduled card. 34px read as a page break; 24px keeps
+// the sections distinct without splitting the card. The first section
+// overrides this down to ~21px under the "Scheduled" heading (see below).
 const DATE_HEADING: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
-  textTransform: 'uppercase', color: '#2A7F6F', margin: '34px 0 2px',
+  textTransform: 'uppercase', color: '#2A7F6F', margin: '24px 0 2px',
 }
 
 function Icon({ path, size = 15 }: { path: React.ReactNode; size?: number }) {
@@ -168,11 +171,7 @@ function OverflowMenu({
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => (open ? onClose() : onOpen())}
-        style={{
-          width: '28px', height: '28px', borderRadius: '6px', border: 'none', cursor: 'pointer',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-          background: open ? '#F3F0EA' : 'transparent', color: '#7A8899',
-        }}
+        className="fa-active-menu-trigger"
       >
         <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor">
           <circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>
@@ -226,7 +225,7 @@ function Row({
   return (
     <div className="fa-active-row" style={{ padding: '12px 0', borderTop: '1px solid #F3F0EA', alignItems: 'start' }}>
       <div style={{ minWidth: 0 }}>
-        <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 500, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
+        <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 600, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
           {r.clientName}
         </a>
         <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '2px', overflowWrap: 'anywhere' }}>
@@ -550,7 +549,7 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
                   {/* Date heading introduces the section; column headers sit
                       beneath it, repeated per Saturday so each block is
                       self-labelling however many there are. */}
-                  <div style={gi === 0 ? { ...DATE_HEADING, marginTop: '6px' } : DATE_HEADING}>
+                  <div style={gi === 0 ? { ...DATE_HEADING, marginTop: '18px' } : DATE_HEADING}>
                     {g.date === 'zzzz' ? 'NO DATE' : dateHeading(g.date)}
                   </div>
                   <ColumnHead columns={['Client', 'Referred by', 'Time']} />

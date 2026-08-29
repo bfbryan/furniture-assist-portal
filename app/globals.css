@@ -315,6 +315,29 @@ h1, h2, h3, h4, h5, h6 {
 
 .fa-active-menu-item:hover { background: #F7F5F1; }
 
+/* The ⋯ trigger reads as a real target: 36px hit area, a rest colour dark
+   enough to look tappable, a circular fill on hover and while its menu is
+   open. Styled entirely here — an inline background would outrank :hover. */
+.fa-active-menu-trigger {
+  width: 36px;
+  height: 36px;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  background: transparent;
+  color: #5A6878;
+}
+.fa-active-menu-trigger:hover,
+.fa-active-menu-trigger[aria-expanded='true'] { background: #F7F5F1; }
+
+/* Whole-row hover so a row reads as one live region, not just the linked
+   name inside it. Pairs with the ⋯ hover above. The label row is excluded. */
+.fa-active-row:not(.fa-active-row--head):hover { background: #FAFAF8; }
+
 @media (max-width: 1279.98px) {
   /* Stack, don't compress: client / referred by / date each on their own
      line, ⋯ pinned to the row's top-right. */
