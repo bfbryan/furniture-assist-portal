@@ -138,14 +138,16 @@ type MenuItem = {
 }
 
 // One ⋯ menu. Only one open across the whole list (parent holds `open`);
-// closes on outside click and Escape.
+// closes on outside click and Escape. `label` names the row for screen
+// readers ("Actions for Jane Doe").
 function OverflowMenu({
-  open, onOpen, onClose, items,
+  open, onOpen, onClose, items, label,
 }: {
   open: boolean
   onOpen: () => void
   onClose: () => void
   items: MenuItem[]
+  label: string
 }) {
   const ref = useRef<HTMLDivElement>(null)
 
@@ -167,7 +169,7 @@ function OverflowMenu({
     <div ref={ref} style={{ position: 'relative' }}>
       <button
         type="button"
-        aria-label="Row actions"
+        aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => (open ? onClose() : onOpen())}
@@ -242,7 +244,13 @@ function Row({
       </div>
 
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <OverflowMenu open={menuOpen} onOpen={onMenuOpen} onClose={onMenuClose} items={items} />
+        <OverflowMenu
+          open={menuOpen}
+          onOpen={onMenuOpen}
+          onClose={onMenuClose}
+          items={items}
+          label={`Actions for ${r.clientName}`}
+        />
       </div>
     </div>
   )
