@@ -51,8 +51,8 @@
 // ============================================================
 // Reschedule-existing-no-show branch (Aug 2026)
 // ============================================================
-// First shipped writing 'Appointment Status': 'Unscheduled' and a
-// Preferred Date, on the assumption the same create-time auto-schedule
+// First shipped writing a no-slot Appointment Status ('Pending Schedule')
+// and a Preferred Date, on the assumption the same create-time auto-schedule
 // automation would pick it up and assign a real Appointment Date/Time
 // (see "new referral" scheduling behavior below). In practice it doesn't
 // -- that automation appears to trigger on record CREATION, not on a
@@ -86,7 +86,7 @@
 //   date in normal use.
 //
 //   HISTORY, because the numbers here were wrong for a while: this used to
-//   create the referral 'Unscheduled' and rely on the Airtable automation
+//   create the referral with no slot and rely on the Airtable automation
 //   at-auto-schedule-script.js to assign a date — 7 days minimum on the
 //   specific-date branch, 21 on the flexible one. That automation has been
 //   switched off. The specific-date branch was moved into code first; the
@@ -396,19 +396,23 @@ export async function POST(req: Request) {
   }
 
   // ---- Resolve scheduling for a brand-new referral ----
-  // Previously just set Appointment Status = 'Unscheduled' + Preferred
+  // Previously just set Appointment Status to a no-slot value + Preferred
   // Date and relied on an Airtable auto-schedule automation to assign a
   // real Saturday Schedule link + Appointment Time. Confirmed Aug 2026
-  // that isn't reliably happening -- referrals were landing Unscheduled
-  // with no date/time ever assigned, same symptom as the no-show
-  // reschedule bug. Fixed the same way: look up the Saturday Schedule row
-  // directly and write the assignment ourselves.
+  // that isn't reliably happening -- referrals were landing with no
+  // date/time ever assigned, same symptom as the no-show reschedule bug.
+  // Fixed the same way: look up the Saturday Schedule row directly and
+  // write the assignment ourselves.
   //
   // BOTH branches are now in code. Flexible used to be left on the old
   // automation, which has since been switched off entirely -- so a flexible
-  // referral was created 'Unscheduled' and then nothing on earth moved it.
+  // referral was created with no slot and then nothing on earth moved it.
   // See lib/schedule/flexible.ts for the rule it now follows.
-  let scheduleFields: Record<string, any> = { 'Appointment Status': 'Unscheduled' }
+  //
+  // The initial value is the fall-through only: both branches below
+  // overwrite it with 'Scheduled'. 'Pending Schedule' is the single
+  // no-slot-yet Appointment Status.
+  let scheduleFields: Record<string, any> = { 'Appointment Status': 'Pending Schedule' }
 
   if (isFlexible) {
     // No date was asked for, so pick one: next Saturday at least
@@ -426,7 +430,7 @@ export async function POST(req: Request) {
     }
     if (!assignment) {
       // Refused rather than created-and-left-unscheduled. A referral sitting
-      // Unscheduled forever with nobody watching it is precisely the failure
+      // with no slot forever and nobody watching it is precisely the failure
       // this replaced, so it must not be reintroduced as the error path.
       return NextResponse.json(
         {

@@ -99,8 +99,8 @@ export type EndReferralResult =
  * End a referral and give its Saturday slot back.
  *
  * `notify` fires the Cancellation Notice to the referring agency, and only
- * ever when a real appointment was released — an Unscheduled referral being
- * cancelled never had an appointment to tell anyone about.
+ * ever when a real appointment was released — a referral cancelled before a
+ * slot was ever assigned never had an appointment to tell anyone about.
  *
  * Note there is deliberately NO "were they ever told about this appointment
  * in the first place" guard here, of the kind sendRescheduleNotice() carries.

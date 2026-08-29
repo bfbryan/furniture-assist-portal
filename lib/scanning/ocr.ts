@@ -1052,31 +1052,6 @@ async function setOcrNotes(recordId: string, note: string): Promise<void> {
   }
 }
 
-// Put a referral back into Dawson's review queue. Only used when a scanned
-// reschedule could not be applied — see the call site for why the record is
-// otherwise invisible. Never throws: the page has already done its real work
-// by this point, and failing to queue it must not turn a partial success into
-// a hard failure.
-async function setReferralReviewPending(recordId: string): Promise<void> {
-  if (!AIRTABLE_BASE_ID || !AIRTABLE_API_KEY) return
-  const url = `https://api.airtable.com/v0/${AIRTABLE_BASE_ID}/${encodeURIComponent(AIRTABLE_TABLE)}/${recordId}`
-  try {
-    const res = await fetch(url, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${AIRTABLE_API_KEY}`,
-      },
-      body: JSON.stringify({ fields: { 'Referral Review': 'Pending' }, typecast: true }),
-    })
-    if (!res.ok) {
-      console.error(`setReferralReviewPending PATCH ${res.status} for ${recordId}: ${await res.text()}`)
-    }
-  } catch (e) {
-    console.error('setReferralReviewPending failed:', e)
-  }
-}
-
 async function applyScanReschedule(
   result: GeminiOcrResult,
   recordId: string,
@@ -1286,21 +1261,13 @@ export async function processPage({
       if (!applied.applied) {
         const message = applied.errorMessage ?? 'Reschedule could not be applied.'
         await flagManualReview(recordId, message, batchAirtableUrl, scanBatchRecordId)
-        // Put it in front of a human. writeToAirtable has already set
-        // Appointment Status = 'Reschedule', and 'Manual Review Needed' /
-        // 'OCR Confidence' / 'OCR Notes' are written but read by nothing in
-        // the portal and matched by no view in the base — so without this the
-        // record sits mid-reschedule, on its stale old appointment, listed on
-        // no page at all. Scheduled and History both filter it out, and the
-        // review queue keys on Referral Review = 'Pending'.
-        //
-        // Setting that pairs with the 'Reschedule' status the review page
-        // already groups on, so the record appears in its Reschedule Requests
-        // section with the Pick Another button that fits this exactly. It is
-        // deliberately NOT given a Preferred Date: the date on the sheet is
-        // the one that could not be used, and offering Accept Date for it
-        // would only fail again.
-        await setReferralReviewPending(recordId)
+        // Nothing more to write here. writeToAirtable already set Appointment
+        // Status = 'Reschedule', and the review page's Reschedule Requests
+        // queue keys on exactly that — so the record shows up there for a
+        // human to pick a date, with the Pick Another button that fits this
+        // case. It is deliberately given no Preferred Date: the date on the
+        // sheet is the one that could not be read, and offering Accept Date
+        // for it would only fail again. Referral Review is left 'Approved'.
         return { ...base, success: false, errorMessage: message }
       }
       return { ...base, notice: applied.notice }

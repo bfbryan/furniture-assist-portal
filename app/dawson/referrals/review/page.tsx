@@ -2,15 +2,18 @@
 
 // app/dawson/referrals/review/page.tsx
 //
-// Dawson's queue. Everything with Referral Review = 'Pending' lands here, and
-// as of Aug 2026 that is two different asks wearing the same status:
+// Dawson's queue. Two different asks, two sources:
+//
+//   NEW REFERRAL REQUESTS  Referral Review = 'Pending'. Approve or Reject.
 //
 //   RESCHEDULE REQUESTS  Appointment Status = 'Reschedule'. An agency has an
-//     appointment already and wants it moved. Approve/Reject is the wrong pair
-//     of buttons for these — the decision is "the date they asked for" or "a
-//     different one".
+//     appointment already and wants it moved. The referral stays 'Approved' —
+//     this queue keys on the status, not on review. Approve/Reject is the wrong
+//     pair of buttons for these; the decision is "the date they asked for" or
+//     "a different one".
 //
-//   NEW REFERRAL REQUESTS  everything else. Unchanged: Approve or Reject.
+// The page fetches both (?review=Pending and ?status=Reschedule), merges them,
+// and the split below routes each card by Appointment Status.
 //
 // Both routes out of a reschedule request go through the SAME shared function,
 // POST /api/dawson/referrals/[id]/reschedule → rescheduleReferral(), which is
@@ -19,8 +22,9 @@
 // from overriding only in which date and time get posted. There is no second
 // reschedule implementation here and there must not be.
 //
-// After a successful reschedule the review is set back to 'Approved' so the
-// record leaves this queue — 'Pending' is what put it here in the first place.
+// rescheduleReferral() sets Appointment Status = 'Scheduled', which is what
+// drops the card out of this queue. No review flip is needed (it was never
+// 'Pending'), so there is no second write and no atomicity gap.
 
 import { useState, useEffect } from 'react'
 import RescheduleModal, { type AvailableDate, type TimeSlot } from '@/components/internal/modals/RescheduleModal'
@@ -374,9 +378,26 @@ export default function AwaitingReviewPage() {
   const [withheldNotices, setWithheldNotices] = useState<string[]>([])
 
   useEffect(() => {
-    fetch('/api/dawson/referrals?review=Pending')
-      .then(r => r.json())
-      .then(data => { setReferrals(Array.isArray(data) ? data : []); setLoading(false) })
+    // New referrals: Referral Review = 'Pending'. Reschedule requests:
+    // Appointment Status = 'Reschedule', regardless of review (a reschedule
+    // request leaves the referral 'Approved'). Merge into one list; the split
+    // in the render routes each card by status. Dedup by id in case a record
+    // is briefly matched by both during a transition.
+    Promise.all([
+      fetch('/api/dawson/referrals?review=Pending').then(r => r.json()).catch(() => []),
+      fetch('/api/dawson/referrals?status=Reschedule').then(r => r.json()).catch(() => []),
+    ])
+      .then(([pending, reschedules]) => {
+        const byId = new Map<string, Referral>()
+        for (const r of [
+          ...(Array.isArray(pending) ? pending : []),
+          ...(Array.isArray(reschedules) ? reschedules : []),
+        ]) {
+          byId.set(r.id, r)
+        }
+        setReferrals([...byId.values()])
+        setLoading(false)
+      })
       .catch(() => setLoading(false))
 
     // Saturdays for the "Pick Another" modal. leadDays=1 matches the internal
@@ -397,10 +418,9 @@ export default function AwaitingReviewPage() {
    * Posts to Dawson's own reschedule endpoint, which is a thin wrapper over
    * rescheduleReferral() — so accepting a requested date does exactly what a
    * manual reschedule does, including preserving the original appointment,
-   * re-arming the reminder and emailing the agency a regenerated slip.
-   *
-   * Then clears the record out of this queue by setting the review back to
-   * 'Approved'.
+   * re-arming the reminder and emailing the agency a regenerated slip. That
+   * call sets Appointment Status = 'Scheduled', which is all it takes to
+   * clear the card from this queue.
    *
    * Returns an error to show on the card, or — on success — an optional notice
    * to show on the page. The success notice exists for the confirmation guard:
@@ -431,21 +451,11 @@ export default function AwaitingReviewPage() {
       const withheld: string | null =
         notice && notice.skipped && notice.message ? `${name}: ${notice.message}` : null
 
-      // The reschedule has committed at this point. If this second call fails
-      // the appointment IS moved and any notice has already gone — the record
-      // just stays in the queue, which is the safe way round.
-      const reviewRes = await fetch(`/api/dawson/referrals/${id}/review`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ review: 'Approved' }),
-      })
-      if (!reviewRes.ok) {
-        return {
-          ok: false,
-          message: 'Rescheduled, but this record could not be cleared from the queue. Reload and approve it by hand.',
-        }
-      }
-
+      // rescheduleReferral() has already set Appointment Status = 'Scheduled',
+      // which is what drops the card out of this queue (it filters on
+      // 'Reschedule'). Referral Review was never touched — it stayed 'Approved'
+      // — so there is no second write, and no window where a failed follow-up
+      // leaves the record half-done.
       handleAction(id)
       // Surfaced HERE rather than in each caller. Both routes out of a
       // reschedule request land in this function, but only "Pick Another" was
@@ -473,9 +483,9 @@ export default function AwaitingReviewPage() {
     matchesSearch(search, r.clientName, r.referringAgency, r.referredBy)
   )
 
-  // The one thing that tells the two apart. An agency reschedule request sets
-  // Appointment Status = 'Reschedule' alongside Referral Review = 'Pending';
-  // a brand-new referral only ever sets the latter.
+  // Route each merged card by status. A reschedule request is Appointment
+  // Status = 'Reschedule' (review left 'Approved'); everything else in the
+  // list came from ?review=Pending and is a new referral.
   const rescheduleRequests = filtered.filter(r => r.appointmentStatus === 'Reschedule')
   const newRequests = filtered.filter(r => r.appointmentStatus !== 'Reschedule')
 

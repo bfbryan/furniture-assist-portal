@@ -105,7 +105,10 @@ export async function POST(req: Request) {
     'Referring Staff': agencyUser.name,
     'Agency Email': agencyUser.email,
     'Referral Review': 'Pending',
-    'Appointment Status': 'Unscheduled',
+    // No slot assigned yet. Review is 'Pending', so getPortalStatus() shows
+    // this as 'Submitted' regardless — the appointment status only starts
+    // mattering once Dawson approves.
+    'Appointment Status': 'Pending Schedule',
     'Possible Duplicate': isDuplicate,
   }
 

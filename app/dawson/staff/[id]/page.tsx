@@ -88,14 +88,13 @@ function toAgencyReferral(r: Referral): AgencyReferral {
     status = 'Cancelled'
   } else {
     const map: Record<string, ReferralStatus> = {
-      'Unscheduled':      'Unscheduled',
       'Pending Schedule': 'Pending Schedule',
       'Scheduled':        'Scheduled',
       'Cancelled':        'Cancelled',
       'Completed':        'Completed',
       'No Show':          'No Show',
     }
-    status = map[r.appointmentStatus] ?? 'Unscheduled'
+    status = map[r.appointmentStatus] ?? 'Pending Schedule'
   }
 
   return {

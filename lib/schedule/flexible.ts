@@ -8,7 +8,7 @@
 // This ran in Airtable as `at-auto-schedule-script.js`, an automation on
 // record creation. Ben has switched those automations off in favour of code,
 // so as of that moment NOTHING assigned a date to a referral submitted without
-// a specific one — it was created 'Unscheduled' and stayed there silently.
+// a specific one — it was created with no slot and stayed there silently.
 //
 // It does not bite today only because Dawson picks every date by hand. It bites
 // the moment a flexible referral is created from anywhere, which is why this is
