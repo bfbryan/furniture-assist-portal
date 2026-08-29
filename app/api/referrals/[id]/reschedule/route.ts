@@ -6,14 +6,22 @@
 // This is a REQUEST, not a booking. Ben's design: the request parks the record
 // in Dawson's queue and changes nothing about the appointment.
 //
-//   Referral Review   -> 'Pending'      puts it on /dawson/referrals/review
-//   Appointment Status-> 'Reschedule'   is what sorts it into the reschedule
-//                                       group there rather than the new-referral one
+//   Appointment Status-> 'Reschedule'   is what puts the record in the
+//                                       Reschedule Requests queue on
+//                                       /dawson/referrals/review (and on the
+//                                       Dawson home page). That queue keys on
+//                                       this status directly.
 //   Preferred Date / Preferred Time     what the agency actually asked for
 //
-// Both are existing single-select options; neither is new. The appointment
-// itself is untouched until Dawson acts — the client keeps the slot they have
-// until he either accepts the requested date or picks a different one.
+// Referral Review is left ALONE — the referral stays 'Approved'. It used to be
+// forced to 'Pending' so the review queue (which keyed on Pending) would pick
+// it up; the queue now filters on Appointment Status = 'Reschedule' instead, so
+// there is nothing to flip. Dawson accepting/overriding no longer has to flip
+// it back either.
+//
+// The appointment itself is untouched until Dawson acts — the client keeps the
+// slot they have until he either accepts the requested date or picks a
+// different one.
 //
 // Dawson's own /api/dawson/referrals/[id]/reschedule is the one that actually
 // moves an appointment and emails the agency.
@@ -137,10 +145,10 @@ export async function POST(
 
   const fields: Record<string, any> = {
     'Scheduling Flexibility': isFlexible ? 'Flexible' : 'Specific Date',
+    // This alone parks the record in the Reschedule Requests queue — that
+    // queue filters on Appointment Status = 'Reschedule' directly. Referral
+    // Review is deliberately not touched: the referral stays 'Approved'.
     'Appointment Status': 'Reschedule',
-    // Back into Dawson's Awaiting Review queue. Without this the request set a
-    // status nobody was watching and simply sat there.
-    'Referral Review': 'Pending',
   }
 
   if (isFlexible) {

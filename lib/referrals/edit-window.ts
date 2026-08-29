@@ -47,12 +47,11 @@ export function getPortalStatus(review: string, status: string): string {
   if (review === 'Withdrawn') return 'Withdrawn'
   if (status === 'Cancelled') return 'Cancelled'
   if (status === 'Completed') return 'Completed'
-  // Ahead of the Pending check, because an agency reschedule request sets BOTH
-  // Appointment Status = 'Reschedule' and Referral Review = 'Pending' (the
-  // latter is what lands it in Dawson's queue). Without this line that pair
-  // reads as 'Submitted' — a brand-new referral — which would tell the agency
-  // their scheduled client is awaiting approval and offer them a Withdraw
-  // button on a live appointment.
+  // An agency reschedule request sets Appointment Status = 'Reschedule' and
+  // leaves Referral Review as 'Approved'. This line is what keeps that reading
+  // as 'Reschedule' rather than falling through to 'Scheduled'. (It also sat
+  // ahead of the Pending check below to cover the old behaviour, where the
+  // request forced review to 'Pending' too; harmless to keep it here.)
   if (status === 'Reschedule') return 'Reschedule'
   if (review === 'Pending') return 'Submitted'
   if (status === 'Pending Schedule') return 'Scheduling'

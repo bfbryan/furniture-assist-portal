@@ -199,11 +199,15 @@ export default async function DawsonDashboard() {
     weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
   })
 
-  // One trip each, in parallel. All three are small: 41 Saturdays, the pending
-  // referrals, and the pending agencies.
-  const [schedule, pendingReferrals, pendingAgencies] = await Promise.all([
+  // In parallel: 41 Saturdays, new-referral requests (Review = 'Pending'),
+  // reschedule requests (Appointment Status = 'Reschedule', regardless of
+  // review), and the pending agencies. New referrals and reschedules are two
+  // separate queries now — an agency reschedule request leaves the referral
+  // 'Approved', so it no longer shows up under review = 'Pending'.
+  const [schedule, pendingReview, rescheduleRequests, pendingAgencies] = await Promise.all([
     getSaturdaySchedule(),
     getAllReferrals({ review: 'Pending' }),
+    getAllReferrals({ statuses: ['Reschedule'] }),
     getAllAgencies('Pending'),
   ])
 
@@ -219,15 +223,12 @@ export default async function DawsonDashboard() {
     })
     .slice(0, WEEKS_AHEAD)
 
-  // Same split /dawson/referrals/review makes: a reschedule request already has
-  // an appointment and wants it moved, everything else is a new referral
-  // waiting on approve/reject.
-  const rescheduleRequests = pendingReferrals.filter(
-    (r: PendingReferral) => r.appointmentStatus === 'Reschedule',
-  )
-  const newRequests = pendingReferrals.filter(
+  // Two queries above. Belt and braces: keep any 'Reschedule'-status record out
+  // of the new-referral list even if it somehow also matched review='Pending'.
+  const newRequests = pendingReview.filter(
     (r: PendingReferral) => r.appointmentStatus !== 'Reschedule',
   )
+  const awaitingReviewCount = newRequests.length + rescheduleRequests.length
 
   const actions = [
     {
@@ -436,7 +437,7 @@ export default async function DawsonDashboard() {
               <div style={CARD_HEAD}>
                 <div style={CARD_TITLE}>Awaiting review</div>
                 <Link href="/dawson/referrals/review" style={{ ...ROW_META, color: TEAL, fontWeight: 700, textDecoration: 'none' }}>
-                  {pendingReferrals.length} waiting
+                  {awaitingReviewCount} waiting
                 </Link>
               </div>
 
