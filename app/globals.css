@@ -318,6 +318,8 @@ h1, h2, h3, h4, h5, h6 {
 /* The ⋯ trigger reads as a button before it's hovered: a fixed 32px box, a
    rest colour dark enough to look tappable, cursor:pointer. Hover and the
    menu-open state share one fill so it's obvious which row owns an open menu.
+   The fill is #EDE9E1 — the border colour used elsewhere, a step darker than
+   the row hover (#FAFAF8) so the button keeps a visible edge against it.
    Styled entirely here — an inline background would outrank :hover. */
 .fa-active-menu-trigger {
   width: 32px;
@@ -334,7 +336,7 @@ h1, h2, h3, h4, h5, h6 {
 }
 .fa-active-menu-trigger:hover,
 .fa-active-menu-trigger[aria-expanded='true'] {
-  background: #F7F5F1;
+  background: #EDE9E1;
   color: #1B2B4B;
 }
 /* Keyboard focus only — mouse clicks don't get the ring. */
