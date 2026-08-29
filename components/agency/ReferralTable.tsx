@@ -225,7 +225,7 @@ function Row({
   onMenuClose: () => void
 }) {
   return (
-    <div className="fa-active-row" style={{ padding: '12px 0', borderTop: '1px solid #F3F0EA', alignItems: 'start' }}>
+    <div className="fa-active-row" style={{ borderTop: '1px solid #F3F0EA' }}>
       <div style={{ minWidth: 0 }}>
         <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 600, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
           {r.clientName}
@@ -542,7 +542,7 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
                   {...rowProps(r, 'reschedule')}
                   dateLabel="Currently / Requested"
                   dateCell={
-                    <span style={{ display: 'block', lineHeight: 1.5 }}>
+                    <span className="fa-active-reschedule-value" style={{ display: 'block', lineHeight: 1.5 }}>
                       <span style={{ color: '#1B2B4B' }}>
                         Currently: {formatSlot(r.appointmentDate, r.appointmentTime, formatDate)}
                       </span>
