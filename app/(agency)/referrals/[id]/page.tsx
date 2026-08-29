@@ -27,8 +27,10 @@ import { useRouter } from 'next/navigation'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
 import { AGENCY_CONTACT_EMAIL, ONLINE_SUBMISSION_COMING_SOON } from '@/lib/contact'
 import { addDaysISO, formatDob } from '@/lib/dates'
+import { agencyReferralActions } from '@/lib/referrals/agency-actions'
 import { agencyEditWindow, agencyNotesEditable, getPortalStatus } from '@/lib/referrals/edit-window'
 import { NO_SHOW_RESCHEDULE_WINDOW_DAYS, withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
+import { formatRequestedSlot, formatSlot } from '@/lib/referrals/slot-display'
 // Shared with components/agency/ReferralTable.tsx, which fills the same blank
 // on the same referral from the same three Airtable fields.
 import { requestedSlot } from '@/lib/referrals/requested-slot'
@@ -852,37 +854,20 @@ function ItemsReceivedCard({ disbursed }: { disbursed: ItemsDisbursed | null }) 
 // the agency asked for. Same helper the Reschedule Requested cards on the
 // referral list use, so the two surfaces cannot drift.
 function RequestedRows({ referral }: { referral: Referral }) {
-  const slot = requestedSlot(referral)
-
-  const requested =
-    slot.kind === 'date' ? (
-      <>
-        {formatDate(slot.date)}
-        {slot.time ? ` · ${slot.time}` : ''}
-        {!slot.time && <span style={{ color: '#7A8899' }}> · any time</span>}
-      </>
-    ) : slot.kind === 'flexible' ? (
-      <span style={{ color: '#7A8899' }}>Any Saturday</span>
-    ) : (
-      // Nothing recorded — a scanned reschedule whose date could not be read
-      // lands here. Says so rather than inventing a preference.
-      <span style={{ color: '#7A8899' }}>No date requested</span>
-    )
-
+  // formatSlot / formatRequestedSlot are shared with the Active list's
+  // Reschedule Requested group, so the two surfaces phrase these identically.
   return (
     <>
       <InfoRow
         label="Currently"
-        value={
-          referral.appointmentDate ? (
-            <>
-              {formatDate(referral.appointmentDate)}
-              {referral.appointmentTime ? ` · ${referral.appointmentTime}` : ''}
-            </>
-          ) : null
-        }
+        value={referral.appointmentDate
+          ? formatSlot(referral.appointmentDate, referral.appointmentTime, formatDate)
+          : null}
       />
-      <InfoRow label="Requested" value={<span style={{ fontWeight: 700 }}>{requested}</span>} />
+      <InfoRow
+        label="Requested"
+        value={<span style={{ fontWeight: 700 }}>{formatRequestedSlot(requestedSlot(referral), formatDate)}</span>}
+      />
     </>
   )
 }
@@ -1096,11 +1081,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       ? addDaysISO(referral.appointmentDate, NO_SHOW_RESCHEDULE_WINDOW_DAYS)
       : null
 
-  const isReschedulable =
-    status === 'Scheduling' || status === 'Scheduled' || missedInRescheduleWindow
-  const isCancellable =
-    status === 'Scheduling' || status === 'Scheduled' || status === 'Reschedule'
-  const isWithdrawable = status === 'Submitted'
+  const { isReschedulable, isCancellable, isWithdrawable } = agencyReferralActions(
+    status,
+    missedInRescheduleWindow,
+  )
 
   const showApptSlipButton = status === 'Scheduled' && !!referral.appointmentSlipUrl
   const showClientReceiptButton = status === 'Completed' && !!referral.clientReceiptUrl

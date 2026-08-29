@@ -16,6 +16,7 @@ import {
   getAgencyUserByClerkId,
   getAgencyById,
   getReferralsByAgencyId,
+  getReferralsByStaffName,
 } from '@/lib/airtable'
 import AgencyPageHeader from '@/components/agency/AgencyPageHeader'
 import {
@@ -101,13 +102,13 @@ export default async function DashboardPage() {
   const isAdmin = agencyUser.role === 'Admin'
 
 
-  // Pull agency referrals — filter to staff-owned if not admin
-  const allReferrals = await getReferralsByAgencyId(agency.name)
-
-
+  // Scoped at the Airtable query, the same branch the Active and History pages
+  // use: Admin gets the whole agency, Staff gets only their own referrals.
+  // Not fetched-then-filtered — a Staff user's rows are the only ones this
+  // server component ever receives.
   const scopedReferrals = isAdmin
-    ? allReferrals
-    : allReferrals.filter((r: any) => r.referredBy === agencyUser.name)
+    ? await getReferralsByAgencyId(agency.name)
+    : await getReferralsByStaffName(agency.name, agencyUser.name)
 
 
   // Stats — same shape as Profile/Active/History
