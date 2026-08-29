@@ -99,9 +99,6 @@ const SECTION_TITLE: React.CSSProperties = {
   fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: 800,
   letterSpacing: '0.10em', textTransform: 'uppercase', color: '#2A7F6F',
 }
-const SECTION_COUNT: React.CSSProperties = {
-  fontSize: '13px', color: '#7A8899', fontWeight: 600,
-}
 const COL_HEADER: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, letterSpacing: '0.08em',
   textTransform: 'uppercase', color: '#7A8899',
@@ -265,31 +262,30 @@ function ColumnHead({ columns }: { columns: string[] }) {
   )
 }
 
-// `accent` marks a "waiting on Furniture Assist" group — gold left bar
-// (#C9A84C, 3px) and a gold heading (#8B7724) instead of teal. Scheduled, the
-// only "confirmed" group, leaves it off. The 3px bar is border-box, so the
-// left padding drops to 15px to keep row content on the same vertical line as
-// the non-accented cards.
+// Every card carries a 3px left accent bar. `gold` (#C9A84C bar, #8B7724
+// heading) = waiting on Furniture Assist to act; `teal` (#2A7F6F both) = a
+// Saturday appointment is set. The bar is border-box, so the left padding is
+// 15px against 18px elsewhere, keeping row content on one vertical line.
 function GroupCard({
-  title, count, columns, children, accent = false, hideHead = false,
+  title, columns, children, accent, hideHead = false,
 }: {
   title: string
-  count: number
   columns: string[]
   children: React.ReactNode
-  accent?: boolean
+  accent: 'gold' | 'teal'
   hideHead?: boolean
 }) {
+  const barColor = accent === 'gold' ? '#C9A84C' : '#2A7F6F'
+  const headingColor = accent === 'gold' ? '#8B7724' : '#2A7F6F'
   return (
     <section style={{
       background: 'white', borderRadius: '12px',
       boxShadow: '0 2px 12px rgba(27,43,75,0.07)', marginBottom: '20px',
-      padding: accent ? '14px 18px 14px 15px' : '14px 18px',
-      borderLeft: accent ? '3px solid #C9A84C' : undefined,
+      padding: '14px 18px 14px 15px',
+      borderLeft: `3px solid ${barColor}`,
     }}>
-      <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: '4px' }}>
-        <span style={{ ...SECTION_TITLE, color: accent ? '#8B7724' : '#2A7F6F' }}>{title}</span>
-        <span style={SECTION_COUNT}>{count}</span>
+      <div style={{ marginBottom: '4px' }}>
+        <span style={{ ...SECTION_TITLE, color: headingColor }}>{title}</span>
       </div>
       {!hideHead && <ColumnHead columns={columns} />}
       {children}
@@ -458,9 +454,9 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
       />
 
       {/* Controls — client-name search (left, fills the row) + staff filter
-          (admin only, pinned right). The 18px side padding lines both ends up
-          with the card content beneath, not the card's outer edge. */}
-      <div className="fa-active-controls" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', padding: '0 18px', marginBottom: '24px' }}>
+          (admin only, pinned right). No side padding: the row spans the full
+          content width, so its ends line up with the card boxes below. */}
+      <div className="fa-active-controls" style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginBottom: '24px' }}>
         <input
           type="text"
           value={search}
@@ -504,7 +500,7 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
       ) : (
         <>
           {buckets.pending.length > 0 && (
-            <GroupCard title="Awaiting approval" count={buckets.pending.length} accent columns={['Client', 'Referred by', 'Requested']}>
+            <GroupCard title="Awaiting approval" accent="gold" columns={['Client', 'Referred by', 'Requested']}>
               {buckets.pending.map(r => (
                 <Row
                   key={r.id}
@@ -525,7 +521,7 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
               stands. The waiting groups answer that; Scheduled is the routine
               case and reads below them. */}
           {buckets.reschedule.length > 0 && (
-            <GroupCard title="Reschedule requested" count={buckets.reschedule.length} accent columns={['Client', 'Referred by', 'Currently / Requested']}>
+            <GroupCard title="Reschedule requested" accent="gold" columns={['Client', 'Referred by', 'Currently / Requested']}>
               {buckets.reschedule.map(r => (
                 <Row
                   key={r.id}
@@ -548,14 +544,14 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
           )}
 
           {buckets.scheduled.length > 0 && (
-            <GroupCard title="Scheduled" count={buckets.scheduled.length} hideHead columns={['Client', 'Referred by', 'Time']}>
+            <GroupCard title="Scheduled" accent="teal" hideHead columns={['Client', 'Referred by', 'Time']}>
               {scheduledGroups.map((g, gi) => (
                 <div key={g.date}>
                   {/* Date heading introduces the section; column headers sit
                       beneath it, repeated per Saturday so each block is
                       self-labelling however many there are. */}
                   <div style={gi === 0 ? { ...DATE_HEADING, marginTop: '6px' } : DATE_HEADING}>
-                    {g.date === 'zzzz' ? 'NO DATE' : dateHeading(g.date)} · {g.rows.length}
+                    {g.date === 'zzzz' ? 'NO DATE' : dateHeading(g.date)}
                   </div>
                   <ColumnHead columns={['Client', 'Referred by', 'Time']} />
                   {g.rows.map(r => (
@@ -576,7 +572,7 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
           )}
 
           {buckets.awaitingDate.length > 0 && (
-            <GroupCard title="Awaiting appointment date" count={buckets.awaitingDate.length} columns={['Client', 'Referred by', '']}>
+            <GroupCard title="Awaiting appointment date" accent="gold" columns={['Client', 'Referred by', '']}>
               {buckets.awaitingDate.map(r => (
                 <Row
                   key={r.id}
