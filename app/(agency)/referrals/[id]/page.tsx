@@ -26,9 +26,9 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
 import { AGENCY_CONTACT_EMAIL, ONLINE_SUBMISSION_COMING_SOON } from '@/lib/contact'
-import { formatDob } from '@/lib/dates'
+import { addDaysISO, formatDob } from '@/lib/dates'
 import { agencyEditWindow, agencyNotesEditable, getPortalStatus } from '@/lib/referrals/edit-window'
-import { withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
+import { NO_SHOW_RESCHEDULE_WINDOW_DAYS, withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
 // Shared with components/agency/ReferralTable.tsx, which fills the same blank
 // on the same referral from the same three Airtable fields.
 import { requestedSlot } from '@/lib/referrals/requested-slot'
@@ -1082,6 +1082,20 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
   const guidance = resubmitGuidance(status, missedInRescheduleWindow)
 
+  // The cutoff the Reschedule button disappears on. Shown while the button is
+  // live (missedInRescheduleWindow) so the agency knows their runway; once past
+  // it, resubmitGuidance()'s "window has closed" line takes over. The two are
+  // mutually exclusive — resubmitGuidance returns null while the window is open.
+  //
+  // appointmentDate + NO_SHOW_RESCHEDULE_WINDOW_DAYS, calendar arithmetic via
+  // addDaysISO — the same UTC-anchored day math withinNoShowRescheduleWindow's
+  // differenceInDaysISO uses, so the shown date is exactly its <= N boundary.
+  // missedInRescheduleWindow already implies appointmentDate is a real date.
+  const rescheduleDeadline =
+    missedInRescheduleWindow && referral.appointmentDate
+      ? addDaysISO(referral.appointmentDate, NO_SHOW_RESCHEDULE_WINDOW_DAYS)
+      : null
+
   const isReschedulable =
     status === 'Scheduling' || status === 'Scheduled' || missedInRescheduleWindow
   const isCancellable =
@@ -1275,6 +1289,18 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
                 <a href={`mailto:${AGENCY_CONTACT_EMAIL}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>
                   {AGENCY_CONTACT_EMAIL}
                 </a>.{guidance.suffix ? ` ${guidance.suffix}` : ''}
+              </div>
+            )}
+
+            {/* Same footnote slot as the guidance line above (mutually
+                exclusive with it): while the Reschedule button is live, how
+                long the agency has before it goes. */}
+            {rescheduleDeadline && (
+              <div style={{
+                borderTop: '1px solid #EDE9E1', marginTop: '12px', paddingTop: '12px',
+                fontSize: '12.5px', color: '#7A8899', lineHeight: 1.6,
+              }}>
+                Reschedule available until {formatDate(rescheduleDeadline)}.
               </div>
             )}
           </Card>
