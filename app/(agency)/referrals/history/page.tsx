@@ -12,7 +12,7 @@ import {
   getReferralsByStaffName,
   getReferralsByAgencyId,
 } from '@/lib/airtable'
-import HistoryClient, { HistoryHeroStats, type Referral } from './HistoryClient'
+import HistoryClient, { type Referral } from './HistoryClient'
 import { StaffFilterProvider } from '@/components/agency/ActiveReferralsFilter'
 import { cityStateZip } from '@/lib/address'
 
@@ -70,19 +70,16 @@ export default async function HistoryPage() {
 
   const historyReferrals = allReferrals.filter(isTerminal) as Referral[]
 
-  // The four hero KPI tiles used to be counted right here, across the whole
-  // agency, while the "Filter by staff" dropdown inside HistoryClient filtered
-  // the list in the browser - so picking a staff member changed the list and
-  // left the numbers above it still. This is the same fix the Active page
-  // already had: one StaffFilterProvider wrapping the hero AND the body, with
-  // the tiles reading the filtered set. Tiles are HistoryHeroStats; the
-  // fourth (Rejected) is still there for the same reason it was added, which
-  // is that four tiles make an even 2x2 on a phone.
+  // StaffFilterProvider wraps the body so the staff dropdown, the outcome-pill
+  // counts and the list all read one selection. The four hero KPI tiles that
+  // used to sit here were removed in the History rework: they duplicated the
+  // outcome pills (which now carry the counts) and the two disagreed — the
+  // tiles omitted Withdrawn, the pills include it.
   return (
     <StaffFilterProvider referrals={historyReferrals}>
     <div className="min-h-screen bg-[#F7F5F1]">
       {/* Hero — same layout as Active/Dashboard */}
-      <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-9">
+      <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-7">
         <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-6">
           {/* Left — Agency + Staff info blocks */}
           <div className="flex gap-10 flex-wrap">
@@ -123,10 +120,6 @@ export default async function HistoryPage() {
               <p className="text-sm text-white/50 font-light">{agencyUser.role}</p>
             </div>
           </div>
-
-          {/* Right - KPI tiles. Same four, same order; they moved into a
-              client component only so they can see the staff filter. */}
-          <HistoryHeroStats />
 
         </div>
       </div>

@@ -71,223 +71,39 @@ h1, h2, h3, h4, h5, h6 {
   display: none;
 }
 
-/* ---------- Card grids (5) ---------- */
+/* ---------- Card / list grids ---------- */
 
-/* Active client cards.
-   Aug 2026: retuned from `130px 130px 160px 180px 140px 120px 1fr`.
+/* Active client cards — replaced by the grouped list in components/agency/
+   ReferralTable.tsx (.fa-active-row, below). The old .fa-referral-card-grid /
+   .fa-history-card-grid rules went with it and the History rework. */
 
-   THE PROBLEM. Those six fixed tracks total 860px. At a 1280px viewport the
-   row has 880px to work with (1280 − 240 sidebar − 64 page padding − 4 accent
-   − 32 card padding − 60 gaps), which left 20px for the actions cell. Two
-   icons need 60 and three need 96, so the page scrolled sideways from 1280 up
-   to about 1360 — before the appointment-slip icon was added, which made it
-   worse. Letting the last track shrink was tried and rejected: it removes the
-   scrollbar by letting the icons slide left over the appointment date.
-
-   THE CAUSE. The widths were mis-assigned rather than merely too big. Measured
-   against real Lato, the columns holding fixed-format data were the roomiest
-   and the two holding variable-length text were the tightest:
-
-     column        had    needs (longest realistic)   header floor
-     Client Name   130    246 (wraps by design)        82
-     Address       130    181                          59
-     Phone         160     74                          43
-     Referred By   180    130                          87
-     Submitted     140     70                          70
-     Appointment   120    106                          88
-     actions       1fr     96 (slip + reschedule + cancel)
-
-   THE FIX. Give each column a floor at or above its header width — so no label
-   ever wraps — and let the three text columns share what is left in proportion
-   rather than sitting at a fixed size. Floors total 594 + 120, well inside the
-   880 available at 1280, so nothing is dropped or truncated: the long client
-   name still wraps exactly as it was already designed to, and every other
-   column now fits its longest realistic value on one line at 1280.
-
-   The actions track is FIXED, not auto or 1fr. Auto would size to each card's
-   own icon count and the columns would jog between rows; 1fr was what starved
-   it. 120px holds the worst case (96px, a Scheduled row) and the 24px of slack
-   is what the slip icon's margin-right:auto spends pushing itself away from
-   Reschedule and towards Appointment.
-
-   ---------------------------------------------------------------------------
-   Aug 2026 — SPACING RETUNE. Ben, on both this card and the history one:
-   "the client phone slid closer to the address, submit date and staff kept
-   tight together as they are, then a gap before the appointment time, which
-   stays close to the actions."
-
-   WHY THE FR WEIGHTS ARE THE KNOB. `gap` is a single value for the whole grid,
-   so it cannot differ between one pair of columns and the next. What sets the
-   space a reader SEES between two values is the leftmost one's trailing
-   whitespace — its track width minus its text — plus the 10px gap. Spacing is
-   therefore tuned by moving free width between tracks, which is what the fr
-   weights do. Read as:
-
-     phone closer to address     → Address 1.6 → 1.45. The only way to move
-                                   Phone left is to shorten the track in front
-                                   of it. Phone itself 0.8 → 0.7 so it does not
-                                   just reopen the same gap on its own right.
-     staff and submitted as they are → Referred By untouched at 1.1.
-     a gap before the appointment → Submitted 0.7 → 1.2. That gap IS Submitted's
-                                   trailing space; nothing else produces it.
-     "which stays close to the actions" → Appointment LEFT ALONE at 1.0.
-
-   That last one is deliberate and was got wrong once on the way here. It reads
-   as a request to move Appointment, but it is a relative clause describing it:
-   keep it where it is relative to the actions. It is already hard against them
-   by design — the slip icon spends the actions track's 24px of slack on
-   margin-right:auto pushing itself towards Appointment (see above). Narrowing
-   Appointment to 0.85 was tried and reverted: at 1440 it took the track from
-   130px to 110px, and the date + clock + time flex line, which needs ~119px,
-   wrapped onto two lines. The card got taller in exchange for a few pixels of
-   a gap that was already closed.
-
-   WHY THIS CANNOT REINTRODUCE THE OVERFLOW THE NOTE ABOVE FIXED. Every
-   minmax() FLOOR below is byte-identical to what it was, and the actions track
-   is still the same fixed 120px. A grid track is never sized below its floor,
-   so the row's minimum width — Σ floors (594) + 120 + 6×10 gap = 774 — is
-   unchanged, and the width at which the row stops fitting is unchanged with
-   it. The fr weights only decide how the SURPLUS above that minimum is shared
-   out. Below 1280px the grid collapses to one column and they do not apply.
-
-   Verified, not asserted: 529 viewport widths swept from 320 to 2560 against
-   the compiled stylesheet, before and after. Zero horizontal overflow in both,
-   on both cards. Numbers are in the PR.
-
-   WHAT IT COSTS, measured rather than estimated. Address is the column that
-   pays for the other two, and it is the only one that gives anything up:
-
-     Address  208px → 182px at 1440 and up;  182px → 158px at 1280.
-     Phone    104px →  88px at 1440 (it needs 74, so still comfortable).
-     Submitted 91px → 151px at 1440 — the gap Ben asked for.
-
-     A TYPICAL address ("88 Livingston Avenue") stays on one line at every
-     width, and the card is exactly as tall as before: 84px at 1440, 87px at
-     1280, both unchanged.
-
-     182px at 1440 is still above the 181px this file's own table records as
-     the longest realistic address, so that value keeps its one-line fit. That
-     is why Address is 1.45: 1.35 and 1.4 were both tried first and both landed
-     under 181. An address longer than that — the sweep uses a deliberately
-     oversized 37-character one — now wraps at 1440 where it did not before,
-     taking that card from 94px to 100px. At 1280 nothing changes: the column
-     was already under 181 there.
-
-     Appointment and the actions cell: no change at any width. */
 /* ---------------------------------------------------------------------------
-   Aug 2026 — SECOND SPACING RETUNE, and it deliberately undoes part of the
-   first one above. Ben, looking at the Active page on an iPad:
-
-     "rename the Address and Phone headers to Client Address and Client Phone,
-      keep client name, address and phone tighter to the left, group referred
-      by, submitted and appointment date together, and put some space between
-      the phone and referred by."
-
-   That is a request for TWO GROUPS with one gap between them, where the retune
-   above produced one gap in a different place. Read against the mechanism
-   described there — the space a reader sees between two values is the leftmost
-   one's trailing whitespace — it comes out as:
-
-     name / address / phone tight together   → Name 1.5 → 1.27. Address is the
-                                   ONLY weight held still, at 1.45, and the
-                                   reason is in the note above: 1.45 is what
-                                   keeps a 181px address on one line at 1440,
-                                   and 1.35 and 1.4 were both tried and both
-                                   landed under it. Tightening it further would
-                                   buy a few pixels of grouping and pay for
-                                   them in wrapped addresses on every card.
-     a gap after the phone       → Phone 0.7 → 1.1. Phone's own value needs
-                                   74px, so the other ~64px at 1440 IS the gap.
-                                   This is the one weight that goes UP.
-     referred by + submitted +
-       appointment grouped       → Submitted 1.2 → 0.75, which is the first
-                                   retune's gap being taken back out. It was
-                                   put there on Ben's instruction and is being
-                                   removed on Ben's instruction; the space it
-                                   held is most of what pays for the phone gap.
-                                   Referred By 1.1 → 1.0, Appointment
-                                   1.0 → 1.4 (see below).
-
-   The two gaps at 1440 come out at roughly 64px after the phone and 28px after
-   Submitted, so the row reads as two groups rather than six evenly spaced
-   columns — which is the whole of what was asked for.
-
-   WHY APPOINTMENT GOES UP RATHER THAN STAYING PUT. On a reschedule card that
-   cell now carries both dates (see RequestedSlotValue in ReferralTable.tsx),
-   as a 34px label track plus a date-and-time line that needs ~132px. At the
-   old 125px it wrapped every one of those onto four lines and took the card
-   from 84px to 105px tall. At 175px the pair fits on two lines and the card is
-   86px — 2px taller than a card with no reschedule on it at all. Below 1440
-   the time still wraps under its date; at 1280 a reschedule card is 113px.
-   That is the trade, and it was measured at each width rather than assumed.
-
-   MEASURED IN A BROWSER, at 390 / 430 / 768 / 820 / 1024 / 1180 / 1280 / 1366
-   / 1440 / 1728. Track widths at 1440, before → after:
-
-     Client Name      188 → 159
-     Client Address   182 → 181   (1px; no address wraps that did not before —
-                                   card heights at 1440 are unchanged)
-     Client Phone      88 → 138   (74 of value, 64 of gap — the ask)
-     Referred By      138 → 125
-     Submitted        151 →  94
-     Appointment      125 → 175
-     Actions          120 → 120   (untouched)
-
-   THE FLOORS MOVE THIS TIME, which the first retune's safety note was careful
-   not to do, so here is the arithmetic that replaces it. Two floors were below
-   what the cell now has to hold:
-
-     Phone       80 → 96.  "CLIENT PHONE" is 89px at 11px/700/0.08em — measured
-                 in the browser, not estimated — so the old 80px floor wrapped
-                 the new header onto two lines at 1280, 1366, 1440 and above.
-                 96 rather than 90 so a font-loading or sub-pixel difference
-                 cannot put it back.
-     Appointment 96 → 112. The label track plus a date, as above.
-
-   Row minimum therefore goes from Σfloors 594 + 120 + 6×10 = 774 to
-   626 + 120 + 60 = 806. Both are far below the 881px of track a row has at a
-   1280px viewport — the narrowest width at which this grid applies at all,
-   since below 1280 it collapses to one column — so nothing overflows that did
-   not before. Swept for horizontal overflow at every width above: zero, before
-   and after. The history card is not part of that claim and does not need to
-   be — its rule below is byte-identical to what it was.
-
-   NOT APPLIED TO THE HISTORY CARD. The first retune deliberately mirrored
-   itself onto .fa-history-card-grid, on the principle that the two cards sit
-   one page apart and should read as one design. This one does not, because Ben
-   named the Active page specifically and the instruction does not transfer
-   cleanly: the history card has no phone column, so "space between the phone
-   and referred by" has nothing to act on there. Its Submitted track therefore
-   still carries the 1.2 from the first retune, and the two cards' proportions
-   now differ. Called out in the PR as a one-line change if he wants it matched.
+   Agency History — grouped-list rework (Sep 2026), the sibling of .fa-active-row
+   below. Five columns: client (name + address) | referred by | appointment |
+   outcome pill | the ⋯ menu. One label row per month section.
    --------------------------------------------------------------------------- */
-.fa-referral-card-grid {
+.fa-history-row {
+  display: grid;
   grid-template-columns:
-    minmax(120px, 1.27fr)  /* Client Name    */
-    minmax(130px, 1.45fr)  /* Client Address */
-    minmax(96px, 1.1fr)    /* Client Phone   */
-    minmax(92px, 1fr)      /* Referred By    */
-    minmax(76px, 0.75fr)   /* Submitted      */
-    minmax(112px, 1.4fr)   /* Appointment    */
-    120px;                 /* Actions        */
+    minmax(0, 2fr)       /* client (name + address) */
+    minmax(90px, 1fr)    /* referred by             */
+    minmax(96px, 1fr)    /* appointment date        */
+    minmax(88px, 0.9fr)  /* outcome pill            */
+    36px;                /* ⋯                        */
+  gap: 16px;
+  align-items: start;
+  padding: 12px 0;
 }
 
-/* A single unbroken 40-character token — an import artefact, or a staff email
-   pasted into a name field — is wider than any column here and spills sideways
-   across the next one. This only engages when a word genuinely cannot fit;
-   ordinary names and addresses have spaces and hyphens to break at and render
-   identically (verified: same line counts before and after).
-
-   It has to be `anywhere`, not `break-word`. The client name sits inside the
-   Tooltip wrapper, which is display:inline-flex and therefore shrink-to-fits to
-   its own min-content — so with `break-word`, which by definition does not
-   reduce min-content, the box just grows to the word and nothing ever wraps.
-   `anywhere` does reduce it, which is what lets the wrapper come back down to
-   the column. Safe against the tracks above because those minimums are fixed
-   pixels, not min-content, so a smaller min-content cannot resize them. */
-.fa-referral-card-grid > div,
-.fa-history-card-grid > div {
-  overflow-wrap: anywhere;
+/* Search + staff filter + date range. Wide: the two selects sit together at the
+   right end of the row (search grows to fill the rest). Narrow: see the media
+   query — they stack full-width under the search box. */
+.fa-history-filters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+  margin-left: auto;
 }
 
 /* ---------------------------------------------------------------------------
@@ -295,10 +111,7 @@ h1, h2, h3, h4, h5, h6 {
 
    One row shape across all four groups: client block | referred by | a
    group-specific date column | the ⋯ menu. Column labels live once per
-   section (the .fa-active-row--head row), not on every row. The old
-   per-referral .fa-referral-card-grid card above is no longer used by that
-   page (only .fa-history-card-grid still is); its rules are left in place for
-   a separate cleanup.
+   section (the .fa-active-row--head row), not on every row.
    --------------------------------------------------------------------------- */
 .fa-active-row {
   display: grid;
@@ -349,7 +162,8 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Whole-row hover so a row reads as one live region, not just the linked
    name inside it. Pairs with the ⋯ hover above. The label row is excluded. */
-.fa-active-row:not(.fa-active-row--head):hover { background: #FAFAF8; }
+.fa-active-row:not(.fa-active-row--head):hover,
+.fa-history-row:not(.fa-history-row--head):hover { background: #FAFAF8; }
 
 /* Staff filter inside the controls row. Wide: label + select sit together at
    the right end of the row (search grows to fill the rest). Narrow: see the
@@ -410,78 +224,29 @@ h1, h2, h3, h4, h5, h6 {
   }
   .fa-active-filter-label { display: none; }
   .fa-active-filter-select { flex: 1; }
-}
 
-/* History cards. The same bug as the active card above, in miniature, on the
-   page right next to it — so retuned the same way rather than left to scroll.
+  /* History stacks the same way the active row does, to the same tuning:
+     8px between the stacked fields, +6px above the first labelled field,
+     16px block padding so the client-to-client gap is clearly the largest.
+     Order: client / referred by / appointment / outcome, ⋯ top-right. */
+  .fa-history-row {
+    grid-template-columns: minmax(0, 1fr) 36px;
+    gap: 8px 12px;
+    padding: 16px 0;
+  }
+  .fa-history-row > :nth-child(1) { grid-column: 1; grid-row: 1; }
+  .fa-history-row > :nth-child(2) { grid-column: 1; grid-row: 2; margin-top: 6px; }
+  .fa-history-row > :nth-child(3) { grid-column: 1; grid-row: 3; }
+  .fa-history-row > :nth-child(4) { grid-column: 1; grid-row: 4; }
+  .fa-history-row > :nth-child(5) { grid-column: 2; grid-row: 1; }
+  .fa-history-row--head { display: none; }
 
-   Aug 2026: was `160px 180px 130px 110px 110px 150px 60px`. Those seven total
-   900px and the gaps another 60, against the same 940px a row has at a 1280px
-   viewport: 20px over, so the page scrolled sideways at 1280 and 1281 and came
-   good at 1300. Smaller than the active card's 76px, identical in kind.
-
-   Measured against real Lato, the same mis-assignment:
-
-     column        had    needs (longest realistic)   header floor
-     Client Name   160    246 (wraps by design)        82
-     Address       180    181  (one pixel short)       59
-     Referred By   130    130                          87
-     Submitted     110     70                          70
-     Appointment   110     88                          88
-     Outcome       150    119 ("Missed appointment")   62
-     action         60     32 (receipt icon)            0
-
-   Submitted, Appointment, Outcome and the action cell were holding 125px they
-   never used, against a 20px shortfall — so nothing is dropped or truncated to
-   fix this. Floors are each at or above their own heading, and Outcome's is
-   above the widest pill so "Missed appointment" cannot wrap inside its own
-   badge. The three text columns share the remainder, in the same proportions
-   the active card uses, so the two pages' cards stay recognisably one design.
-
-   The action track is fixed for the same reason as the active card's: it is
-   empty on every row that is not a completed referral with a receipt, so an
-   auto track would collapse on those rows and the columns would jog. 40px is
-   the 32px icon plus a little separation from the outcome pill.
-
-   ---------------------------------------------------------------------------
-   Aug 2026 — SPACING RETUNE, the same one as the active card above and for the
-   same reason: these two cards sit one page apart and are meant to read as one
-   design, so a change to the proportions of one belongs on both.
-
-   Ben's instruction was written looking at the active card, and two thirds of
-   it transfer literally:
-
-     "submit date and staff kept tight"    → Referred By untouched at 1.1
-     "a gap before the appointment time"   → Submitted 0.7 → 1.2, the same move
-     Address 1.6 → 1.35                    → same as the active card
-
-   Two parts do NOT transfer, and are not pretended to:
-
-     "the client phone slid closer to the address" has no meaning here. This
-     card has no phone COLUMN — the phone sits under the client name, inside
-     the first cell, and always has. Nothing to slide.
-
-     "which stays close to the actions" is a relative clause on the active
-     card, describing where Appointment already sits rather than asking for it
-     to move — so nothing to do there either, and Appointment and Outcome are
-     both left exactly as they were. On this card Appointment is not next to
-     the action cell anyway; the Outcome pill is between them.
-
-   Same safety property as the active card, and it is the reason this was safe
-   to do at all: every minmax() FLOOR is unchanged and the receipt track is
-   still a fixed 40px, so the row's minimum width — Σ floors (630) + 40 +
-   6×10 gap = 730 — is exactly what it was, and so is the width at which it
-   stops fitting. Only the share of the surplus moves. Swept 320–2560 before
-   and after: zero overflow in both. */
-.fa-history-card-grid {
-  grid-template-columns:
-    minmax(120px, 1.5fr)   /* Client Name */
-    minmax(130px, 1.45fr)  /* Address     */
-    minmax(92px, 1.1fr)    /* Referred By */
-    minmax(76px, 1.2fr)    /* Submitted   */
-    minmax(92px, 0.8fr)    /* Appointment */
-    minmax(120px, 1fr)     /* Outcome     */
-    40px;                  /* Receipt     */
+  /* The two filter selects stack full-width under the search, side by side. */
+  .fa-history-filters {
+    margin-left: 0;
+    width: 100%;
+  }
+  .fa-history-filters > select { flex: 1 1 140px; }
 }
 
 .fa-staff-row-invite {
@@ -630,22 +395,6 @@ h1, h2, h3, h4, h5, h6 {
   column-gap: 28px;
 }
 
-/* History filter chips lay out on desktop exactly as they did inline; display
-   lives here too so the below-1280 rule can swap them out. Their replacement
-   is hidden here. */
-.fa-history-chips {
-  display: flex;
-  flex-wrap: wrap;
-}
-
-.fa-history-selects {
-  display: none;
-}
-
-.fa-history-staff-select {
-  min-width: 200px;
-}
-
 /* ---------- Dawson Operations Dashboard ----------
    The one page in the Dawson portal that has a side rail. Same shape and the
    same 1280px breakpoint as .fa-dashboard-grid above; a separate class because
@@ -708,8 +457,6 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   /* Card grids and page shells collapse to one column. */
-  .fa-referral-card-grid,
-  .fa-history-card-grid,
   .fa-staff-row-invite,
   .fa-staff-row-awaiting,
   .fa-staff-row-active,
@@ -763,34 +510,6 @@ h1, h2, h3, h4, h5, h6 {
     align-self: stretch;
     margin-left: 0;
     margin-top: 2px;
-  }
-
-  /* Populated referral and history cards: stacking every cell into its own
-     full-width block turned a card into ~16 lines of label-over-value, which
-     read as a jumble once there was real data in it. Instead each cell becomes
-     a label column plus a value column — the same shape the Profile and client
-     detail pages already use, which is what makes those two read cleanly on a
-     phone. Cells with several value lines (address, appointment date + time)
-     keep every line in the value column. */
-  .fa-referral-card-grid > div,
-  .fa-history-card-grid > div {
-    display: grid;
-    grid-template-columns: 104px minmax(0, 1fr);
-    align-items: start;
-    justify-items: start;
-    gap: 10px;
-  }
-
-  .fa-referral-card-grid > div > :not(:first-child),
-  .fa-history-card-grid > div > :not(:first-child) {
-    grid-column: 2;
-  }
-
-  /* The actions cell renders empty when a row has no available action, and
-     stacked that left a band of dead space at the foot of the card. */
-  .fa-referral-card-grid > div:empty,
-  .fa-history-card-grid > div:empty {
-    display: none;
   }
 
   /* The appointment row carries no labels, so below 1280 it is just the accent
@@ -861,30 +580,11 @@ h1, h2, h3, h4, h5, h6 {
     gap: 8px;
   }
 
-  /* History filters: ten chips wrapped to four rows owned most of the screen
-     before a single result. Swapped below 1280 for two selects carrying the
-     same state — compact, and nothing is cut off at the right edge. Search
-     stays full width and always visible; on a flat, newest-first list it is
-     the primary way to find a client. */
-  .fa-history-chips {
-    display: none;
-  }
-
-  .fa-history-selects {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   /* Label plus a 200px select overflowed a 390px screen and reintroduced
      sideways scroll; the select takes its own line instead. */
   .fa-dawson-dash-grid,
   .fa-dawson-cols {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .fa-history-staff-select {
-    width: 100%;
-    min-width: 0;
   }
 
   /* Same on the Active page's staff filter, which is a non-wrapping flex row
