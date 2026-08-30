@@ -355,9 +355,9 @@ export default function StaffList({
       // yourself and lock the agency out.
       //
       // Make / Remove Admin were removed: role changes are handled by Furniture
-      // Assist for now (the card footer says how). The 'make-admin' /
-      // 'remove-admin' actions and /api/admin/staff/[id]/role are left intact
-      // for when self-service role management is added back.
+      // Assist directly for now. The 'make-admin' / 'remove-admin' actions and
+      // /api/admin/staff/[id]/role are left intact for when self-service role
+      // management is added back.
       if (m.clerkUserId && m.clerkUserId === currentUserId) return []
       return [
         { label: 'Deactivate', color: '#C0392B', icon: X_ICON, onClick: () => act('deactivate', m) },
@@ -509,10 +509,6 @@ export default function StaffList({
               ))}
               <p style={{ fontSize: '12px', color: '#9AA6B2', lineHeight: 1.6, margin: '12px 0 2px' }}>
                 To change your agency&apos;s primary administrator, email{' '}
-                <a href={`mailto:${AGENCY_CONTACT_EMAIL}`} style={{ color: '#7A8899', textDecoration: 'underline' }}>{AGENCY_CONTACT_EMAIL}</a>.
-              </p>
-              <p style={{ fontSize: '12px', color: '#9AA6B2', lineHeight: 1.6, margin: '2px 0 0' }}>
-                To give another team member administrative access, email{' '}
                 <a href={`mailto:${AGENCY_CONTACT_EMAIL}`} style={{ color: '#7A8899', textDecoration: 'underline' }}>{AGENCY_CONTACT_EMAIL}</a>.
               </p>
             </GroupCard>
