@@ -55,14 +55,20 @@ type GroupKey = 'ready' | 'invited' | 'active' | 'inactive'
 // Wrong Agency never renders on the agency side, whatever the Status (the page
 // also filters it server-side). Otherwise: group on Portal Status, but Status
 // 'Inactive' wins a conflict. Status 'Unclaimed' / 'Invited' are vestigial here
-// and ignored. Anything matching nothing (e.g. Claimed but neither Active nor
-// Inactive) is dropped rather than guessed at.
+// and ignored. Anything matching nothing is dropped rather than guessed at.
+//
+// A Claimed row groups as 'active' whatever its Status (Inactive is already
+// handled above). The claim handler stamps Portal Status = Claimed and flips
+// Status to Active in two separate writes; if the second fails, the row is
+// briefly Claimed + Invited. Keying only on Claimed here means that window —
+// and any later drift between the two fields — still renders instead of
+// vanishing from the page. The Status→Active retry on the next sign-in stands.
 function classify(m: Member): GroupKey | null {
   if (m.portalInviteStatus === 'Wrong Agency') return null
   if (m.status === 'Inactive') return 'inactive'
   if (m.portalInviteStatus === 'Not Invited') return 'ready'
   if (m.portalInviteStatus === 'Invite Sent') return 'invited'
-  if (m.portalInviteStatus === 'Claimed' && m.status === 'Active') return 'active'
+  if (m.portalInviteStatus === 'Claimed') return 'active'
   return null
 }
 
