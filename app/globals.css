@@ -389,8 +389,34 @@ h1, h2, h3, h4, h5, h6 {
 
 /* ---------- Page shells (4) ---------- */
 
+/* Dashboard: actionable content left, a wider reference column right (340 vs
+   the old 300 — it now holds the Announcement and client-guideline text, not
+   a link list). Stacks to one column below 1280. */
 .fa-dashboard-grid {
-  grid-template-columns: minmax(0, 1fr) 300px;
+  grid-template-columns: minmax(0, 1fr) 340px;
+}
+
+/* The two Dashboard count cards — split the left column evenly so all three
+   cards on that side share one left and right edge. auto-fit drops them to one
+   per row when the column is too narrow for two ~200px cards; no media query. */
+.fa-dash-counts {
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+}
+
+/* Dashboard "Last Saturday" outcome row. One grid — client block takes the
+   remaining width, then two FIXED columns: the action (sized for "Receipt
+   available Tuesday", the longest thing it holds) and the status pill (sized
+   for "Awaiting outcome"). Both left-aligned within their track, so the
+   buttons and pills line up down the card regardless of label width, and a
+   row with no action leaves an empty column rather than shifting the pill.
+   Same fixed-column approach as .fa-active-row / .fa-history-row. Stacks
+   below 1280 — see the media query. */
+.fa-dash-lastsat-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 156px 144px;
+  gap: 12px 14px;
+  align-items: start;
+  padding: 12px 0;
 }
 
 .fa-profile-grid {
@@ -481,15 +507,6 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* ---------- Fixed column tracks inside cards and forms ---------- */
-
-/* Dashboard appointment row: accent bar + name/time/status block. The time and
-   the status pill both used to hold their own tracks here; both now sit on the
-   client-name line inside the second track, right-aligned there, so two tracks
-   remain. Losing the 130px status track also gives the name that much more
-   room at every width, which is what pays for the pill joining its line. */
-.fa-dash-appt-row {
-  grid-template-columns: 4px 1fr;
-}
 
 /* New referral form. The address row declares four tracks for three inputs;
    that phantom 160px column is a pre-existing desktop bug and is deliberately
@@ -676,45 +693,29 @@ h1, h2, h3, h4, h5, h6 {
     margin-top: 2px;
   }
 
-  /* The appointment row carries no labels, so below 1280 it is just the accent
-     bar and one content block.
-
-     History, because this reversed twice: the time and the status pill each
-     used to own a track, which left the client name ~58px and truncated it to
-     "Vande…". The fix then was to drop the status to its own footer row. Ben
-     asked for that row back — it spent a full row of card height on one word —
-     so both now ride the client-name line, and the name is no longer
-     truncated but wrapped, so a long one costs a line rather than its tail.
-
-     What makes that affordable this time is the padding below: the panel and
-     the row give back 30px on a phone, which is more than the pill takes.
-     Measured at 375px and 393px, the card goes 105px → 81px and names up to
-     "Toribio, Sonia & Alexandra" still hold one line. */
-  .fa-dash-appt-row {
-    grid-template-columns: 4px minmax(0, 1fr);
-  }
-
-  /* Reclaim the width the pill needs, rather than taking it from the name.
-     Three nested paddings were charging a 375px screen 116px — 31% of it — to
-     put whitespace either side of an appointment card: 32px page gutters, 24px
-     panel, 14px row. Halving the first two and trimming the third gives the
-     card 52px back, which is what buys the client name a single line on most
-     referrals with the pill now sharing it. 16px page gutters are the iOS
-     default; nothing here goes below that.
-
-     Scoped to .fa-dashboard-grid, so only the dashboard moves — the referral
-     list and history pages keep the gutters they have. */
+  /* Dashboard page gutters tighten to the iOS-default 16px on a phone (they're
+     32px on the wider layout). Scoped to .fa-dashboard-grid so only the
+     dashboard moves — the referral list and history pages keep their gutters. */
   .fa-dashboard-grid {
     padding-left: 16px !important;
     padding-right: 16px !important;
   }
 
-  .fa-dash-panel {
-    padding: 18px 14px !important;
+  /* Last Saturday rows follow the Active / Team mobile pattern: the client
+     block on its own line, then the action and status pill beneath it. The
+     fixed desktop columns give way to flex wrap so an empty action can be
+     hidden and the pill doesn't sit behind a phantom gap. */
+  .fa-dash-lastsat-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 12px;
+    padding: 16px 0;
   }
-
-  .fa-dash-appt-row > :last-child {
-    padding: 10px 12px !important;
+  .fa-dash-lastsat-row > :first-child {
+    flex: 1 1 100%;
+  }
+  .fa-dash-lastsat-action:empty {
+    display: none;
   }
 
   /* Page bar on a phone: tighter side padding; the disabled New Referral
@@ -746,13 +747,6 @@ h1, h2, h3, h4, h5, h6 {
   .fa-staff-section-header {
     flex-wrap: wrap;
     gap: 10px;
-  }
-
-  /* Same problem on the dashboard's Saturday line: space-between with nothing
-     left to distribute pushed the referral count pill hard against the date. */
-  .fa-dash-day-header {
-    flex-wrap: wrap;
-    gap: 8px;
   }
 
   /* Label plus a 200px select overflowed a 390px screen and reintroduced

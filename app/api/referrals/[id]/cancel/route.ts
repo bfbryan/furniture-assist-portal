@@ -24,6 +24,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
 import { endReferral } from '@/lib/referrals/end-referral'
+import { isAwaitingOutcome } from '@/lib/referrals/no-show-window'
 
 export async function POST(
   request: NextRequest,
@@ -32,6 +33,20 @@ export async function POST(
   const { id } = await params
   const access = await requireAgencyReferralAccess(id)
   if (access.denied) return access.denied
+
+  // A still-Scheduled referral whose date has already passed: cancelling an
+  // appointment the client may have attended would corrupt the record.
+  // Rejected, not just hidden on the detail page — the route is reachable
+  // directly. Same rule the Dashboard's Last Saturday card shows.
+  if (isAwaitingOutcome(access.referral.appointmentStatus, access.referral.appointmentDate)) {
+    return NextResponse.json(
+      {
+        error:
+          "This appointment's date has passed and Furniture Assist has not recorded the outcome yet. Contact Furniture Assist if it needs to change.",
+      },
+      { status: 409 },
+    )
+  }
 
   const result = await endReferral({ referralId: id, outcome: 'cancelled', notify: true })
 
