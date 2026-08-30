@@ -161,6 +161,23 @@ export async function POST(req: NextRequest) {
     }
     if (!clerkUserId) {
       console.error('Invite: createUser failed:', err)
+      // Clerk restriction hit (Dashboard → Configure → Restrictions): an
+      // allowlist that this address/domain isn't on, a blocklist entry, or
+      // "block disposable email addresses" catching a temp-mail provider.
+      // Not something this route can fix — name it so the admin knows to use
+      // a different address or ask Furniture Assist to adjust the setting.
+      if (clerkErr(err)?.code === 'identifier_not_allowed_access') {
+        return NextResponse.json(
+          {
+            error:
+              "This email address is blocked by the portal's sign-up restrictions " +
+              '(a disposable/temporary address, or a domain that is not allowed). ' +
+              'Use a regular work or personal address.',
+            detail: detailOf(err),
+          },
+          { status: 422 },
+        )
+      }
       return NextResponse.json(
         { error: 'Could not create the portal user.', detail: detailOf(err) },
         { status: 500 },
