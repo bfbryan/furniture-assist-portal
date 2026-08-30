@@ -6,14 +6,13 @@
 // - Inactive        (collapsed)
 // Hidden entirely: Portal Invite Status = Wrong Agency (server-side filter)
 //
-// Uses universal AgencyPageHeader (no stat tiles) and delegates invite form
-// to StaffList's modal-driven "+ Invite Staff Member" button.
+// Delegates the invite form to StaffList's modal-driven
+// "+ Invite Staff Member" button.
 
 
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById, getAgencyUsersByAgencyId } from '@/lib/airtable'
 import { auth, clerkClient } from '@clerk/nextjs/server'
-import AgencyPageHeader from '@/components/agency/AgencyPageHeader'
 import StaffList from '@/components/agency/StaffList'
 
 
@@ -73,22 +72,6 @@ export default async function AdminPage() {
 
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
-      <AgencyPageHeader
-        agencyName={agency.name}
-        agencyAddress={agency.address}
-        agencyAddress2={agency.address2}
-        agencyCity={agency.city}
-        agencyState={agency.state}
-        agencyZip={agency.zip}
-        agencyPhone={agency.phone}
-        userName={agencyUser.name}
-        userPhone={agencyUser.phone ?? 'No phone on file'}
-        userRole={agencyUser.role}
-        stats={null}
-      />
-
-
-      {/* Main content — full width, no sidebar */}
       <main className="max-w-6xl mx-auto px-8 py-9">
         <StaffList
           members={members}

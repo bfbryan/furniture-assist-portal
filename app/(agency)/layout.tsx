@@ -41,7 +41,6 @@ export default async function AgencyLayout({
     <AgencyPortalShell
       agencyName={agency.name}
       userName={agencyUser.name || agencyUser.email}
-      userRole={agencyUser.role}
       isAdmin={isAdmin}
     >
       {children}

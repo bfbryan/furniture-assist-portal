@@ -9,11 +9,30 @@
 //   • OverflowMenu — the ⋯ row-actions button and its dropdown
 //   • ColumnHead   — the one label row per section
 //   • the action icons and the MenuItem shape they fill
+//   • MENU_SURFACE / MENU_ITEM — the dropdown chrome, also used by the header
+//     avatar menu (AgencyAvatarMenu) so the portal has one menu style
 //
 // The ⋯ button's look lives in globals.css (.fa-active-menu-trigger): 32px
 // box, #EDE9E1 hover fill, navy glyph on hover, 2px teal focus ring.
 
 import { useEffect, useRef } from 'react'
+
+// ---------------------------------------------------------------- menu chrome
+
+/** The white dropdown panel. */
+export const MENU_SURFACE: React.CSSProperties = {
+  minWidth: '184px', background: 'white', border: '1px solid #EDE9E1',
+  borderRadius: '8px', boxShadow: '0 8px 24px rgba(27,43,75,0.16)', padding: '4px',
+}
+
+/** One row inside it — spread `{ color }` per item. `.fa-active-menu-item`
+ *  carries the hover fill (globals.css). */
+export const MENU_ITEM: React.CSSProperties = {
+  display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
+  padding: '8px 10px', borderRadius: '6px', border: 'none', background: 'transparent',
+  fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px',
+  cursor: 'pointer', textDecoration: 'none', textAlign: 'left',
+}
 
 // ---------------------------------------------------------------- icons
 
@@ -85,17 +104,11 @@ export function OverflowMenu({
         </svg>
       </button>
       {open && (
-        <div role="menu" style={{
-          position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 20,
-          minWidth: '184px', background: 'white', border: '1px solid #EDE9E1',
-          borderRadius: '8px', boxShadow: '0 8px 24px rgba(27,43,75,0.16)', padding: '4px',
-        }}>
+        <div role="menu" style={{ position: 'absolute', top: 'calc(100% + 4px)', right: 0, zIndex: 20, ...MENU_SURFACE }}>
           {items.map((it, i) => {
             const style: React.CSSProperties = {
-              display: 'flex', alignItems: 'center', gap: '10px', width: '100%',
-              padding: '8px 10px', borderRadius: '6px', border: 'none', background: 'transparent',
-              fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px',
-              cursor: 'pointer', textDecoration: 'none', textAlign: 'left', color: it.color,
+              ...MENU_ITEM,
+              color: it.color,
               ...(it.divider ? { borderTop: '1px solid #EDE9E1', marginTop: '4px', paddingTop: '10px' } : {}),
             }
             return it.href ? (

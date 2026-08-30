@@ -12,7 +12,6 @@ import {
 } from '@/lib/airtable'
 import ReferralTable from '@/components/agency/ReferralTable'
 import { StaffFilterProvider } from '@/components/agency/ActiveReferralsFilter'
-import { cityStateZip } from '@/lib/address'
 
 // Active = not yet approved OR upcoming appointment.
 // Excludes Completed, Cancelled, Rejected and No Show.
@@ -71,62 +70,11 @@ export default async function ActiveReferralsPage() {
   const activeReferrals = allReferrals.filter(isActive)
 
   // StaffFilterProvider holds the active set + the staff filter; the table
-  // (and its search) read from it. It used to also feed Pending / Scheduled
-  // count tiles in the hero — those were removed (they duplicated the
-  // dashboard and neither was actionable), which is what gives the navy
-  // header back its height.
+  // (and its search) read from it. The navy hero that used to sit here was
+  // replaced by the shell's slim page bar — see AgencyPortalShell / AgencyPageBar.
   return (
     <StaffFilterProvider referrals={activeReferrals}>
     <div className="min-h-screen bg-[#F7F5F1]">
-
-      {/* Hero */}
-      <div className="bg-gradient-to-br from-[#1B2B4B] to-[#253F6A] border-b-4 border-[#2A7F6F] px-8 py-7">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-6">
-
-          {/* Agency + Staff info blocks */}
-          <div className="flex gap-10 flex-wrap">
-
-            {/* Agency block */}
-            <div>
-              <span className="text-xs font-bold tracking-widest uppercase text-[#3AA08D] mb-2 block">
-                Agency Partner
-              </span>
-              <h1 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
-                {agency.name}
-              </h1>
-              {/* Joined rather than interpolated. 75 of the 129 agencies queued
-                  for onboarding have no City, and an agency with no address at
-                  all rendered a line reading ", ," under its own name. This is
-                  what lib/address.ts exists for; the other agency surfaces
-                  already use it. */}
-              <p className="text-sm text-white/50 font-light">
-                {[[agency.address, agency.address2].filter(Boolean).join(', '),
-                  cityStateZip(agency.city, agency.state, agency.zip)].filter(Boolean).join(', ')}
-              </p>
-              <p className="text-sm text-white/50 font-light">{agency.phone}</p>
-            </div>
-
-            {/* Divider */}
-            <div style={{ width: '1px', background: 'rgba(255,255,255,0.12)', alignSelf: 'stretch' }} />
-
-            {/* Staff block */}
-            <div>
-              <span className="text-xs font-bold tracking-widest uppercase text-[#3AA08D] mb-2 block">
-                Logged In As
-              </span>
-              <h2 className="font-montserrat font-extrabold text-2xl text-white tracking-tight mb-1">
-                {agencyUser.name}
-              </h2>
-              <p className="text-sm text-white/50 font-light">{agencyUser.phone ?? 'No phone on file'}</p>
-              <p className="text-sm text-white/50 font-light">{agencyUser.role}</p>
-            </div>
-
-          </div>
-
-        </div>
-      </div>
-
-      {/* Main content */}
       <main className="max-w-6xl mx-auto px-8 py-9">
         <ReferralTable isAdmin={agencyUser.role === 'Admin'} />
       </main>

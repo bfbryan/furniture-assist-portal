@@ -3,14 +3,14 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { SignOutButton, UserButton } from '@clerk/nextjs'
 import Link from 'next/link'
+import AgencyPageBar from './AgencyPageBar'
+import AgencyAvatarMenu from './AgencyAvatarMenu'
 
 type Props = {
   children: React.ReactNode
   agencyName: string
   userName: string
-  userRole: string
   isAdmin: boolean
 }
 
@@ -18,7 +18,6 @@ export default function AgencyPortalShell({
   children,
   agencyName,
   userName,
-  userRole,
   isAdmin,
 }: Props) {
   const pathname = usePathname()
@@ -96,7 +95,10 @@ export default function AgencyPortalShell({
     gap: '10px',
     padding: '9px 12px',
     borderRadius: '8px',
-    color: 'rgba(255,255,255,0.3)',
+    // 0.4 rather than 0.3: still clearly dimmer than the 0.6 active items, but
+    // one step up from "broken" — this reads as "not yet", and the SOON badge
+    // says why.
+    color: 'rgba(255,255,255,0.4)',
     fontSize: '13.5px',
     fontWeight: 500,
     cursor: 'not-allowed',
@@ -110,13 +112,6 @@ export default function AgencyPortalShell({
     color: 'rgba(255,255,255,0.3)',
     padding: '12px 8px 6px',
   }
-
-  const initials = userName
-    .split(' ')
-    .map((n) => n[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase()
 
   return (
     <div className="fa-portal" style={{ display: 'flex', minHeight: '100vh' }}>
@@ -194,9 +189,42 @@ export default function AgencyPortalShell({
           </div>
         </div>
 
-        {/* Nav */}
-        <nav style={{ flex: 1, padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }}>
-          <div style={sectionHeader}>Overview</div>
+        {/* Agency identity — moved here from the old navy hero. The 6px bottom
+            padding (plus the nav's 12px top) gives the filled box room to read
+            as a different kind of element from the nav links below it. */}
+        <div style={{ padding: '14px 16px 6px' }}>
+          <div style={{ background: 'rgba(255,255,255,0.07)', borderRadius: '8px', padding: '8px 10px' }}>
+            <div
+              style={{
+                fontSize: '9px',
+                fontWeight: 700,
+                letterSpacing: '0.12em',
+                textTransform: 'uppercase',
+                color: 'rgba(255,255,255,0.35)',
+                marginBottom: '2px',
+              }}
+            >
+              Agency
+            </div>
+            <div
+              style={{
+                fontSize: '11px',
+                fontWeight: 500,
+                color: 'white',
+                whiteSpace: 'nowrap',
+                overflow: 'hidden',
+                textOverflow: 'ellipsis',
+              }}
+              title={agencyName}
+            >
+              {agencyName}
+            </div>
+          </div>
+        </div>
+
+        {/* Nav — REFERRALS is the only group with more than one item, so it's
+            the only one that keeps a section header. */}
+        <nav style={{ flex: 1, padding: '12px 12px 16px', display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }}>
           <Link href="/dashboard" style={linkStyle(isActive('/dashboard'))}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="3" width="7" height="7" />
@@ -207,7 +235,7 @@ export default function AgencyPortalShell({
             Dashboard
           </Link>
 
-          <div style={sectionHeader}>Referrals</div>
+          <div style={{ ...sectionHeader, marginTop: '6px' }}>Referrals</div>
           <Link href="/referrals/active" style={linkStyle(isActive('/referrals/active'))}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
@@ -250,8 +278,10 @@ export default function AgencyPortalShell({
             </span>
           </div>
 
-          <div style={sectionHeader}>Agency</div>
-          <Link href="/profile" style={linkStyle(isActive('/profile'))}>
+          {/* Profile and Team sit outside the REFERRALS group. This 18px top
+              margin closes that group with space rather than another label —
+              the same job the section header does at its top. */}
+          <Link href="/profile" style={{ ...linkStyle(isActive('/profile')), marginTop: '18px' }}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
               <circle cx="12" cy="7" r="4" />
@@ -259,114 +289,24 @@ export default function AgencyPortalShell({
             Profile
           </Link>
 
+          {/* Admin only. team/page.tsx also redirects a non-admin to /dashboard
+              server-side (orgRole !== 'org:admin'), so this is presentation on
+              top of an enforced gate, not the gate itself. */}
           {isAdmin && (
-            <>
-              <div style={sectionHeader}>Admin</div>
-              <Link href="/team" style={linkStyle(isActive('/team'))}>
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                  <circle cx="9" cy="7" r="4" />
-                  <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                  <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                </svg>
-                Team
-              </Link>
-            </>
+            <Link href="/team" style={linkStyle(isActive('/team'))}>
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                <circle cx="9" cy="7" r="4" />
+                <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+                <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+              </svg>
+              Team
+            </Link>
           )}
         </nav>
 
-        {/* Footer — user identity */}
-        <div style={{ padding: '16px 12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '8px' }}>
-            {/* Declaring MenuItems replaces Clerk's default menu, so this drops
-                "Manage account" and leaves only sign out — the portal captures
-                profile details on its own Profile page. */}
-            <UserButton
-              appearance={{
-                elements: {
-                  avatarBox: { width: '32px', height: '32px' },
-                },
-              }}
-            >
-              <UserButton.MenuItems>
-                <UserButton.Action label="signOut" />
-              </UserButton.MenuItems>
-            </UserButton>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div
-                style={{
-                  fontSize: '13px',
-                  fontWeight: 600,
-                  color: 'white',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-                title={userName}
-              >
-                {userName}
-              </div>
-              <div
-                style={{
-                  fontSize: '11px',
-                  color: 'rgba(255,255,255,0.4)',
-                  whiteSpace: 'nowrap',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                }}
-                title={agencyName}
-              >
-                {agencyName}
-              </div>
-            </div>
-          </div>
-
-          {/* Sign out. Until now the only way out of the agency portal was to
-              tap the Clerk avatar above and pick Sign Out from the menu it
-              opens — two taps, and nothing on screen said so. Ben asked for an
-              icon at the bottom left; this is it, in the bottom-left corner of
-              the portal on a desktop and at the foot of the drawer on a phone.
-
-              Icon plus a one-word label rather than a bare glyph: the icon is
-              the same door-and-arrow the operations portal already uses for
-              this, and it is unlabelled there only because the person's name
-              and email sit beside it. The Clerk menu above still works and is
-              untouched.
-
-              44px tall — the minimum comfortable tap target on a phone, which
-              is where this was asked for. */}
-          <SignOutButton redirectUrl="/sign-in">
-            <button
-              type="button"
-              title="Sign out"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                width: '100%',
-                minHeight: '44px',
-                marginTop: '4px',
-                padding: '8px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'rgba(255,255,255,0.06)',
-                color: 'rgba(255,255,255,0.6)',
-                fontSize: '13px',
-                fontWeight: 600,
-                fontFamily: 'inherit',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-              Sign out
-            </button>
-          </SignOutButton>
-        </div>
+        {/* No footer. User identity and Sign out moved to the page bar's
+            avatar menu (AgencyPageBar); the empty rail bottom is intentional. */}
       </aside>
 
       <main className="fa-shell-main" style={{ flex: 1, background: '#F7F6F2', minHeight: '100vh' }}>
@@ -402,18 +342,16 @@ export default function AgencyPortalShell({
           <span className="font-extrabold text-sm text-white tracking-wide">
             Furniture Assist <span className="text-[#3AA08D]">| Agency Portal</span>
           </span>
-          <UserButton
-            appearance={{
-              elements: {
-                avatarBox: { width: '32px', height: '32px' },
-              },
-            }}
-          >
-            <UserButton.MenuItems>
-              <UserButton.Action label="signOut" />
-            </UserButton.MenuItems>
-          </UserButton>
+          {/* Same custom avatar + menu as the page bar (Airtable identity,
+              sign-out only). The page bar's own avatar is hidden below 1280,
+              so this is the one that shows on a phone. */}
+          <AgencyAvatarMenu userName={userName} agencyName={agencyName} />
         </header>
+
+        {/* Slim page bar — every page. Below the mobile top bar on a phone,
+            at the top of <main> on desktop. */}
+        <AgencyPageBar userName={userName} agencyName={agencyName} />
+
         {children}
       </main>
     </div>
