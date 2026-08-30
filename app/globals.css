@@ -373,6 +373,20 @@ h1, h2, h3, h4, h5, h6 {
 
 .fa-team-row:not(.fa-team-row--head):hover { background: #FAFAF8; }
 
+/* Team header. Desktop: heading top-left, Add Staff Member top-right, the
+   two-line description under the heading. DOM order is heading / description /
+   button; the button is placed into row 1 col 2 here, and drops to its own
+   row on mobile (see the media query). */
+.fa-team-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  column-gap: 16px;
+}
+.fa-team-header > h2                   { grid-column: 1; grid-row: 1; }
+.fa-team-header > .fa-team-header-desc { grid-column: 1; grid-row: 2; }
+.fa-team-header > .fa-team-header-add  { grid-column: 2; grid-row: 1; justify-self: end; }
+
 /* ---------- Page shells (4) ---------- */
 
 .fa-dashboard-grid {
@@ -597,6 +611,18 @@ h1, h2, h3, h4, h5, h6 {
   .fa-team-row > :nth-child(4):empty { display: none; }
   .fa-team-row--head { display: none; }
 
+  /* Team header stacks: heading, description, then the Add Staff Member button
+     on its own line left-aligned — it crowds the heading inline on a phone. */
+  .fa-team-header {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .fa-team-header > .fa-team-header-add {
+    grid-column: 1;
+    grid-row: 3;
+    justify-self: start;
+    margin-top: 14px;
+  }
+
   /* Card grids and page shells collapse to one column. */
   .fa-dashboard-grid,
   .fa-profile-grid,
@@ -694,17 +720,25 @@ h1, h2, h3, h4, h5, h6 {
   /* Page bar on a phone: tighter side padding; the disabled New Referral
      button is dropped (it's dead weight in the top-right of every page, and
      the rail nav item already carries the SOON signal); and the page bar's
-     own avatar slot hides — the mobile top bar above carries the visible one.
-     position: static — the shell's navy top bar is the only sticky header on a
-     phone (two stacked sticky bars would take too much of the screen, and both
-     the nav drawer and the avatar menu are reachable from that top bar). */
+     own avatar slot hides — the mobile top bar above carries the visible one. */
   .fa-pagebar {
     padding: 8px 20px;
-    position: static;
   }
   .fa-pagebar-newref,
   .fa-pagebar-avatar-slot {
     display: none;
+  }
+
+  /* Stick the page bar directly under the shell's top bar (h-16 = 64px) so a
+     long page doesn't scroll the page title out of reach. z-index below the
+     top bar's 40 so it can never ride over it. NOT the referral detail page
+     (.fa-pagebar--plain): there the bar stays in flow, same as desktop —
+     stacking top bar + page bar + its own sub-header is too much on a phone,
+     and the sub-header is the one worth keeping. */
+  .fa-pagebar:not(.fa-pagebar--plain) {
+    position: sticky;
+    top: 64px;
+    z-index: 30;
   }
 
   /* Section title and its action button compressed into each other; let the

@@ -377,33 +377,17 @@ export default function StaffList({
 
   return (
     <>
-      {/* Header — heading and the primary action on one line (the action lives
-          here, not in the page bar), page description directly beneath. The
-          description is two lines — purpose, then operational guidance — capped
-          at ~640px so it wraps rather than stretching to the card edge. */}
-      <div style={{ marginBottom: '20px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
-          <h2 style={{ fontFamily: 'var(--font-montserrat)', fontSize: '15px', fontWeight: 600, color: '#1B2B4B', margin: 0 }}>
-            Team Members
-          </h2>
-          <button
-            type="button"
-            onClick={() => setInviteOpen(true)}
-            style={{
-              flexShrink: 0,
-              display: 'inline-flex', alignItems: 'center', gap: '6px',
-              padding: '9px 16px', borderRadius: '8px', border: 'none',
-              background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)',
-              fontWeight: 700, fontSize: '12px', letterSpacing: '0.03em', cursor: 'pointer',
-            }}
-          >
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-            </svg>
-            Add Staff Member
-          </button>
-        </div>
-        <div style={{ maxWidth: '640px', fontSize: '13px', lineHeight: 1.6, margin: '4px 0 0' }}>
+      {/* Header. Desktop (.fa-team-header grid): heading top-left, Add Staff
+          Member top-right, the two-line description under the heading (capped
+          at ~640px so it wraps rather than reaching the card edge). Mobile:
+          heading, description, then the button on its own line beneath — see
+          the media query in globals.css. Children are in that DOM order so the
+          mobile stack needs no reordering, only the button repositioned. */}
+      <div className="fa-team-header" style={{ marginBottom: '20px' }}>
+        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontSize: '15px', fontWeight: 600, color: '#1B2B4B', margin: 0 }}>
+          Team Members
+        </h2>
+        <div className="fa-team-header-desc" style={{ maxWidth: '640px', fontSize: '13px', lineHeight: 1.6, margin: '4px 0 0' }}>
           <p style={{ color: '#7A8899', margin: 0 }}>
             Manage who at your agency has access to the Furniture Assist portal.
           </p>
@@ -413,6 +397,22 @@ export default function StaffList({
             People already in our records appear below — use Add Staff Member for anyone who isn&apos;t listed.
           </p>
         </div>
+        <button
+          type="button"
+          className="fa-team-header-add"
+          onClick={() => setInviteOpen(true)}
+          style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '9px 16px', borderRadius: '8px', border: 'none',
+            background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)',
+            fontWeight: 700, fontSize: '12px', letterSpacing: '0.03em', cursor: 'pointer',
+          }}
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          Add Staff Member
+        </button>
       </div>
 
       {flash && (
