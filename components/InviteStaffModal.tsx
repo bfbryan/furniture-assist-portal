@@ -38,6 +38,7 @@ export default function InviteStaffModal({
     lastName: '',
     email: '',
     phone: '',
+    role: 'Staff' as 'Staff' | 'Admin',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -46,7 +47,7 @@ export default function InviteStaffModal({
   // Reset form when modal opens
   useEffect(() => {
     if (open) {
-      setForm({ firstName: '', lastName: '', email: '', phone: '' })
+      setForm({ firstName: '', lastName: '', email: '', phone: '', role: 'Staff' })
       setError(null)
     }
   }, [open])
@@ -97,8 +98,10 @@ export default function InviteStaffModal({
     inviterDomain !== inviteeDomain
 
 
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())
+
   const canSubmit =
-    form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim() && !loading
+    form.firstName.trim() && form.lastName.trim() && emailValid && form.phone.trim() && !loading
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -118,7 +121,7 @@ export default function InviteStaffModal({
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
           email: form.email.trim(),
-          role: 'org:member',
+          role: form.role === 'Admin' ? 'org:admin' : 'org:member',
           phone: form.phone.trim(),
           orgId,
           agencyId,
@@ -294,6 +297,37 @@ export default function InviteStaffModal({
             />
             <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '4px' }}>
               Direct work number for this staff member.
+            </div>
+          </div>
+
+
+          {/* Role — Staff by default. Admin can manage the team and see every
+              referral; Staff see only their own. */}
+          <div style={{ marginBottom: '18px' }}>
+            <label style={labelStyle}>Role</label>
+            <div style={{ display: 'inline-flex', border: '1px solid #EDE9E1', borderRadius: '8px', overflow: 'hidden' }}>
+              {(['Staff', 'Admin'] as const).map((r) => {
+                const on = form.role === r
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setForm({ ...form, role: r })}
+                    style={{
+                      padding: '8px 18px',
+                      border: 'none',
+                      background: on ? '#2A7F6F' : 'white',
+                      color: on ? 'white' : '#2C3A4A',
+                      fontFamily: 'var(--font-montserrat)',
+                      fontWeight: 700,
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {r}
+                  </button>
+                )
+              })}
             </div>
           </div>
 

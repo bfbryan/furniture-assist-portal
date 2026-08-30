@@ -9,6 +9,7 @@ import { clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
 import { portalSignInLink } from '@/lib/auth/portal-sign-in-link'
+import { getAgencyUserByEmail } from '@/lib/airtable'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -81,6 +82,26 @@ export async function POST(req: NextRequest) {
 
   if (!firstName || !lastName || !email || !orgId || !agencyId) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+    return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 400 })
+  }
+
+  // Don't create a second Agency Users row for an email that already has one —
+  // surface it instead. Same agency: it's already on their team. Another
+  // agency: Furniture Assist has to move it.
+  const existing = await getAgencyUserByEmail(email)
+  if (existing) {
+    return NextResponse.json(
+      {
+        error:
+          existing.agencyId === agencyId
+            ? `${existing.name || email} is already on your team.`
+            : `${email} is already set up with another agency. Contact Furniture Assist to move them.`,
+      },
+      { status: 409 },
+    )
   }
 
   try {

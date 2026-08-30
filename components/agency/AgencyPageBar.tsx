@@ -11,9 +11,12 @@
 // Flat #1B2B4B — the same value as the sidebar, no gradient, so the two don't
 // seam where they meet. The 4px teal rule underneath is the old hero's.
 //
-// Not sticky: it scrolls with the page. The referral detail page's own
-// sub-header is sticky at >=1280, and a second sticky bar above it would
-// fight for top:0 — so this one stays in normal flow and they just stack.
+// Sticky at top:0 on desktop (globals.css, >=1280) on every page EXCEPT the
+// referral detail page: there its own sub-header carries Reschedule / Cancel /
+// the status pill and is the more valuable thing to keep in view, so this bar
+// gets .fa-pagebar--plain and returns to normal flow, leaving the sub-header as
+// the single sticky element. Below 1280 this bar is never sticky — the shell's
+// navy top bar is the one sticky header on a phone.
 //
 // Below 1280: the disabled New Referral button is hidden (globals.css) and the
 // avatar slot is hidden — the mobile top bar carries the visible avatar.
@@ -38,6 +41,12 @@ function titleFor(pathname: string): string {
   return ''
 }
 
+// The referral detail page (/referrals/[id]) is the one page with its own
+// sticky sub-header, so the page bar yields the top:0 slot to it there.
+function isReferralDetail(pathname: string): boolean {
+  return pathname.startsWith('/referrals/') && !TITLES[pathname]
+}
+
 export default function AgencyPageBar({
   userName,
   agencyName,
@@ -49,7 +58,7 @@ export default function AgencyPageBar({
   const title = titleFor(pathname)
 
   return (
-    <div className="fa-pagebar">
+    <div className={`fa-pagebar${isReferralDetail(pathname) ? ' fa-pagebar--plain' : ''}`}>
       <span
         className="fa-pagebar-title"
         style={{ color: 'white', fontSize: '14.5px', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}

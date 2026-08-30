@@ -8,6 +8,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { cityStateZip } from '@/lib/address'
 import { formatEIN, isCompleteEIN } from '@/lib/ein'
+import { AGENCY_CONTACT_EMAIL } from '@/lib/contact'
 
 // Optional Airtable fields are string | null — Airtable omits blank fields,
 // so anything not guaranteed present must not be typed as a bare string.
@@ -178,6 +179,26 @@ const EDIT_LINK: React.CSSProperties = {
   cursor: 'pointer',
   fontFamily: 'inherit',
 }
+// Sits in the value column where an empty optional field would otherwise read
+// "Not set". Muted (not the teal of a primary action) and underlined so it
+// reads as a fill-in prompt, not a system state. Opens the same editor the
+// card's Edit button does, focused on this field.
+const ADD_VALUE_LINK: React.CSSProperties = {
+  fontSize: '13px',
+  color: '#7A8899',
+  background: 'none',
+  border: 'none',
+  padding: 0,
+  cursor: 'pointer',
+  fontFamily: 'inherit',
+  textDecoration: 'underline',
+}
+// Explanatory sub-text under a value, e.g. why the EIN is asked for.
+const VALUE_HINT: React.CSSProperties = {
+  fontSize: '11px',
+  color: '#9AA6B2',
+  marginTop: '4px',
+}
 
 // ============ AGENCY CARD ============
 
@@ -186,6 +207,14 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
   const [editing, setEditing] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Which field an "Add" link asked to jump to — the matching input autoFocuses
+  // when the editor opens. null when the editor was opened by the Edit button.
+  const [focusField, setFocusField] = useState<'website' | 'ein' | null>(null)
+
+  function openEditor(field?: 'website' | 'ein') {
+    setFocusField(field ?? null)
+    setEditing(true)
+  }
 
   const [form, setForm] = useState({
     name: agency.name ?? '',
@@ -226,6 +255,7 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
         throw new Error(j.error ?? `HTTP ${res.status}`)
       }
       setEditing(false)
+      setFocusField(null)
       router.refresh()
     } catch (e: any) {
       setError(e.message ?? 'Update failed')
@@ -248,6 +278,7 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
       ein: formatEIN(agency.ein ?? ''),
     })
     setError(null)
+    setFocusField(null)
     setEditing(false)
   }
 
@@ -258,7 +289,7 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
       <div style={CARD_HEADER}>
         <div style={CARD_TITLE}>Agency Information</div>
         {canEdit && !editing && (
-          <button style={EDIT_LINK} onClick={() => setEditing(true)}>
+          <button style={EDIT_LINK} onClick={() => openEditor()}>
             Edit
           </button>
         )}
@@ -300,8 +331,8 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
             <div style={VALUE}>{agency.phone || '—'}</div>
           </div>
           <div className="fa-profile-row" style={ROW}>
-            <div style={LABEL}>Website</div>
-            <div style={agency.website ? VALUE : VALUE_MUTED}>
+            <div style={LABEL}>Website (optional)</div>
+            <div style={VALUE}>
               {agency.website ? (
                 <a
                   href={agency.website.startsWith('http') ? agency.website : `https://${agency.website}`}
@@ -311,14 +342,31 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
                 >
                   {agency.website}
                 </a>
+              ) : canEdit ? (
+                <button type="button" style={ADD_VALUE_LINK} onClick={() => openEditor('website')}>
+                  Add
+                </button>
               ) : (
-                'Not set'
+                '—'
               )}
             </div>
           </div>
           <div className="fa-profile-row" style={ROW_LAST}>
-            <div style={LABEL}>EIN</div>
-            <div style={agency.ein ? VALUE : VALUE_MUTED}>{agency.ein ?? 'Not set'}</div>
+            <div style={LABEL}>EIN (optional)</div>
+            <div>
+              <div style={VALUE}>
+                {agency.ein ? (
+                  agency.ein
+                ) : canEdit ? (
+                  <button type="button" style={ADD_VALUE_LINK} onClick={() => openEditor('ein')}>
+                    Add
+                  </button>
+                ) : (
+                  '—'
+                )}
+              </div>
+              <div style={VALUE_HINT}>Helps us verify partner organizations.</div>
+            </div>
           </div>
         </div>
       ) : (
@@ -352,8 +400,9 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
             <input style={INPUT} value={form.phone} onChange={e => setForm({ ...form, phone: e.target.value })} />
           </div>
           <div className="fa-profile-row" style={ROW}>
-            <div style={LABEL}>Website</div>
-            <input style={INPUT} value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} placeholder="reagan.com" />
+            <div style={LABEL}>Website (optional)</div>
+            {/* autoFocus: focus follows an explicit "Add" click from the read view. */}
+            <input style={INPUT} value={form.website} onChange={e => setForm({ ...form, website: e.target.value })} placeholder="reagan.com" autoFocus={focusField === 'website'} />
           </div>
           {/* EIN. Was a free-text box with a placeholder and nothing else, so
               the same nine digits could be stored a dozen ways. formatEIN is
@@ -361,8 +410,9 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
               inputMode 'numeric' brings up the number pad on a phone; the
               maxLength of 10 is nine digits plus the hyphen it inserts. */}
           <div className="fa-profile-row" style={ROW_LAST}>
-            <div style={LABEL}>EIN</div>
+            <div style={LABEL}>EIN (optional)</div>
             <div>
+              {/* autoFocus: focus follows an explicit "Add" click from the read view. */}
               <input
                 style={INPUT}
                 value={form.ein}
@@ -370,6 +420,7 @@ function AgencyCard({ agency, canEdit }: { agency: Agency; canEdit: boolean }) {
                 placeholder="12-3456789"
                 inputMode="numeric"
                 maxLength={10}
+                autoFocus={focusField === 'ein'}
               />
               {/* Warned, not blocked: EIN is optional on this record, so a
                   half-typed one must not be able to trap somebody who came here
@@ -497,7 +548,10 @@ function MyProfileCard({ user }: { user: AgencyUser }) {
           </div>
           <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Email</div>
-            <div style={{ ...VALUE_MUTED, paddingTop: '3px' }}>{user.email} (managed by Clerk)</div>
+            <div>
+              <div style={{ ...VALUE_MUTED, paddingTop: '3px' }}>{user.email}</div>
+              <div style={VALUE_HINT}>Contact Furniture Assist to change your email address.</div>
+            </div>
           </div>
           <div className="fa-profile-row" style={ROW}>
             <div style={LABEL}>Phone</div>
@@ -592,21 +646,34 @@ function AdminCard({ agency, isAdmin }: { agency: Agency; isAdmin: boolean }) {
             </div>
           </div>
 
-          <div
-            style={{
-              marginTop: '18px',
-              padding: '10px 14px',
-              background: isAdmin ? '#EAF4F2' : '#F5F1EA',
-              borderRadius: '8px',
-              fontSize: '12px',
-              color: isAdmin ? '#2A7F6F' : '#5A6577',
-              lineHeight: 1.5,
-            }}
-          >
-            {isAdmin
-              ? 'You are the primary administrator for this agency.'
-              : 'Contact your primary administrator for portal help or role changes.'}
-          </div>
+          {/* For an agency admin the card title, the name above, and the
+              "Primary Administrator" subtitle already say this three times, so
+              the tinted callout is dropped and the transfer note is the only
+              supporting line. A Staff / non-admin viewer is here to find out
+              WHO their admin is — they get a callout that names them. */}
+          {isAdmin ? (
+            <p style={{ fontSize: '12px', color: '#9AA6B2', lineHeight: 1.6, margin: '18px 0 0' }}>
+              To change your agency&apos;s primary administrator, email{' '}
+              <a href={`mailto:${AGENCY_CONTACT_EMAIL}`} style={{ color: '#7A8899', textDecoration: 'underline' }}>
+                {AGENCY_CONTACT_EMAIL}
+              </a>
+              .
+            </p>
+          ) : (
+            <div
+              style={{
+                marginTop: '18px',
+                padding: '10px 14px',
+                background: '#F5F1EA',
+                borderRadius: '8px',
+                fontSize: '12px',
+                color: '#5A6577',
+                lineHeight: 1.5,
+              }}
+            >
+              {agency.contactName} is the primary administrator for your agency.
+            </div>
+          )}
         </div>
       ) : (
         <div style={{ fontSize: '13px', color: '#7A8899', padding: '10px 0' }}>
