@@ -192,12 +192,16 @@ export async function POST(
   // is already written and the sign-in link is live, so a non-send does not
   // fail the request; it is surfaced via `emailSent` for the Team page to warn
   // on. Same contract as POST /api/admin/invite.
+  // Token keys are the EXACT placeholder names in the Airtable template
+  // ("First Name" / "Agency Name" / "magicLink"). fillTemplate does an
+  // exact-match lookup — camelCase keys resolved to "" and the greeting and
+  // agency name came out blank. Same contract as POST /api/admin/invite.
   const emailResult = await sendPortalAccountEmail({
     automationName: 'Agency Staff Welcome to Portal - Invite',
     to: staff.email,
     tokens: {
-      firstName: staff.firstName,
-      agencyName: staff.agencyName ?? '',
+      'First Name': staff.firstName,
+      'Agency Name': staff.agencyName ?? '',
       magicLink,
     },
     agencyRecordId: staff.agencyId,
