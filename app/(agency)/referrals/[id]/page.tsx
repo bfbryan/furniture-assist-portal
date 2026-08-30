@@ -1165,12 +1165,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             <HeaderButton tier="doc" href={referral.appointmentSlipUrl!}>Appointment Slip</HeaderButton>
           )}
           {isReschedulable && !awaitingOutcome && (
-            <HeaderButton tier="amber" onClick={() => setRescheduleModal({ open: true, id: referral.id, name: referral.clientName })}>
+            <HeaderButton tier="amber" onClick={() => setRescheduleModal({ open: true, id: referral.id, name: referral.clientName, date: referral.appointmentDate, time: referral.appointmentTime, missed: status === 'Missed Appointment' })}>
               Reschedule
             </HeaderButton>
           )}
           {isCancellable && !awaitingOutcome && (
-            <HeaderButton tier="danger" onClick={() => setConfirmModal({ open: true, type: 'cancel', id: referral.id, name: referral.clientName })}>
+            <HeaderButton tier="danger" onClick={() => setConfirmModal({ open: true, type: 'cancel', id: referral.id, name: referral.clientName, date: referral.appointmentDate, time: referral.appointmentTime })}>
               Cancel
             </HeaderButton>
           )}
