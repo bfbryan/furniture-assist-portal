@@ -133,7 +133,14 @@ export default function InviteStaffModal({
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
-        setError(data.error || 'Failed to send invitation.')
+        // `detail` carries the underlying Clerk / Airtable message on the
+        // 500s — worth showing on this admin-only surface so a failed invite
+        // can be diagnosed without opening the network tab.
+        setError(
+          [data.error || 'Failed to send invitation.', data.detail]
+            .filter(Boolean)
+            .join(' — '),
+        )
         setLoading(false)
         return
       }
