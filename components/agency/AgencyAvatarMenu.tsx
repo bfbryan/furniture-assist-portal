@@ -73,12 +73,30 @@ export default function AgencyAvatarMenu({
       </button>
 
       {open && (
-        <div role="menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 60, ...MENU_SURFACE, minWidth: '212px' }}>
+        /* maxWidth bounds the header rows: without it a long agency name grows
+           the menu to fit on one line instead of wrapping / truncating. */
+        <div role="menu" style={{ position: 'absolute', top: 'calc(100% + 6px)', right: 0, zIndex: 60, ...MENU_SURFACE, minWidth: '212px', maxWidth: '264px' }}>
           <div style={{ padding: '9px 12px 8px' }}>
             <div style={{ fontSize: '13px', fontWeight: 700, color: '#1B2B4B', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={userName}>
               {userName}
             </div>
-            <div style={{ fontSize: '11px', color: '#7A8899', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', marginTop: '1px' }} title={agencyName}>
+            {/* Wraps to at most two lines (break-word so one long word can't
+                widen the menu), then ellipsis; full name on the title attribute.
+                Same clamp as the rail agency block in AgencyPortalShell.tsx. */}
+            <div
+              style={{
+                fontSize: '11px',
+                color: '#7A8899',
+                lineHeight: 1.35,
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 2,
+                overflow: 'hidden',
+                overflowWrap: 'break-word',
+                marginTop: '1px',
+              }}
+              title={agencyName}
+            >
               {agencyName}
             </div>
           </div>

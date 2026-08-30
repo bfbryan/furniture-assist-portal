@@ -1,11 +1,15 @@
 // app/api/admin/staff/[id]/invite/route.ts
 //
 // POST — Invite an EXISTING Agency Users row.
-// - Called from "Send Invite" (Unclaimed → Invited) and "Resend" (Invited → Invited).
-// - Creates a Clerk user + org membership if one doesn't exist for this record.
-// - Generates a magic sign-in token and emails it via the Email Automations
-//   pattern ("Agency Staff Welcome to Portal - Invite" — the Zapier webhook
-//   this used to POST to has been retired).
+// - Called from "Send Invite" (imported row, no Clerk user) and "Resend"
+//   (already invited via here or via Add Staff Member, Clerk user exists).
+// - The two are NOT flagged; the route derives what's needed from state:
+//     • Clerk user  — created only when the row has no Clerk User ID.
+//     • Org membership — added only when the user isn't already in the org
+//       (checked with getOrganizationMembershipList). Re-adding it is what
+//       made Resend fail with "Failed to add to organization" for a user
+//       first created through Add Staff Member.
+// - Always: a FRESH sign-in token (invalidates any prior) + the invite email.
 // - Updates the AT row: Status, Portal Invite Status, Invited Date, Invited By, Clerk User ID.
 
 import { NextRequest, NextResponse } from 'next/server'
@@ -65,9 +69,26 @@ export async function POST(
 
   const client = await clerkClient()
 
-  // Reuse existing Clerk user if we already have one, else create
+  // Reuse the Clerk user this record already has, if any.
   let clerkUserId = staff.clerkUserId as string | null
 
+  // Does that user already belong to this org? Checked up front so Resend
+  // (user + membership already exist, e.g. from Add Staff Member) skips the
+  // add entirely rather than relying on Clerk's duplicate error — whose code
+  // string it was matching on the wrong value, turning a no-op into a 500.
+  let alreadyMember = false
+  if (clerkUserId) {
+    try {
+      const memberships = await client.users.getOrganizationMembershipList({ userId: clerkUserId })
+      alreadyMember = memberships.data.some(m => m.organization.id === orgId)
+    } catch {
+      // Lookup failed — fall through; the add below still swallows the
+      // "already a member" error as a backstop.
+    }
+  }
+
+  // Create the Clerk user only for a record that has none — Send Invite on an
+  // imported row. Resend skips this.
   if (!clerkUserId) {
     try {
       const created = await client.users.createUser({
@@ -94,20 +115,23 @@ export async function POST(
     }
   }
 
-  // Ensure org membership (AT role → Clerk role)
-  try {
-    await client.organizations.createOrganizationMembership({
-      organizationId: orgId!,
-      userId: clerkUserId,
-      role: staff.role === 'Admin' ? 'org:admin' : 'org:member',
-    })
-  } catch (err: any) {
-    // Already a member? OK — swallow.
-    if (err?.errors?.[0]?.code !== 'organization_membership_exists') {
-      return NextResponse.json(
-        { error: 'Failed to add to organization', detail: err?.message ?? String(err) },
-        { status: 500 }
-      )
+  // Add the org membership only when it isn't already there.
+  if (!alreadyMember) {
+    try {
+      await client.organizations.createOrganizationMembership({
+        organizationId: orgId!,
+        userId: clerkUserId,
+        role: staff.role === 'Admin' ? 'org:admin' : 'org:member',
+      })
+    } catch (err: any) {
+      // Already a member? OK — swallow. Clerk has used both spellings.
+      const code = err?.errors?.[0]?.code
+      if (code !== 'organization_membership_exists' && code !== 'already_a_member_in_organization') {
+        return NextResponse.json(
+          { error: 'Failed to add to organization', detail: err?.message ?? String(err) },
+          { status: 500 }
+        )
+      }
     }
   }
 
@@ -163,8 +187,11 @@ export async function POST(
     clerkUserId,
   })
 
-  // Send the invitation email. While the automation is disabled in Airtable
-  // this is skipped by design and the invite still succeeds.
+  // Send the invitation email. Never throws — a disabled automation or a
+  // Resend failure comes back as { skipped } / { sent: false }. The invite row
+  // is already written and the sign-in link is live, so a non-send does not
+  // fail the request; it is surfaced via `emailSent` for the Team page to warn
+  // on. Same contract as POST /api/admin/invite.
   const emailResult = await sendPortalAccountEmail({
     automationName: 'Agency Staff Welcome to Portal - Invite',
     to: staff.email,
@@ -176,5 +203,6 @@ export async function POST(
     agencyRecordId: staff.agencyId,
   })
 
-  return NextResponse.json({ ok: true, email: emailResult })
+  const emailSent = 'sent' in emailResult && emailResult.sent
+  return NextResponse.json({ ok: true, emailSent, email: emailResult })
 }

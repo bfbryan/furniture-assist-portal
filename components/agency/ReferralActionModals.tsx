@@ -21,6 +21,10 @@
 import { useEffect, useState } from 'react'
 import { TIME_ORDER } from '@/lib/schedule/capacity'
 
+// The client name is what the reader verifies before confirming, so it is bold
+// navy against the muted body text — the most scannable thing in the sentence.
+const SUBJECT: React.CSSProperties = { color: '#1B2B4B', fontWeight: 700 }
+
 export type AvailableDate = {
   date: string           // 'YYYY-MM-DD'
   slotsRemaining: number
@@ -66,9 +70,11 @@ export function ConfirmModal({ modal, onConfirm, onClose, loading, error }: {
           {isWithdraw ? 'Withdraw Referral' : 'Cancel Appointment'}
         </h3>
         <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '24px' }}>
-          {isWithdraw
-            ? `Are you sure you want to withdraw the referral for ${modal.name}? It will be removed from the review queue.`
-            : `Are you sure you want to cancel the appointment for ${modal.name}? Furniture Assist will be notified.`}
+          {isWithdraw ? (
+            <>Are you sure you want to withdraw the referral for <strong style={SUBJECT}>{modal.name}</strong>? It will be removed from the review queue.</>
+          ) : (
+            <>Are you sure you want to cancel the appointment for <strong style={SUBJECT}>{modal.name}</strong>? Furniture Assist will be notified.</>
+          )}
         </p>
         {error && (
           <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#C0392B' }}>
@@ -147,7 +153,7 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
           Reschedule Appointment
         </h3>
         <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '20px' }}>
-          Reschedule for {modal.name}. Choose a Saturday. We&apos;ll check availability and confirm by email.
+          Reschedule for <strong style={SUBJECT}>{modal.name}</strong>. Choose a Saturday. We&apos;ll check availability and confirm by email.
         </p>
 
         <label style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block' }}>

@@ -1,14 +1,26 @@
 // app/api/admin/invite/route.ts
-// Invite a brand-new staff member from the Team page — creates the Clerk
-// user, adds them to the org, creates the Agency Users row, and emails the
-// magic link through the Email Automations pattern (the Zapier webhook this
-// used to POST to has been retired).
+// Invite a brand-new staff member from the Team page ("Add Staff Member") —
+// creates (or reuses) the Clerk user, adds them to the org, creates the Agency
+// Users row, and emails the magic link through the Email Automations pattern
+// (the Zapier webhook this used to POST to has been retired).
+//
+// Steps 1–4 each roll back the Clerk user this request created if a later step
+// fails, so a retry starts clean rather than dead-ending on "user already
+// exists". Every failure returns a step-specific message plus `detail` with the
+// underlying Clerk / Airtable text — this is an admin-only route.
+//
+// The "Agency Staff Welcome to Portal - Invite" row in Email Automations is
+// enabled, so step 5 sends for real via Resend; a send failure is surfaced in
+// the response (`emailSent: false`) but does not fail the invite — the row
+// exists and the sign-in link is live, and "Resend Invite" on the Team page
+// issues a fresh one.
 
 import { auth } from '@clerk/nextjs/server'
 import { clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
 import { portalSignInLink } from '@/lib/auth/portal-sign-in-link'
+import { getAgencyUserByEmail } from '@/lib/airtable'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -83,82 +95,183 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Missing required fields' }, { status: 400 })
   }
 
-  try {
-    const client = await clerkClient()
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(email).trim())) {
+    return NextResponse.json({ error: 'Enter a valid email address.' }, { status: 400 })
+  }
 
-    // 1. Create Clerk user
+  // Don't create a second Agency Users row for an email that already has one —
+  // surface it instead. Same agency: it's already on their team. Another
+  // agency: Furniture Assist has to move it.
+  const existing = await getAgencyUserByEmail(email)
+  if (existing) {
+    return NextResponse.json(
+      {
+        error:
+          existing.agencyId === agencyId
+            ? `${existing.name || email} is already on your team.`
+            : `${email} is already set up with another agency. Contact Furniture Assist to move them.`,
+      },
+      { status: 409 },
+    )
+  }
+
+  const client = await clerkClient()
+  const clerkErr = (err: unknown) =>
+    (err as { errors?: { code?: string; message?: string; longMessage?: string }[] })?.errors?.[0]
+  const detailOf = (err: unknown) => {
+    const e = clerkErr(err)
+    return e?.longMessage || e?.message || (err instanceof Error ? err.message : String(err))
+  }
+
+  // Tracks whether THIS request created the Clerk user, so a failure in a
+  // later step rolls back only what it made and a genuine pre-existing user
+  // is left alone.
+  let clerkUserId: string | null = null
+  let createdClerkUser = false
+
+  const rollback = async () => {
+    if (createdClerkUser && clerkUserId) {
+      // Deleting the user also drops the org membership created below.
+      await client.users.deleteUser(clerkUserId).catch(e =>
+        console.error('Invite rollback: could not delete Clerk user', clerkUserId, e),
+      )
+    }
+  }
+
+  // 1. Create the Clerk user — or reuse one that already exists for this email
+  //    (a retry after an earlier partial failure, or a user left over from the
+  //    agency claim flow). skipPassword* mirrors POST /api/admin/staff/[id]/
+  //    invite: this instance has password as an auth factor, so createUser
+  //    without them fails with form_param_missing — which is what surfaced as
+  //    the generic "Failed to send invitation" on the Team page.
+  try {
     const user = await client.users.createUser({
       emailAddress: [email],
       firstName,
       lastName,
+      skipPasswordChecks: true,
+      skipPasswordRequirement: true,
     })
+    clerkUserId = user.id
+    createdClerkUser = true
+  } catch (err) {
+    if (clerkErr(err)?.code === 'form_identifier_exists') {
+      const existing = await client.users.getUserList({ emailAddress: [email] })
+      clerkUserId = existing.data[0]?.id ?? null
+    }
+    if (!clerkUserId) {
+      console.error('Invite: createUser failed:', err)
+      // Clerk restriction hit (Dashboard → Configure → Restrictions): an
+      // allowlist that this address/domain isn't on, a blocklist entry, or
+      // "block disposable email addresses" catching a temp-mail provider.
+      // Not something this route can fix — name it so the admin knows to use
+      // a different address or ask Furniture Assist to adjust the setting.
+      if (clerkErr(err)?.code === 'identifier_not_allowed_access') {
+        return NextResponse.json(
+          {
+            error:
+              "This email address is blocked by the portal's sign-up restrictions " +
+              '(a disposable/temporary address, or a domain that is not allowed). ' +
+              'Use a regular work or personal address.',
+            detail: detailOf(err),
+          },
+          { status: 422 },
+        )
+      }
+      return NextResponse.json(
+        { error: 'Could not create the portal user.', detail: detailOf(err) },
+        { status: 500 },
+      )
+    }
+  }
 
-    // 2. Add to Clerk org with specified role
+  // 2. Add to the caller's Clerk org with the requested role.
+  try {
     await client.organizations.createOrganizationMembership({
       organizationId: orgId,
-      userId: user.id,
+      userId: clerkUserId,
       role: role || 'org:member',
     })
+  } catch (err) {
+    // Already in the org (a reused Clerk user from the form_identifier_exists
+    // branch) is fine. Clerk has used both spellings for this.
+    const code = clerkErr(err)?.code
+    if (code !== 'organization_membership_exists' && code !== 'already_a_member_in_organization') {
+      await rollback()
+      console.error('Invite: createOrganizationMembership failed:', err)
+      return NextResponse.json(
+        { error: 'Could not add the user to your agency.', detail: detailOf(err) },
+        { status: 500 },
+      )
+    }
+  }
 
-    // 3. Generate sign-in token (magic link)
-    const tokenRes = await fetch('https://api.clerk.com/v1/sign_in_tokens', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ user_id: user.id, expires_in_seconds: 60 * 60 * 24 * 30 }),
-    })
-    // The RAW token wrapped in the PORTAL's sign-in URL, not Clerk's
-    // ready-made `tokenData.url` — that one points at the Clerk instance and
-    // dropped invited staff on a Clerk-hosted page. Same fix, same reason, as
-    // POST /api/admin/staff/[id]/invite; both feed the same Airtable template.
-    // See lib/auth/portal-sign-in-link.ts.
-    const tokenData = await tokenRes.json()
-    const signInToken: string | null = tokenData.token ?? null
-    const magicLink: string | null = signInToken ? portalSignInLink(signInToken) : null
+  // 3. Generate a magic sign-in token. The RAW token wrapped in the PORTAL's
+  //    sign-in URL, not Clerk's ready-made `tokenData.url` — that one points at
+  //    the Clerk instance and dropped invited staff on a Clerk-hosted page.
+  //    Same fix, same reason, as POST /api/admin/staff/[id]/invite; both feed
+  //    the same Airtable template. See lib/auth/portal-sign-in-link.ts.
+  const tokenRes = await fetch('https://api.clerk.com/v1/sign_in_tokens', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({ user_id: clerkUserId, expires_in_seconds: 60 * 60 * 24 * 30 }),
+  })
+  const tokenData = await tokenRes.json().catch(() => ({}))
+  const signInToken: string | null = tokenData.token ?? null
+  if (!tokenRes.ok || !signInToken) {
+    await rollback()
+    console.error('Invite: sign_in_tokens failed:', tokenRes.status, tokenData)
+    return NextResponse.json(
+      { error: 'Could not generate the sign-in link.', detail: tokenData?.errors?.[0]?.message ?? `HTTP ${tokenRes.status}` },
+      { status: 500 },
+    )
+  }
+  const magicLink = portalSignInLink(signInToken)
 
-    // 4. Create AT Agency Users record
+  // 4. Create the Agency Users row.
+  try {
     await createAgencyUserRecord({
       firstName,
       lastName,
       email,
       role: role || 'org:member',
       agencyId,
-      clerkUserId: user.id,
+      clerkUserId,
       invitedByName,
       phone,
     })
-
-    // 5. Send the invitation email. While the automation is disabled in
-    // Airtable this is skipped by design and the invite still succeeds.
-    const emailResult = await sendPortalAccountEmail({
-      automationName: 'Agency Staff Welcome to Portal - Invite',
-      to: email,
-      tokens: {
-        firstName,
-        agencyName: agencyName ?? '',
-        magicLink: magicLink ?? '',
-      },
-      agencyRecordId: agencyId,
-    })
-
-    return NextResponse.json({ success: true, userId: user.id, email: emailResult })
-
-  } catch (err: any) {
-    console.error('Invite error:', err)
-
-    const code = err.errors?.[0]?.code
-    if (code === 'form_identifier_exists' || err.message?.includes('already exists')) {
-      return NextResponse.json(
-        { error: 'A user with this email already exists in the portal.' },
-        { status: 409 }
-      )
-    }
-
+  } catch (err) {
+    await rollback()
+    console.error('Invite: Airtable create failed:', err)
     return NextResponse.json(
-      { error: 'Failed to send invitation. Please try again.' },
-      { status: 500 }
+      { error: 'Could not save the staff record.', detail: err instanceof Error ? err.message : String(err) },
+      { status: 500 },
     )
   }
+
+  // 5. Send the invitation email. Never throws — a disabled automation or a
+  //    Resend failure comes back as { skipped } / { sent: false } and the
+  //    invite still counts as created (the row exists, the link is live).
+  //    Surface it so a non-send is visible without being fatal.
+  const emailResult = await sendPortalAccountEmail({
+    automationName: 'Agency Staff Welcome to Portal - Invite',
+    to: email,
+    tokens: {
+      firstName,
+      agencyName: agencyName ?? '',
+      magicLink,
+    },
+    agencyRecordId: agencyId,
+  })
+
+  const emailSent = 'sent' in emailResult && emailResult.sent
+  return NextResponse.json({
+    success: true,
+    userId: clerkUserId,
+    emailSent,
+    email: emailResult,
+  })
 }

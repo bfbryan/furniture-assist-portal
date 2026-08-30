@@ -1,11 +1,26 @@
 'use client'
 
+// components/agency/StaffList.tsx
+//
+// Agency Team — a sibling of the Active / History lists (components/agency/
+// ReferralTable.tsx): grouped white cards, one column-header row per section,
+// the shared ⋯ overflow menu, the .fa-*-row stacked pattern on mobile.
+//
+// Groups key primarily on Portal Status; Status wins a conflict, so a person
+// marked Inactive lands in Inactive whatever their Portal Status. Wrong Agency
+// rows never render here (also filtered server-side in team/page.tsx).
+//
+// Every menu action hits an /api/admin/staff/[id]/* route that re-checks
+// org:admin AND that the row is at the caller's agency — see
+// lib/auth/agency-admin-access.ts. Hiding a menu is presentation, not
+// permission.
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import InviteStaffModal from '../InviteStaffModal'
 import { formatEasternTimestamp } from '@/lib/dates'
-
+import { AGENCY_CONTACT_EMAIL } from '@/lib/contact'
+import { OverflowMenu, ColumnHead, type MenuItem } from './referral-list-ui'
 
 type Member = {
   id: string
@@ -15,16 +30,15 @@ type Member = {
   lastName: string
   email: string
   phone: string | null
-  role: string
-  status: 'Unclaimed' | 'Invited' | 'Active' | 'Inactive'
-  portalInviteStatus: 'Not Invited' | 'Invite Sent' | 'Claimed' | 'Wrong Agency'
+  role: string // 'Admin' | 'Staff'
+  status: string // 'Unclaimed' | 'Invited' | 'Active' | 'Inactive' | ...
+  portalInviteStatus: string // 'Not Invited' | 'Invite Sent' | 'Claimed' | 'Wrong Agency'
   invitedDate: string | null
   invitedBy: string | null
   claimedDate: string | null
   clerkRole: string
   lastSignInAt: number | null
 }
-
 
 type Props = {
   members: Member[]
@@ -33,791 +47,391 @@ type Props = {
   agencyId: string
   agencyName: string
   invitedByName: string
-  /** The signed-in admin's own email — the domain new invites are compared to. */
   inviterEmail: string
 }
 
+type GroupKey = 'ready' | 'invited' | 'active' | 'inactive'
 
-// ---------- shared styling helpers ----------
-
-
-const COL_HEADER: React.CSSProperties = {
-  fontSize: '11px',
-  fontWeight: 700,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  color: '#1B2B4B',
-  marginBottom: '4px',
-}
-const COL_VALUE: React.CSSProperties = {
-  fontFamily: 'var(--font-montserrat)',
-  fontWeight: 600,
-  fontSize: '13px',
-  color: '#1B2B4B',
-  whiteSpace: 'nowrap',
-}
-const COL_SUB: React.CSSProperties = { fontSize: '11px', color: '#7A8899' }
-const COL_SUB_NOWRAP: React.CSSProperties = { ...COL_SUB, whiteSpace: 'nowrap' }
-const COL_SUB_EMAIL: React.CSSProperties = {
-  ...COL_SUB,
-  overflow: 'hidden',
-  textOverflow: 'ellipsis',
-  whiteSpace: 'nowrap',
-}
-
-
-const BTN_SMALL: React.CSSProperties = {
-  padding: '6px 12px',
-  borderRadius: '6px',
-  fontFamily: 'var(--font-montserrat)',
-  fontWeight: 700,
-  fontSize: '11px',
-  letterSpacing: '0.04em',
-  cursor: 'pointer',
-  border: 'none',
-  textTransform: 'uppercase',
-  whiteSpace: 'nowrap',
-}
-const BTN_PRIMARY: React.CSSProperties = { ...BTN_SMALL, background: '#2A7F6F', color: 'white' }
-const BTN_DANGER: React.CSSProperties = { ...BTN_SMALL, background: '#FDF0EE', color: '#C0392B', border: '1px solid #E8B5AE' }
-const BTN_MUTED: React.CSSProperties = { ...BTN_SMALL, background: '#F0F0F0', color: '#2C3A4A' }
-
-
-function Tooltip({ label, children }: { label: string; children: React.ReactNode }) {
-  const [show, setShow] = useState(false)
-  return (
-    <div
-      style={{ position: 'relative', display: 'inline-flex', alignItems: 'center' }}
-      onMouseEnter={() => setShow(true)}
-      onMouseLeave={() => setShow(false)}
-    >
-      {children}
-      {show && (
-        <div
-          style={{
-            position: 'absolute',
-            bottom: 'calc(100% + 6px)',
-            left: '50%',
-            transform: 'translateX(-50%)',
-            background: '#1B2B4B',
-            color: 'white',
-            fontSize: '11px',
-            fontWeight: 600,
-            whiteSpace: 'nowrap',
-            padding: '4px 8px',
-            borderRadius: '5px',
-            pointerEvents: 'none',
-            zIndex: 10,
-            maxWidth: '260px',
-          }}
-        >
-          {label}
-        </div>
-      )}
-    </div>
-  )
-}
-
-
-// Invited Date is a dateTime field, not the date-only field this helper was
-// written for. It arrives as a full instant ("2026-08-19T02:43:13.462Z"), and
-// formatDateOnly reads only the leading YYYY-MM-DD, anchors it at UTC midnight
-// and prints it in UTC — so an invite sent at 10:43pm Eastern on the 18th
-// showed as the 19th. Anything sent after 8pm Eastern (7pm in winter) was
-// dated tomorrow.
+// Wrong Agency never renders on the agency side, whatever the Status (the page
+// also filters it server-side). Otherwise: group on Portal Status, but Status
+// 'Inactive' wins a conflict. Status 'Unclaimed' / 'Invited' are vestigial here
+// and ignored. Anything matching nothing is dropped rather than guessed at.
 //
-// formatEasternTimestamp is the helper for an instant; see the header of
-// lib/dates.ts for why the two are not interchangeable. The Dawson-side
-// Unclaimed Agencies page hit this on the same field and was fixed the same
-// way; this copy was missed. Two lines below, Last Login already uses it.
-function formatDate(d: string | null | undefined): string {
-  return formatEasternTimestamp(d, {
-    month: 'short',
-    day: 'numeric',
-    year: 'numeric',
-  })
+// A Claimed row groups as 'active' whatever its Status (Inactive is already
+// handled above). The claim handler stamps Portal Status = Claimed and flips
+// Status to Active in two separate writes; if the second fails, the row is
+// briefly Claimed + Invited. Keying only on Claimed here means that window —
+// and any later drift between the two fields — still renders instead of
+// vanishing from the page. The Status→Active retry on the next sign-in stands.
+function classify(m: Member): GroupKey | null {
+  if (m.portalInviteStatus === 'Wrong Agency') return null
+  if (m.status === 'Inactive') return 'inactive'
+  if (m.portalInviteStatus === 'Not Invited') return 'ready'
+  if (m.portalInviteStatus === 'Invite Sent') return 'invited'
+  if (m.portalInviteStatus === 'Claimed') return 'active'
+  return null
 }
 
+// ------------------------------------------------------------------ dates
 
-function daysSince(iso: string | null | undefined): number | null {
-  if (!iso) return null
-  const then = new Date(iso).getTime()
+function shortDate(iso: string | number | null | undefined): string {
+  return formatEasternTimestamp(iso, { month: 'short', day: 'numeric', year: 'numeric' })
+}
+
+/** "today" · "yesterday" · "5 days ago" · "3 weeks ago" · "4 months ago". */
+function relative(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined || value === '') return null
+  const then = typeof value === 'number' ? value : new Date(value).getTime()
   if (Number.isNaN(then)) return null
-  return Math.floor((Date.now() - then) / (1000 * 60 * 60 * 24))
+  const days = Math.floor((Date.now() - then) / 86_400_000)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 21) return `${days} days ago`
+  if (days < 60) return `${Math.round(days / 7)} weeks ago`
+  return `${Math.round(days / 30)} months ago`
 }
 
+// ------------------------------------------------------------------ icons
 
-// ---------- Row renderers ----------
+const MAIL_ICON = (<><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"/><polyline points="22 6 12 13 2 6"/></>)
+const RESEND_ICON = (<><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></>)
+const X_ICON = (<><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></>)
+const PIN_OFF_ICON = (<><path d="M21 10c0 6-9 12-9 12S3 16 3 10a9 9 0 0 1 .6-3.2"/><path d="M8.4 4.4A9 9 0 0 1 21 10"/><line x1="2" y1="2" x2="22" y2="22"/></>)
+const UNDO_ICON = (<><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></>)
+// SHIELD_ICON removed with the Make/Remove Admin menu items — re-add it when
+// self-service role management comes back (see menuFor / the 'active' branch).
 
+// ------------------------------------------------------------------ styling
 
-function ReadyToInviteRow({
-  member,
-  onInvite,
-  onWrongAgency,
-}: {
-  member: Member
-  onInvite: (id: string, name: string) => void
-  onWrongAgency: (id: string, name: string) => void
-}) {
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '4px 1fr',
-        background: 'white',
-        borderRadius: '12px',
-        boxShadow: '0 2px 12px rgba(27,43,75,0.07)',
-        marginBottom: '10px',
-      }}
-    >
-      <div style={{ background: '#C9A84C', borderRadius: '12px 0 0 12px' }} />
-      {/* Column tracks live in globals.css (.fa-staff-row-invite) so they can stack below 1280px. */}
-      <div
-        className="fa-staff-row-invite"
-        style={{
-          display: 'grid',
-          alignItems: 'center',
-          gap: '14px',
-          padding: '14px 16px',
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div style={COL_HEADER}>Name</div>
-          <div style={COL_VALUE}>
-            {member.lastName}, {member.firstName}
-          </div>
-          <div style={COL_SUB_NOWRAP}>{member.phone ?? '—'}</div>
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={COL_HEADER}>Email</div>
-          <div style={COL_SUB_EMAIL} title={member.email}>{member.email}</div>
-        </div>
-        <div>
-          <div style={COL_HEADER}>Role</div>
-          <div style={COL_SUB}>{member.role}</div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <Tooltip label="Invite staff to activete their portal access">
-            <button
-              style={BTN_PRIMARY}
-              onClick={() => onInvite(member.id, `${member.firstName} ${member.lastName}`)}
-            >
-              Send Invite
-            </button>
-          </Tooltip>
-          <Tooltip label="Flag as not belonging to this agency">
-            <button
-              style={BTN_MUTED}
-              onClick={() => onWrongAgency(member.id, `${member.firstName} ${member.lastName}`)}
-            >
-              Wrong Agency
-            </button>
-          </Tooltip>
-        </div>
-      </div>
-    </div>
-  )
+const SECTION_TITLE: React.CSSProperties = {
+  fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: 800,
+  letterSpacing: '0.10em', textTransform: 'uppercase',
+}
+const ACCENT: Record<GroupKey, { bar: string; heading: string }> = {
+  ready:    { bar: '#C9A84C', heading: '#8B7724' },
+  invited:  { bar: '#C9A84C', heading: '#8B7724' },
+  active:   { bar: '#2A7F6F', heading: '#2A7F6F' },
+  inactive: { bar: '#9AA6B2', heading: '#7A8899' },
+}
+const CARD: React.CSSProperties = {
+  background: 'white', borderRadius: '12px',
+  boxShadow: '0 2px 12px rgba(27,43,75,0.07)', marginBottom: '20px',
+  padding: '14px 18px 14px 15px',
+}
+const EMPTY_BOX: React.CSSProperties = {
+  background: 'white', borderRadius: '12px', padding: '36px',
+  textAlign: 'center', color: '#7A8899', fontSize: '14px', lineHeight: 1.6,
 }
 
+// ------------------------------------------------------------------ card
 
-function AwaitingClaimRow({
-  member,
-  onResend,
-  onCancel,
+function GroupCard({
+  groupKey, title, count, columns, collapsible, children,
 }: {
-  member: Member
-  onResend: (id: string, name: string) => void
-  onCancel: (id: string, name: string) => void
-}) {
-  const daysOut = daysSince(member.invitedDate)
-  const isStale = daysOut !== null && daysOut >= 20
-  const daysRemaining = daysOut !== null ? 30 - daysOut : null
-
-
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '4px 1fr',
-        background: 'white',
-        borderRadius: '12px',
-        boxShadow: '0 2px 12px rgba(27,43,75,0.07)',
-        marginBottom: '10px',
-      }}
-    >
-      <div style={{ background: isStale ? '#C0392B' : '#4A90C9', borderRadius: '12px 0 0 12px' }} />
-      {/* Column tracks live in globals.css (.fa-staff-row-awaiting) so they can stack below 1280px. */}
-      <div
-        className="fa-staff-row-awaiting"
-        style={{
-          display: 'grid',
-          alignItems: 'center',
-          gap: '14px',
-          padding: '14px 16px',
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div style={COL_HEADER}>Name</div>
-          <div style={COL_VALUE}>
-            {member.lastName}, {member.firstName}
-          </div>
-          <div style={COL_SUB_NOWRAP}>{member.phone ?? '—'}</div>
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={COL_HEADER}>Email</div>
-          <div style={COL_SUB_EMAIL} title={member.email}>{member.email}</div>
-        </div>
-        <div>
-          <div style={COL_HEADER}>Invited</div>
-          <div style={COL_SUB_NOWRAP}>{formatDate(member.invitedDate)}</div>
-          {member.invitedBy && <div style={{ ...COL_SUB, fontSize: '10px' }}>by {member.invitedBy}</div>}
-        </div>
-        <div>
-          <div style={COL_HEADER}>Status</div>
-          {isStale ? (
-            <span
-              style={{
-                display: 'inline-block',
-                padding: '2px 8px',
-                borderRadius: '20px',
-                fontSize: '10px',
-                fontWeight: 700,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                background: '#FDF0EE',
-                color: '#C0392B',
-                whiteSpace: 'nowrap',
-              }}
-            >
-              {daysRemaining !== null && daysRemaining > 0
-                ? `Stale · ${daysRemaining}d left`
-                : 'Expiring'}
-            </span>
-          ) : (
-            <span
-              style={{
-                display: 'inline-block',
-                padding: '2px 10px',
-                borderRadius: '20px',
-                fontSize: '10px',
-                fontWeight: 700,
-                letterSpacing: '0.06em',
-                textTransform: 'uppercase',
-                background: '#EAF0F7',
-                color: '#4A90C9',
-              }}
-            >
-              Awaiting
-            </span>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          <button
-            style={BTN_PRIMARY}
-            onClick={() => onResend(member.id, `${member.firstName} ${member.lastName}`)}
-          >
-            Resend
-          </button>
-          <button
-            style={BTN_DANGER}
-            onClick={() => onCancel(member.id, `${member.firstName} ${member.lastName}`)}
-          >
-            Cancel
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-
-function ActiveOrInactiveRow({
-  member,
-  currentUserId,
-  onDeactivate,
-  onReactivate,
-  onWrongAgency,
-}: {
-  member: Member
-  currentUserId: string
-  onDeactivate: (id: string, name: string) => void
-  onReactivate: (id: string, name: string) => void
-  onWrongAgency: (id: string, name: string) => void
-}) {
-  const isCurrentUser = member.clerkUserId === currentUserId
-  const isActive = member.status === 'Active'
-  const accent = isActive ? '#2A7F6F' : '#7A8899'
-
-
-  return (
-    <div
-      style={{
-        display: 'grid',
-        gridTemplateColumns: '4px 1fr',
-        background: 'white',
-        borderRadius: '12px',
-        boxShadow: '0 2px 12px rgba(27,43,75,0.07)',
-        marginBottom: '10px',
-      }}
-    >
-      <div style={{ background: accent, borderRadius: '12px 0 0 12px' }} />
-      {/* Column tracks live in globals.css (.fa-staff-row-active) so they can stack below 1280px. */}
-      <div
-        className="fa-staff-row-active"
-        style={{
-          display: 'grid',
-          alignItems: 'center',
-          gap: '14px',
-          padding: '14px 16px',
-        }}
-      >
-        <div style={{ minWidth: 0 }}>
-          <div style={COL_HEADER}>Staff Member</div>
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'baseline',
-              gap: '6px',
-              flexWrap: 'nowrap',
-              whiteSpace: 'nowrap',
-            }}
-          >
-            <span style={COL_VALUE}>
-              {member.lastName}, {member.firstName}
-            </span>
-            {isCurrentUser && <span style={{ fontSize: '11px', color: '#7A8899' }}>(You)</span>}
-          </div>
-          <div style={COL_SUB_NOWRAP}>{member.phone ?? '—'}</div>
-        </div>
-        <div style={{ minWidth: 0 }}>
-          <div style={COL_HEADER}>Email</div>
-          <div style={COL_SUB_EMAIL} title={member.email}>{member.email}</div>
-        </div>
-        <div>
-          <div style={COL_HEADER}>Role</div>
-          <div style={COL_SUB}>{member.role}</div>
-        </div>
-        <div>
-          <div style={COL_HEADER}>Last Login</div>
-          <div style={COL_SUB_NOWRAP}>
-            {member.lastSignInAt
-              ? formatEasternTimestamp(member.lastSignInAt, {
-                  month: 'short',
-                  day: 'numeric',
-                  year: 'numeric',
-                })
-              : 'Never'}
-          </div>
-        </div>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
-          {!isCurrentUser && isActive && (
-            <>
-              <button
-                style={BTN_DANGER}
-                onClick={() => onDeactivate(member.id, `${member.firstName} ${member.lastName}`)}
-              >
-                Deactivate
-              </button>
-              <Tooltip label="Flag as not belonging to this agency">
-                <button
-                  style={BTN_MUTED}
-                  onClick={() =>
-                    onWrongAgency(member.id, `${member.firstName} ${member.lastName}`)
-                  }
-                >
-                  Wrong Agency
-                </button>
-              </Tooltip>
-            </>
-          )}
-          {!isCurrentUser && !isActive && (
-            <button
-              style={BTN_PRIMARY}
-              onClick={() => onReactivate(member.id, `${member.firstName} ${member.lastName}`)}
-            >
-              Reactivate
-            </button>
-          )}
-        </div>
-      </div>
-    </div>
-  )
-}
-
-
-// ---------- Section wrapper ----------
-
-
-function Section({
-  title,
-  accent,
-  count,
-  collapsible,
-  defaultOpen = true,
-  actionButton,
-  children,
-}: {
+  groupKey: GroupKey
   title: string
-  accent: string
   count: number
+  columns: string[]
   collapsible?: boolean
-  defaultOpen?: boolean
-  actionButton?: React.ReactNode
   children: React.ReactNode
 }) {
-  const [open, setOpen] = useState(defaultOpen)
-  // Section is hidden when empty AND has no action button (Ready to Invite always shows so admin can add)
-  if (count === 0 && !actionButton) return null
-
-
+  const [open, setOpen] = useState(!collapsible)
+  const a = ACCENT[groupKey]
   return (
-    <div style={{ marginBottom: '36px' }}>
-      {/* Wrapping lives in globals.css (.fa-staff-section-header) so the action
-          button drops to its own line below 1280px instead of compressing. */}
-      <div
-        className="fa-staff-section-header"
+    <section style={{ ...CARD, borderLeft: `3px solid ${a.bar}` }}>
+      <button
+        type="button"
+        onClick={() => collapsible && setOpen(o => !o)}
         style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: '14px',
+          display: 'flex', alignItems: 'baseline', gap: '8px', marginBottom: '4px',
+          background: 'none', border: 'none', padding: 0, width: '100%', textAlign: 'left',
+          cursor: collapsible ? 'pointer' : 'default',
         }}
       >
-        <button
-          onClick={() => collapsible && setOpen(!open)}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '10px',
-            background: 'none',
-            border: 'none',
-            cursor: collapsible ? 'pointer' : 'default',
-            padding: 0,
-          }}
-        >
-          <span
-            style={{
-              fontSize: '13px',
-              fontWeight: 800,
-              letterSpacing: '0.10em',
-              textTransform: 'uppercase',
-              color: accent,
-              fontFamily: 'var(--font-montserrat)',
-            }}
-          >
-            {title}
-          </span>
-          {collapsible && (
-            <span style={{ fontSize: '11px', color: '#7A8899' }}>{open ? '▲' : '▼'}</span>
-          )}
-          <span
-            style={{
-              fontSize: '12px',
-              color: '#7A8899',
-              fontWeight: 600,
-              marginLeft: '4px',
-            }}
-          >
-            · {count} {count === 1 ? 'person' : 'people'}
-          </span>
-        </button>
-        {actionButton}
-      </div>
+        <span style={{ ...SECTION_TITLE, color: a.heading }}>{title}</span>
+        {/* No count on the open groups — the lists are short. Kept only while a
+            collapsible group is closed, where it's the one signal of what's inside. */}
+        {collapsible && !open && (
+          <span style={{ fontSize: '13px', color: '#9AA6B2', fontWeight: 600 }}>{count}</span>
+        )}
+        {collapsible && (
+          <span style={{ fontSize: '10px', color: '#9AA6B2', marginLeft: '2px' }}>{open ? '▲' : '▼'}</span>
+        )}
+      </button>
+      {open && <ColumnHead columns={columns} className="fa-team-row fa-team-row--head" />}
       {open && children}
+    </section>
+  )
+}
+
+// ------------------------------------------------------------------ row
+
+function Row({
+  m, context, items, menuOpen, onMenuOpen, onMenuClose,
+}: {
+  m: Member
+  /** Sent / Last Login — always rendered so the column lines up across every
+      group; empty on Ready to invite and Inactive (the cell collapses on mobile). */
+  context?: React.ReactNode
+  items: MenuItem[]
+  menuOpen: boolean
+  onMenuOpen: () => void
+  onMenuClose: () => void
+}) {
+  return (
+    <div className="fa-team-row" style={{ borderTop: '1px solid #F3F0EA' }}>
+      <div style={{ minWidth: 0 }}>
+        <div style={{ fontSize: '14px', fontWeight: 600, color: '#1B2B4B', overflowWrap: 'anywhere' }}>
+          {m.lastName}, {m.firstName}
+        </div>
+        {m.phone && <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '1px' }}>{m.phone}</div>}
+      </div>
+
+      <div style={{ fontSize: '12px', color: '#7A8899', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }} title={m.email}>
+        <span className="fa-active-mobile-label">Email </span>{m.email}
+      </div>
+
+      <div style={{ fontSize: '12px', color: '#7A8899', minWidth: 0 }}>
+        <span className="fa-active-mobile-label">Role </span>{m.role}
+      </div>
+
+      <div style={{ fontSize: '12px', color: '#7A8899', minWidth: 0 }}>{context}</div>
+
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        {items.length > 0 && (
+          <OverflowMenu
+            open={menuOpen}
+            onOpen={onMenuOpen}
+            onClose={onMenuClose}
+            items={items}
+            label={`Actions for ${m.firstName} ${m.lastName}`}
+          />
+        )}
+      </div>
     </div>
   )
 }
 
+// ------------------------------------------------------------------ confirm
 
-// ---------- Confirm modal ----------
+type ActionKey =
+  | 'send-invite' | 'resend' | 'revoke' | 'not-here'
+  | 'make-admin' | 'remove-admin' | 'deactivate' | 'reactivate'
 
+// The subject — the name the reader scans before confirming — is bold navy so
+// it's the most scannable thing in the sentence.
+const SUBJECT: React.CSSProperties = { color: '#1B2B4B', fontWeight: 700 }
 
-type ConfirmAction =
-  | 'invite'
-  | 'resend'
-  | 'cancel'
-  | 'deactivate'
-  | 'reactivate'
-  | 'wrong-agency'
-
-
-type ConfirmState = {
-  open: boolean
-  action: ConfirmAction | null
-  id: string
-  name: string
-}
-
-
-const CONFIRM_COPY: Record<
-  ConfirmAction,
-  { title: string; body: (name: string) => React.ReactNode; button: string; danger?: boolean }
-> = {
-  invite: {
-    title: 'Send Portal Invitation',
-    body: (name) => (
-      <>
-        Send a secure portal invitation email to <strong style={{ color: '#1B2B4B' }}>{name}</strong>? They&apos;ll receive a magic link to activate their account.
-      </>
-    ),
-    button: 'Send Invite',
+// Only three actions stop for a confirm; the rest fire and flash.
+const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string) => React.ReactNode; button: string; danger?: boolean }>> = {
+  revoke: {
+    title: 'Revoke invitation',
+    body: n => <>Revoke the invitation for <strong style={SUBJECT}>{n}</strong>? Their invite link will stop working.</>,
+    button: 'Revoke Invite', danger: true,
   },
-  resend: {
-    title: 'Resend Portal Invitation',
-    body: (name) => (
-      <>
-        Resend the invitation to <strong style={{ color: '#1B2B4B' }}>{name}</strong>? Their existing magic link will be refreshed and the 30-day expiration resets.
-      </>
-    ),
-    button: 'Resend',
-  },
-  cancel: {
-    title: 'Cancel Invitation',
-    body: (name) => (
-      <>
-        Cancel <strong style={{ color: '#1B2B4B' }}>{name}</strong>&apos;s pending invitation? Their access token will be revoked and they&apos;ll return to Ready to Invite.
-      </>
-    ),
-    button: 'Cancel Invite',
-    danger: true,
+  'not-here': {
+    title: 'Not at this office',
+    body: n => <>Furniture Assist will move <strong style={SUBJECT}>{n}</strong> to the correct agency. They&apos;ll no longer appear on your team list.</>,
+    button: 'Confirm', danger: true,
   },
   deactivate: {
-    title: 'Deactivate Staff Member',
-    body: (name) => (
-      <>
-        This will immediately block <strong style={{ color: '#1B2B4B' }}>{name}</strong>&apos;s portal access. Their referral history is preserved and they can be reactivated at any time.
-      </>
-    ),
-    button: 'Deactivate',
-    danger: true,
-  },
-  reactivate: {
-    title: 'Reactivate Staff Member',
-    body: (name) => <>This will restore <strong style={{ color: '#1B2B4B' }}>{name}</strong>&apos;s portal access.</>,
-    button: 'Reactivate',
-  },
-  // Claims only what the flag actually does. PATCH /api/admin/staff/[id]/status
-  // removes their Clerk org membership (portal access), writes Portal Invite
-  // Status = 'Wrong Agency' to Airtable, and the Team page filters that value
-  // out of every section. Nothing emails or notifies anyone, and no internal
-  // screen lists flagged people today — so this promises a review, which is
-  // true, and not an alert, which would not be.
-  'wrong-agency': {
-    title: 'Not in this Agency',
-    body: (name) => (
-      <>
-        Say that <strong style={{ color: '#1B2B4B' }}>{name}</strong> is not a staff member of this agency or office? This removes their portal access, takes them off your team list, and flags them for Furniture Assist to review.
-      </>
-    ),
-    button: 'Flag Wrong Agency',
-    danger: true,
+    title: 'Remove portal access',
+    body: n => <>Remove <strong style={SUBJECT}>{n}</strong>&apos;s access to the portal? Their referral history stays on file and access can be restored later.</>,
+    button: 'Deactivate', danger: true,
   },
 }
 
-
-// ---------- Main component ----------
-
+// ------------------------------------------------------------------ page
 
 export default function StaffList({
-  members,
-  currentUserId,
-  orgId,
-  agencyId,
-  agencyName,
-  invitedByName,
-  inviterEmail,
+  members, currentUserId, orgId, agencyId, agencyName, invitedByName, inviterEmail,
 }: Props) {
   const router = useRouter()
-  const [confirm, setConfirm] = useState<ConfirmState>({
-    open: false,
-    action: null,
-    id: '',
-    name: '',
-  })
-  const [inviteModalOpen, setInviteModalOpen] = useState(false)
+  const [openMenu, setOpenMenu] = useState<string | null>(null)
+  const [inviteOpen, setInviteOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [flash, setFlash] = useState<{ tone: 'success' | 'error'; text: string } | null>(null)
+  // 'warn' = the action succeeded but the invite email did not send. Styled
+  // amber, and it does NOT auto-dismiss — it points at Resend Invite.
+  const [flash, setFlash] = useState<{ tone: 'ok' | 'err' | 'warn'; text: string } | null>(null)
+  const [confirm, setConfirm] = useState<{ action: ActionKey; id: string; name: string } | null>(null)
 
-
-  // Close the confirm modal on Esc — same as InviteStaffModal.
   useEffect(() => {
-    if (!confirm.open) return
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !loading) {
-        setConfirm({ open: false, action: null, id: '', name: '' })
-      }
-    }
+    if (!confirm) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape' && !loading) setConfirm(null) }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
-  }, [confirm.open, loading])
+  }, [confirm, loading])
 
-
-  // -------- section buckets --------
-  const byLastName = (a: Member, b: Member) => a.lastName.localeCompare(b.lastName)
-
-
-  const readyToInvite = members
-    .filter((m) => m.status === 'Unclaimed' && m.portalInviteStatus === 'Not Invited')
-    .sort(byLastName)
-
-
-  const awaitingClaim = members
-    .filter((m) => m.status === 'Invited' && m.portalInviteStatus === 'Invite Sent')
-    .sort((a, b) => {
+  const buckets = useMemo(() => {
+    const b: Record<GroupKey, Member[]> = { ready: [], invited: [], active: [], inactive: [] }
+    for (const m of members) {
+      const k = classify(m)
+      if (k) b[k].push(m)
+    }
+    const byName = (a: Member, z: Member) => a.lastName.localeCompare(z.lastName)
+    b.ready.sort(byName)
+    b.inactive.sort(byName)
+    b.active.sort(byName)
+    b.invited.sort((a, z) => {
       const at = a.invitedDate ? new Date(a.invitedDate).getTime() : 0
-      const bt = b.invitedDate ? new Date(b.invitedDate).getTime() : 0
-      return bt - at
+      const zt = z.invitedDate ? new Date(z.invitedDate).getTime() : 0
+      return zt - at
     })
+    return b
+  }, [members])
 
-
-  // Active Staff — excludes admins (admin lives in the header "Logged In As" area)
-  const activeStaff = members
-    .filter((m) => m.status === 'Active' && m.role !== 'Admin')
-    .sort(byLastName)
-
-
-  const inactiveStaff = members
-    .filter((m) => m.status === 'Inactive')
-    .sort(byLastName)
-
-
-  // -------- action dispatch --------
-  const openConfirm = (action: ConfirmAction, id: string, name: string) =>
-    setConfirm({ open: true, action, id, name })
-
-
-  const closeConfirm = () => setConfirm({ open: false, action: null, id: '', name: '' })
-
-
-  const handleConfirm = async () => {
-    if (!confirm.action) return
+  const run = async (action: ActionKey, id: string) => {
     setLoading(true)
     setFlash(null)
-
-
+    let keepFlash = false
     try {
-      let res: Response
-
-
-      switch (confirm.action) {
-        case 'invite':
-        case 'resend':
-          res = await fetch(`/api/admin/staff/${confirm.id}/invite`, { method: 'POST' })
-          break
-        case 'cancel':
-          res = await fetch(`/api/admin/staff/${confirm.id}/cancel-invite`, { method: 'POST' })
-          break
-        case 'deactivate':
-          res = await fetch(`/api/admin/staff/${confirm.id}/status`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'Inactive' }),
-          })
-          break
-        case 'reactivate':
-          res = await fetch(`/api/admin/staff/${confirm.id}/status`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ status: 'Active' }),
-          })
-          break
-        case 'wrong-agency':
-          res = await fetch(`/api/admin/staff/${confirm.id}/status`, {
-            method: 'PATCH',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ portalInviteStatus: 'Wrong Agency' }),
-          })
-          break
-        default:
-          return
+      const req: Record<ActionKey, () => Promise<Response>> = {
+        'send-invite': () => fetch(`/api/admin/staff/${id}/invite`, { method: 'POST' }),
+        resend: () => fetch(`/api/admin/staff/${id}/invite`, { method: 'POST' }),
+        revoke: () => fetch(`/api/admin/staff/${id}/cancel-invite`, { method: 'POST' }),
+        'not-here': () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ portalInviteStatus: 'Wrong Agency' }) }),
+        deactivate: () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Inactive' }) }),
+        reactivate: () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Active' }) }),
+        'make-admin': () => fetch(`/api/admin/staff/${id}/role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'Admin' }) }),
+        'remove-admin': () => fetch(`/api/admin/staff/${id}/role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'Staff' }) }),
       }
-
-
+      const res = await req[action]()
+      const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setFlash({ tone: 'error', text: data.error || 'Something went wrong.' })
-      } else {
-        const label =
-          confirm.action === 'invite' || confirm.action === 'resend'
-            ? 'Invitation sent'
-            : confirm.action === 'cancel'
-            ? 'Invitation cancelled'
-            : confirm.action === 'deactivate'
-            ? 'Deactivated'
-            : confirm.action === 'reactivate'
-            ? 'Reactivated'
-            : 'Flagged as wrong agency'
-        setFlash({ tone: 'success', text: `${label} — ${confirm.name}` })
-        router.refresh()
+        setFlash({ tone: 'err', text: body.error || 'That did not go through. Please try again.' })
+        return false
       }
-      closeConfirm()
+      const ok: Record<ActionKey, string> = {
+        'send-invite': 'Invite sent', resend: 'Invite re-sent', revoke: 'Invitation revoked',
+        'not-here': 'Flagged for Furniture Assist', deactivate: 'Access removed', reactivate: 'Access restored',
+        'make-admin': 'Now an admin', 'remove-admin': 'Now staff',
+      }
+      // The invite routes return 200 with emailSent:false when the row was
+      // written but Resend didn't take the message. The person is still
+      // invited and the link is live — say so, and point at Resend Invite.
+      if ((action === 'send-invite' || action === 'resend') && body.emailSent === false) {
+        keepFlash = true
+        setFlash({
+          tone: 'warn',
+          text: 'The invite was recorded, but the email didn’t send. Use Resend Invite, or contact Furniture Assist if it keeps failing.',
+        })
+        router.refresh()
+        return true
+      }
+      setFlash({ tone: 'ok', text: ok[action] })
+      router.refresh()
+      return true
     } catch {
-      setFlash({ tone: 'error', text: 'Network error. Please try again.' })
+      setFlash({ tone: 'err', text: 'Network error. Please try again.' })
+      return false
     } finally {
       setLoading(false)
-      setTimeout(() => setFlash(null), 4000)
+      if (!keepFlash) setTimeout(() => setFlash(null), 4000)
     }
   }
 
+  // Fires directly (with a flash) or opens the confirm dialog first.
+  const act = (action: ActionKey, m: Member) => {
+    setOpenMenu(null)
+    if (CONFIRM[action]) setConfirm({ action, id: m.id, name: `${m.firstName} ${m.lastName}` })
+    else run(action, m.id)
+  }
 
-  const cc = confirm.action ? CONFIRM_COPY[confirm.action] : null
+  const rowProps = (m: Member) => ({
+    m,
+    menuOpen: openMenu === m.id,
+    onMenuOpen: () => setOpenMenu(m.id),
+    onMenuClose: () => setOpenMenu(null),
+  })
 
+  const menuFor = (m: Member, g: GroupKey): MenuItem[] => {
+    if (g === 'ready') return [
+      { label: 'Send Invite', color: '#2A7F6F', icon: MAIL_ICON, onClick: () => act('send-invite', m) },
+      { label: 'Not at this office', color: '#C0392B', icon: PIN_OFF_ICON, onClick: () => act('not-here', m) },
+    ]
+    if (g === 'invited') return [
+      { label: 'Resend Invite', color: '#2A7F6F', icon: RESEND_ICON, onClick: () => act('resend', m) },
+      { label: 'Revoke Invite', color: '#C0392B', icon: X_ICON, onClick: () => act('revoke', m) },
+      { label: 'Not at this office', color: '#C0392B', icon: PIN_OFF_ICON, onClick: () => act('not-here', m), divider: true },
+    ]
+    if (g === 'active') {
+      // The signed-in admin's own row carries no menu — you can't deactivate
+      // yourself and lock the agency out.
+      //
+      // Make / Remove Admin were removed: role changes are handled by Furniture
+      // Assist directly for now. The 'make-admin' / 'remove-admin' actions and
+      // /api/admin/staff/[id]/role are left intact for when self-service role
+      // management is added back.
+      if (m.clerkUserId && m.clerkUserId === currentUserId) return []
+      return [
+        { label: 'Deactivate', color: '#C0392B', icon: X_ICON, onClick: () => act('deactivate', m) },
+      ]
+    }
+    // inactive
+    return [{ label: 'Reactivate', color: '#2A7F6F', icon: UNDO_ICON, onClick: () => act('reactivate', m) }]
+  }
 
-  // Invite button used in the Ready to Invite section header
-  const inviteButton = (
-    <button
-      onClick={() => setInviteModalOpen(true)}
-      style={{
-        display: 'inline-flex',
-        alignItems: 'center',
-        gap: '6px',
-        padding: '8px 14px',
-        borderRadius: '7px',
-        border: 'none',
-        background: '#2A7F6F',
-        color: 'white',
-        fontFamily: 'var(--font-montserrat)',
-        fontWeight: 700,
-        fontSize: '12px',
-        letterSpacing: '0.03em',
-        cursor: 'pointer',
-      }}
-    >
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <line x1="12" y1="5" x2="12" y2="19" />
-        <line x1="5" y1="12" x2="19" y2="12" />
-      </svg>
-      Invite Staff Member
-    </button>
-  )
+  const total = buckets.ready.length + buckets.invited.length + buckets.active.length + buckets.inactive.length
 
+  const cc = confirm ? CONFIRM[confirm.action] : null
 
   return (
-    <div>
-      {/* Flash */}
-      {flash && (
-        <div
+    <>
+      {/* Header. Desktop (.fa-team-header grid): heading top-left, Add Staff
+          Member top-right, the two-line description under the heading (capped
+          at ~640px so it wraps rather than reaching the card edge). Mobile:
+          heading, description, then the button on its own line beneath — see
+          the media query in globals.css. Children are in that DOM order so the
+          mobile stack needs no reordering, only the button repositioned. */}
+      <div className="fa-team-header" style={{ marginBottom: '20px' }}>
+        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontSize: '15px', fontWeight: 600, color: '#1B2B4B', margin: 0 }}>
+          Team Members
+        </h2>
+        <div className="fa-team-header-desc" style={{ maxWidth: '640px', fontSize: '13px', lineHeight: 1.6, margin: '4px 0 0' }}>
+          <p style={{ color: '#7A8899', margin: 0 }}>
+            Manage who at your agency has access to the Furniture Assist portal.
+          </p>
+          {/* One step more muted than the line above — purpose vs. operational note.
+              #9AA6B2 is the same grey already used for the Inactive accent / counts.
+              The 6px top margin keeps the two sentences reading as distinct lines
+              rather than one wrapped paragraph, especially once the first wraps. */}
+          <p style={{ color: '#9AA6B2', margin: '6px 0 0' }}>
+            People already in our records appear below — use Add Staff Member for anyone who isn&apos;t listed.
+          </p>
+        </div>
+        <button
+          type="button"
+          className="fa-team-header-add"
+          onClick={() => setInviteOpen(true)}
           style={{
-            background: flash.tone === 'success' ? 'rgba(42,127,111,0.10)' : '#FDF0EE',
-            border: `1px solid ${flash.tone === 'success' ? '#2A7F6F' : '#C0392B'}`,
-            borderRadius: '8px',
-            padding: '12px 16px',
-            marginBottom: '16px',
-            fontSize: '13px',
-            color: flash.tone === 'success' ? '#2A7F6F' : '#C0392B',
-            fontWeight: 600,
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            padding: '9px 16px', borderRadius: '8px', border: 'none',
+            background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)',
+            fontWeight: 700, fontSize: '12px', letterSpacing: '0.03em', cursor: 'pointer',
           }}
         >
-          {flash.tone === 'success' ? '✓ ' : ''}
-          {flash.text}
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          Add Staff Member
+        </button>
+      </div>
+
+      {flash && (
+        <div style={{
+          borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
+          fontSize: '13px', fontWeight: 600,
+          background: flash.tone === 'ok' ? 'rgba(42,127,111,0.10)' : flash.tone === 'warn' ? '#FEF9EC' : '#FDF0EE',
+          border: `1px solid ${flash.tone === 'ok' ? '#2A7F6F' : flash.tone === 'warn' ? '#E6D3A3' : '#C0392B'}`,
+          color: flash.tone === 'ok' ? '#2A7F6F' : flash.tone === 'warn' ? '#6B5518' : '#C0392B',
+        }}>
+          {flash.tone === 'ok' ? '✓ ' : ''}{flash.text}
         </div>
       )}
 
-
-      {/* Invite modal */}
       <InviteStaffModal
-        open={inviteModalOpen}
-        onClose={() => setInviteModalOpen(false)}
+        open={inviteOpen}
+        onClose={() => setInviteOpen(false)}
         orgId={orgId}
         agencyId={agencyId}
         agencyName={agencyName}
@@ -825,159 +439,97 @@ export default function StaffList({
         inviterEmail={inviterEmail}
       />
 
-
-      {/* Confirm modal */}
-      {confirm.open && cc && (
+      {confirm && cc && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center p-4"
           style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
-          onClick={(e) => e.target === e.currentTarget && closeConfirm()}
+          onClick={e => e.target === e.currentTarget && !loading && setConfirm(null)}
         >
-          <div
-            style={{
-              background: 'white',
-              borderRadius: '16px',
-              padding: '36px',
-              maxWidth: '440px',
-              width: '100%',
-              maxHeight: '90vh',
-              overflowY: 'auto',
-              boxShadow: '0 20px 60px rgba(27,43,75,0.2)',
-            }}
-          >
-            <h3
-              style={{
-                fontFamily: 'var(--font-montserrat)',
-                fontWeight: 800,
-                fontSize: '18px',
-                color: '#1B2B4B',
-                marginBottom: '10px',
-              }}
-            >
-              {cc.title}
-            </h3>
-            <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '24px' }}>
-              {cc.body(confirm.name)}
-            </p>
-            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-              <button
-                onClick={closeConfirm}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: '7px',
-                  border: '1px solid #EDE9E1',
-                  background: 'white',
-                  color: '#2C3A4A',
-                  fontFamily: 'var(--font-montserrat)',
-                  fontWeight: 700,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                }}
-              >
+          <div style={{ background: 'white', borderRadius: '16px', padding: '32px', maxWidth: '420px', width: '100%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
+            <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '17px', color: '#1B2B4B', marginBottom: '10px' }}>{cc.title}</h3>
+            <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>{cc.body(confirm.name)}</p>
+            <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
+              <button type="button" onClick={() => setConfirm(null)} disabled={loading}
+                style={{ padding: '9px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
                 Cancel
               </button>
-              <button
-                onClick={handleConfirm}
-                disabled={loading}
-                style={{
-                  padding: '10px 20px',
-                  borderRadius: '7px',
-                  border: 'none',
-                  background: cc.danger ? '#C0392B' : '#2A7F6F',
-                  color: 'white',
-                  fontFamily: 'var(--font-montserrat)',
-                  fontWeight: 700,
-                  fontSize: '13px',
-                  cursor: 'pointer',
-                  opacity: loading ? 0.5 : 1,
-                }}
-              >
-                {loading ? '...' : cc.button}
+              <button type="button" disabled={loading}
+                onClick={async () => { const done = await run(confirm.action, confirm.id); if (done) setConfirm(null) }}
+                style={{ padding: '9px 18px', borderRadius: '7px', border: 'none', background: cc.danger ? '#C0392B' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
+                {loading ? '…' : cc.button}
               </button>
             </div>
           </div>
         </div>
       )}
 
+      {total === 0 ? (
+        <div style={EMPTY_BOX}>
+          No other team members yet. Use <strong style={{ color: '#1B2B4B' }}>Add Staff Member</strong> to give a colleague portal access.
+        </div>
+      ) : (
+        <>
+          {buckets.ready.length > 0 && (
+            <GroupCard groupKey="ready" title="Ready to invite" count={buckets.ready.length}
+              columns={['Name', 'Email', 'Role', '']}>
+              {buckets.ready.map(m => (
+                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'ready')} />
+              ))}
+            </GroupCard>
+          )}
 
-      {/* Sections */}
-      <Section
-        title="Ready to Invite to Portal"
-        accent="#C9A84C"
-        count={readyToInvite.length}
-        actionButton={inviteButton}
-      >
-        {readyToInvite.length === 0 ? (
-          <div
-            style={{
-              background: 'white',
-              borderRadius: '12px',
-              padding: '24px',
-              textAlign: 'center',
-              color: '#7A8899',
-              fontSize: '13px',
-              boxShadow: '0 2px 12px rgba(27,43,75,0.07)',
-            }}
-          >
-            No staff waiting to be invited. Add someone with the button above.
-          </div>
-        ) : (
-          readyToInvite.map((m) => (
-            <ReadyToInviteRow
-              key={m.id}
-              member={m}
-              onInvite={(id, name) => openConfirm('invite', id, name)}
-              onWrongAgency={(id, name) => openConfirm('wrong-agency', id, name)}
-            />
-          ))
-        )}
-      </Section>
+          {buckets.invited.length > 0 && (
+            <GroupCard groupKey="invited" title="Invitation sent" count={buckets.invited.length}
+              columns={['Name', 'Email', 'Role', 'Invited']}>
+              {buckets.invited.map(m => (
+                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'invited')}
+                  context={
+                    <>
+                      <span className="fa-active-mobile-label">Invited </span>
+                      {m.invitedDate
+                        ? <>Sent {shortDate(m.invitedDate)}{relative(m.invitedDate) ? ` · ${relative(m.invitedDate)}` : ''}</>
+                        : '—'}
+                      {m.invitedBy && <div style={{ fontSize: '11px', color: '#9AA6B2', marginTop: '1px' }}>by {m.invitedBy}</div>}
+                    </>
+                  }
+                />
+              ))}
+            </GroupCard>
+          )}
 
+          {buckets.active.length > 0 && (
+            <GroupCard groupKey="active" title="Active members" count={buckets.active.length}
+              columns={['Name', 'Email', 'Role', 'Last Login']}>
+              {buckets.active.map(m => (
+                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'active')}
+                  context={
+                    <>
+                      <span className="fa-active-mobile-label">Last login </span>
+                      {m.lastSignInAt
+                        ? <span style={{ color: '#1B2B4B' }}>{relative(m.lastSignInAt)}</span>
+                        : <span style={{ color: '#9AA6B2' }}>Never</span>}
+                      {m.clerkUserId === currentUserId && <span style={{ color: '#9AA6B2' }}> · you</span>}
+                    </>
+                  }
+                />
+              ))}
+              <p style={{ fontSize: '12px', color: '#9AA6B2', lineHeight: 1.6, margin: '12px 0 2px' }}>
+                To change your agency&apos;s primary administrator, email{' '}
+                <a href={`mailto:${AGENCY_CONTACT_EMAIL}`} style={{ color: '#7A8899', textDecoration: 'underline' }}>{AGENCY_CONTACT_EMAIL}</a>.
+              </p>
+            </GroupCard>
+          )}
 
-      <Section title="Awaiting Claim" accent="#4A90C9" count={awaitingClaim.length}>
-        {awaitingClaim.map((m) => (
-          <AwaitingClaimRow
-            key={m.id}
-            member={m}
-            onResend={(id, name) => openConfirm('resend', id, name)}
-            onCancel={(id, name) => openConfirm('cancel', id, name)}
-          />
-        ))}
-      </Section>
-
-
-      <Section title="Active Staff" accent="#2A7F6F" count={activeStaff.length}>
-        {activeStaff.map((m) => (
-          <ActiveOrInactiveRow
-            key={m.id}
-            member={m}
-            currentUserId={currentUserId}
-            onDeactivate={(id, name) => openConfirm('deactivate', id, name)}
-            onReactivate={(id, name) => openConfirm('reactivate', id, name)}
-            onWrongAgency={(id, name) => openConfirm('wrong-agency', id, name)}
-          />
-        ))}
-      </Section>
-
-
-      <Section
-        title="Inactive"
-        accent="#7A8899"
-        count={inactiveStaff.length}
-        collapsible
-        defaultOpen={false}
-      >
-        {inactiveStaff.map((m) => (
-          <ActiveOrInactiveRow
-            key={m.id}
-            member={m}
-            currentUserId={currentUserId}
-            onDeactivate={(id, name) => openConfirm('deactivate', id, name)}
-            onReactivate={(id, name) => openConfirm('reactivate', id, name)}
-            onWrongAgency={(id, name) => openConfirm('wrong-agency', id, name)}
-          />
-        ))}
-      </Section>
-    </div>
+          {buckets.inactive.length > 0 && (
+            <GroupCard groupKey="inactive" title="Inactive" count={buckets.inactive.length} collapsible
+              columns={['Name', 'Email', 'Role', '']}>
+              {buckets.inactive.map(m => (
+                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'inactive')} />
+              ))}
+            </GroupCard>
+          )}
+        </>
+      )}
+    </>
   )
 }

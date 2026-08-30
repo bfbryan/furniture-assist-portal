@@ -206,14 +206,23 @@ export default function AgencyPortalShell({
             >
               Agency
             </div>
+            {/* The most prominent text in this block — above the muted "AGENCY"
+                label, at or just over the nav-item size (13.5px). A long name
+                wraps to at most two lines (break-word so a single long word
+                can't push past the rail edge), then ellipsis; the full name is
+                always on the title attribute. Same clamp as the avatar-menu
+                header row in AgencyAvatarMenu.tsx. */}
             <div
               style={{
-                fontSize: '11px',
-                fontWeight: 500,
+                fontSize: '13px',
+                fontWeight: 600,
                 color: 'white',
-                whiteSpace: 'nowrap',
+                lineHeight: 1.35,
+                display: '-webkit-box',
+                WebkitBoxOrient: 'vertical',
+                WebkitLineClamp: 2,
                 overflow: 'hidden',
-                textOverflow: 'ellipsis',
+                overflowWrap: 'break-word',
               }}
               title={agencyName}
             >

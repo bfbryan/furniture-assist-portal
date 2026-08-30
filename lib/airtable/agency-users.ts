@@ -297,6 +297,43 @@ export async function getAgencyUsersByAgencyId(agencyId: string) {
   }))
 }
 
+/**
+ * Look up an Agency Users row by email, across all agencies. Used by the
+ * Add Staff Member route to catch a duplicate before creating a second
+ * record — either at this agency or another one.
+ */
+export async function getAgencyUserByEmail(email: string) {
+  const formula = encodeURIComponent(`LOWER({Email}) = "${email.trim().toLowerCase()}"`)
+  const data = await airtableFetch(
+    'Agency Users',
+    `?filterByFormula=${formula}&maxRecords=1`,
+  )
+  if (!data.records || data.records.length === 0) return null
+  const r = data.records[0]
+  return {
+    id: r.id,
+    name: `${r.fields['First Name'] ?? ''} ${r.fields['Last Name'] ?? ''}`.trim(),
+    email: r.fields['Email'] as string,
+    agencyId: (r.fields['Agency'] as string[])?.[0] ?? null,
+    status: r.fields['Status'] as string,
+  }
+}
+
+/** Toggle a staff member's portal role. Distinct from the Agency record's
+ *  Primary Admin field, which this does not touch. */
+export async function updateAgencyUserRole(recordId: string, role: 'Admin' | 'Staff') {
+  const res = await fetch(
+    `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Agency Users')}/${recordId}`,
+    {
+      method: 'PATCH',
+      headers: HEADERS,
+      body: JSON.stringify({ fields: { Role: role } }),
+    },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
 // Note: Agency Users Status options changed in June 2026 — added 'Invited'
 // and 'Unclaimed' (the latter was already used by importers; the type
 // signature here is enforced at the API boundary).

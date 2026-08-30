@@ -38,16 +38,23 @@ export default function InviteStaffModal({
     lastName: '',
     email: '',
     phone: '',
+    role: 'Staff' as 'Staff' | 'Admin',
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set when the staff member WAS created but Resend didn't take the email
+  // (route returns 200 { emailSent: false }). Not an error — a caveat on a
+  // success — so the modal switches to a confirmation state rather than
+  // re-showing the form.
+  const [notice, setNotice] = useState<string | null>(null)
 
 
   // Reset form when modal opens
   useEffect(() => {
     if (open) {
-      setForm({ firstName: '', lastName: '', email: '', phone: '' })
+      setForm({ firstName: '', lastName: '', email: '', phone: '', role: 'Staff' })
       setError(null)
+      setNotice(null)
     }
   }, [open])
 
@@ -97,8 +104,10 @@ export default function InviteStaffModal({
     inviterDomain !== inviteeDomain
 
 
+  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email.trim())
+
   const canSubmit =
-    form.firstName.trim() && form.lastName.trim() && form.email.trim() && form.phone.trim() && !loading
+    form.firstName.trim() && form.lastName.trim() && emailValid && form.phone.trim() && !loading
 
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -118,7 +127,7 @@ export default function InviteStaffModal({
           firstName: form.firstName.trim(),
           lastName: form.lastName.trim(),
           email: form.email.trim(),
-          role: 'org:member',
+          role: form.role === 'Admin' ? 'org:admin' : 'org:member',
           phone: form.phone.trim(),
           orgId,
           agencyId,
@@ -128,10 +137,30 @@ export default function InviteStaffModal({
       })
 
 
+      const data = await res.json().catch(() => ({}))
+
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
-        setError(data.error || 'Failed to send invitation.')
+        // `detail` carries the underlying Clerk / Airtable message on the
+        // 500s — worth showing on this admin-only surface so a failed invite
+        // can be diagnosed without opening the network tab.
+        setError(
+          [data.error || 'Failed to send invitation.', data.detail]
+            .filter(Boolean)
+            .join(' — '),
+        )
         setLoading(false)
+        return
+      }
+
+
+      // Row + Clerk user created, but the email did not go. Keep the modal
+      // open on a confirmation state that says so; refresh the list behind it.
+      if (data.emailSent === false) {
+        setNotice(
+          'Staff member added, but the invite email didn’t send. Use Resend Invite, or contact Furniture Assist if it keeps failing.',
+        )
+        setLoading(false)
+        router.refresh()
         return
       }
 
@@ -216,6 +245,45 @@ export default function InviteStaffModal({
             Invite Staff Member
           </h3>
         </div>
+        {notice ? (
+          <>
+            <div
+              style={{
+                background: '#FEF9EC',
+                border: '1px solid #E6D3A3',
+                borderRadius: '10px',
+                padding: '14px 16px',
+                fontSize: '13px',
+                color: '#6B5518',
+                lineHeight: 1.55,
+                fontWeight: 600,
+                marginBottom: '20px',
+              }}
+            >
+              {notice}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  background: '#2A7F6F',
+                  color: 'white',
+                  fontFamily: 'var(--font-montserrat)',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </>
+        ) : (
+        <>
         <p style={{ fontSize: '13px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>
           They&apos;ll receive a secure magic-link email to activate their portal account.
         </p>
@@ -294,6 +362,37 @@ export default function InviteStaffModal({
             />
             <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '4px' }}>
               Direct work number for this staff member.
+            </div>
+          </div>
+
+
+          {/* Role — Staff by default. Admin can manage the team and see every
+              referral; Staff see only their own. */}
+          <div style={{ marginBottom: '18px' }}>
+            <label style={labelStyle}>Role</label>
+            <div style={{ display: 'inline-flex', border: '1px solid #EDE9E1', borderRadius: '8px', overflow: 'hidden' }}>
+              {(['Staff', 'Admin'] as const).map((r) => {
+                const on = form.role === r
+                return (
+                  <button
+                    key={r}
+                    type="button"
+                    onClick={() => setForm({ ...form, role: r })}
+                    style={{
+                      padding: '8px 18px',
+                      border: 'none',
+                      background: on ? '#2A7F6F' : 'white',
+                      color: on ? 'white' : '#2C3A4A',
+                      fontFamily: 'var(--font-montserrat)',
+                      fontWeight: 700,
+                      fontSize: '12px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    {r}
+                  </button>
+                )
+              })}
             </div>
           </div>
 
@@ -456,6 +555,8 @@ export default function InviteStaffModal({
             </button>
           </div>
         </form>
+        </>
+        )}
       </div>
     </div>
   )
