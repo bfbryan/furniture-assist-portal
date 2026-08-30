@@ -97,8 +97,9 @@ const MAIL_ICON = (<><path d="M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1
 const RESEND_ICON = (<><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></>)
 const X_ICON = (<><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></>)
 const PIN_OFF_ICON = (<><path d="M21 10c0 6-9 12-9 12S3 16 3 10a9 9 0 0 1 .6-3.2"/><path d="M8.4 4.4A9 9 0 0 1 21 10"/><line x1="2" y1="2" x2="22" y2="22"/></>)
-const SHIELD_ICON = (<><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></>)
 const UNDO_ICON = (<><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></>)
+// SHIELD_ICON removed with the Make/Remove Admin menu items — re-add it when
+// self-service role management comes back (see menuFor / the 'active' branch).
 
 // ------------------------------------------------------------------ styling
 
@@ -350,14 +351,16 @@ export default function StaffList({
       { label: 'Not at this office', color: '#C0392B', icon: PIN_OFF_ICON, onClick: () => act('not-here', m), divider: true },
     ]
     if (g === 'active') {
-      // The signed-in admin's own row carries no menu — you can't demote or
-      // deactivate yourself and lock the agency out.
+      // The signed-in admin's own row carries no menu — you can't deactivate
+      // yourself and lock the agency out.
+      //
+      // Make / Remove Admin were removed: role changes are handled by Furniture
+      // Assist for now (the card footer says how). The 'make-admin' /
+      // 'remove-admin' actions and /api/admin/staff/[id]/role are left intact
+      // for when self-service role management is added back.
       if (m.clerkUserId && m.clerkUserId === currentUserId) return []
       return [
-        m.role === 'Admin'
-          ? { label: 'Remove Admin', color: '#1B2B4B', icon: SHIELD_ICON, onClick: () => act('remove-admin', m) }
-          : { label: 'Make Admin', color: '#1B2B4B', icon: SHIELD_ICON, onClick: () => act('make-admin', m) },
-        { label: 'Deactivate', color: '#C0392B', icon: X_ICON, onClick: () => act('deactivate', m), divider: true },
+        { label: 'Deactivate', color: '#C0392B', icon: X_ICON, onClick: () => act('deactivate', m) },
       ]
     }
     // inactive
@@ -506,6 +509,10 @@ export default function StaffList({
               ))}
               <p style={{ fontSize: '12px', color: '#9AA6B2', lineHeight: 1.6, margin: '12px 0 2px' }}>
                 To change your agency&apos;s primary administrator, email{' '}
+                <a href={`mailto:${AGENCY_CONTACT_EMAIL}`} style={{ color: '#7A8899', textDecoration: 'underline' }}>{AGENCY_CONTACT_EMAIL}</a>.
+              </p>
+              <p style={{ fontSize: '12px', color: '#9AA6B2', lineHeight: 1.6, margin: '2px 0 0' }}>
+                To give another team member administrative access, email{' '}
                 <a href={`mailto:${AGENCY_CONTACT_EMAIL}`} style={{ color: '#7A8899', textDecoration: 'underline' }}>{AGENCY_CONTACT_EMAIL}</a>.
               </p>
             </GroupCard>

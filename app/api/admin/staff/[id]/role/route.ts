@@ -2,6 +2,12 @@
 //
 // PATCH { role: 'Admin' | 'Staff' } — toggle a staff member's portal role.
 //
+// NOT CALLED FROM THE UI YET. The Team page's Make Admin / Remove Admin menu
+// items were removed — role changes go through Furniture Assist for now. This
+// route is left in place, fully working, to be wired back up when self-service
+// role management returns. The client actions ('make-admin' / 'remove-admin'
+// in components/agency/StaffList.tsx) are likewise kept but unsurfaced.
+//
 // Writes Role on the Agency Users row and updates the Clerk org membership
 // (org:admin / org:member) so the change takes effect on their next request.
 //
