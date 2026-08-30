@@ -65,8 +65,12 @@ export async function sendPortalAccountEmail(params: {
   agencyRecordId: string | null;
 }): Promise<PortalAccountEmailResult> {
   const { automationName, to, tokens, agencyRecordId } = params;
+  // Hoisted so the outer catch can still write the "Failed" audit row when the
+  // throw happened after the automation was resolved (the common case: the
+  // Resend constructor throwing on a missing key, or emails.send() throwing).
+  let automation: Awaited<ReturnType<typeof getAutomationSettings>> = null;
   try {
-    const automation = await getAutomationSettings(automationName);
+    automation = await getAutomationSettings(automationName);
     if (!automation) {
       console.error(
         `${automationName}: no matching row found in Email Automations`
@@ -119,11 +123,24 @@ export async function sendPortalAccountEmail(params: {
 
     return { skipped: false, sent: true };
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error(`${automationName} send failed:`, err);
-    return {
-      skipped: false,
-      sent: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+    // A THROWN send (Resend constructor with no key, a network error, an SDK
+    // throw) lands here instead of the `if (error)` branch above, and used to
+    // leave no trace but this log line — not even the Email Log "Failed" row
+    // that a returned error gets. Write that row too, whenever we got far
+    // enough to know which automation it was.
+    if (automation?.id) {
+      await logAgencyEmailSend({
+        automationRecordId: automation.id,
+        agencyRecordId,
+        recipientEmail: to,
+        status: "Failed",
+        bounceReason: message,
+      }).catch((logErr) =>
+        console.error(`${automationName}: thrown send AND the Email Log row could not be written:`, logErr)
+      );
+    }
+    return { skipped: false, sent: false, error: message };
   }
 }

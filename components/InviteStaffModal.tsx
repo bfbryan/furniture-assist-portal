@@ -42,6 +42,11 @@ export default function InviteStaffModal({
   })
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Set when the staff member WAS created but Resend didn't take the email
+  // (route returns 200 { emailSent: false }). Not an error — a caveat on a
+  // success — so the modal switches to a confirmation state rather than
+  // re-showing the form.
+  const [notice, setNotice] = useState<string | null>(null)
 
 
   // Reset form when modal opens
@@ -49,6 +54,7 @@ export default function InviteStaffModal({
     if (open) {
       setForm({ firstName: '', lastName: '', email: '', phone: '', role: 'Staff' })
       setError(null)
+      setNotice(null)
     }
   }, [open])
 
@@ -131,8 +137,9 @@ export default function InviteStaffModal({
       })
 
 
+      const data = await res.json().catch(() => ({}))
+
       if (!res.ok) {
-        const data = await res.json().catch(() => ({}))
         // `detail` carries the underlying Clerk / Airtable message on the
         // 500s — worth showing on this admin-only surface so a failed invite
         // can be diagnosed without opening the network tab.
@@ -142,6 +149,18 @@ export default function InviteStaffModal({
             .join(' — '),
         )
         setLoading(false)
+        return
+      }
+
+
+      // Row + Clerk user created, but the email did not go. Keep the modal
+      // open on a confirmation state that says so; refresh the list behind it.
+      if (data.emailSent === false) {
+        setNotice(
+          'Staff member added, but the invite email didn’t send. Use Resend Invite, or contact Furniture Assist if it keeps failing.',
+        )
+        setLoading(false)
+        router.refresh()
         return
       }
 
@@ -226,6 +245,45 @@ export default function InviteStaffModal({
             Invite Staff Member
           </h3>
         </div>
+        {notice ? (
+          <>
+            <div
+              style={{
+                background: '#FEF9EC',
+                border: '1px solid #E6D3A3',
+                borderRadius: '10px',
+                padding: '14px 16px',
+                fontSize: '13px',
+                color: '#6B5518',
+                lineHeight: 1.55,
+                fontWeight: 600,
+                marginBottom: '20px',
+              }}
+            >
+              {notice}
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+              <button
+                type="button"
+                onClick={onClose}
+                style={{
+                  padding: '10px 20px',
+                  borderRadius: '7px',
+                  border: 'none',
+                  background: '#2A7F6F',
+                  color: 'white',
+                  fontFamily: 'var(--font-montserrat)',
+                  fontWeight: 700,
+                  fontSize: '13px',
+                  cursor: 'pointer',
+                }}
+              >
+                Done
+              </button>
+            </div>
+          </>
+        ) : (
+        <>
         <p style={{ fontSize: '13px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>
           They&apos;ll receive a secure magic-link email to activate their portal account.
         </p>
@@ -497,6 +555,8 @@ export default function InviteStaffModal({
             </button>
           </div>
         </form>
+        </>
+        )}
       </div>
     </div>
   )

@@ -245,7 +245,9 @@ export default function StaffList({
   const [openMenu, setOpenMenu] = useState<string | null>(null)
   const [inviteOpen, setInviteOpen] = useState(false)
   const [loading, setLoading] = useState(false)
-  const [flash, setFlash] = useState<{ tone: 'ok' | 'err'; text: string } | null>(null)
+  // 'warn' = the action succeeded but the invite email did not send. Styled
+  // amber, and it does NOT auto-dismiss — it points at Resend Invite.
+  const [flash, setFlash] = useState<{ tone: 'ok' | 'err' | 'warn'; text: string } | null>(null)
   const [confirm, setConfirm] = useState<{ action: ActionKey; id: string; name: string } | null>(null)
 
   useEffect(() => {
@@ -276,6 +278,7 @@ export default function StaffList({
   const run = async (action: ActionKey, id: string) => {
     setLoading(true)
     setFlash(null)
+    let keepFlash = false
     try {
       const req: Record<ActionKey, () => Promise<Response>> = {
         'send-invite': () => fetch(`/api/admin/staff/${id}/invite`, { method: 'POST' }),
@@ -288,8 +291,8 @@ export default function StaffList({
         'remove-admin': () => fetch(`/api/admin/staff/${id}/role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'Staff' }) }),
       }
       const res = await req[action]()
+      const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
         setFlash({ tone: 'err', text: body.error || 'That did not go through. Please try again.' })
         return false
       }
@@ -297,6 +300,18 @@ export default function StaffList({
         'send-invite': 'Invite sent', resend: 'Invite re-sent', revoke: 'Invitation revoked',
         'not-here': 'Flagged for Furniture Assist', deactivate: 'Access removed', reactivate: 'Access restored',
         'make-admin': 'Now an admin', 'remove-admin': 'Now staff',
+      }
+      // The invite routes return 200 with emailSent:false when the row was
+      // written but Resend didn't take the message. The person is still
+      // invited and the link is live — say so, and point at Resend Invite.
+      if ((action === 'send-invite' || action === 'resend') && body.emailSent === false) {
+        keepFlash = true
+        setFlash({
+          tone: 'warn',
+          text: 'The invite was recorded, but the email didn’t send. Use Resend Invite, or contact Furniture Assist if it keeps failing.',
+        })
+        router.refresh()
+        return true
       }
       setFlash({ tone: 'ok', text: ok[action] })
       router.refresh()
@@ -306,7 +321,7 @@ export default function StaffList({
       return false
     } finally {
       setLoading(false)
-      setTimeout(() => setFlash(null), 4000)
+      if (!keepFlash) setTimeout(() => setFlash(null), 4000)
     }
   }
 
@@ -397,9 +412,9 @@ export default function StaffList({
         <div style={{
           borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
           fontSize: '13px', fontWeight: 600,
-          background: flash.tone === 'ok' ? 'rgba(42,127,111,0.10)' : '#FDF0EE',
-          border: `1px solid ${flash.tone === 'ok' ? '#2A7F6F' : '#C0392B'}`,
-          color: flash.tone === 'ok' ? '#2A7F6F' : '#C0392B',
+          background: flash.tone === 'ok' ? 'rgba(42,127,111,0.10)' : flash.tone === 'warn' ? '#FEF9EC' : '#FDF0EE',
+          border: `1px solid ${flash.tone === 'ok' ? '#2A7F6F' : flash.tone === 'warn' ? '#E6D3A3' : '#C0392B'}`,
+          color: flash.tone === 'ok' ? '#2A7F6F' : flash.tone === 'warn' ? '#6B5518' : '#C0392B',
         }}>
           {flash.tone === 'ok' ? '✓ ' : ''}{flash.text}
         </div>

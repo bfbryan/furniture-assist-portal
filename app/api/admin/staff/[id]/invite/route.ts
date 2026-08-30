@@ -163,8 +163,11 @@ export async function POST(
     clerkUserId,
   })
 
-  // Send the invitation email. While the automation is disabled in Airtable
-  // this is skipped by design and the invite still succeeds.
+  // Send the invitation email. Never throws — a disabled automation or a
+  // Resend failure comes back as { skipped } / { sent: false }. The invite row
+  // is already written and the sign-in link is live, so a non-send does not
+  // fail the request; it is surfaced via `emailSent` for the Team page to warn
+  // on. Same contract as POST /api/admin/invite.
   const emailResult = await sendPortalAccountEmail({
     automationName: 'Agency Staff Welcome to Portal - Invite',
     to: staff.email,
@@ -176,5 +179,6 @@ export async function POST(
     agencyRecordId: staff.agencyId,
   })
 
-  return NextResponse.json({ ok: true, email: emailResult })
+  const emailSent = 'sent' in emailResult && emailResult.sent
+  return NextResponse.json({ ok: true, emailSent, email: emailResult })
 }
