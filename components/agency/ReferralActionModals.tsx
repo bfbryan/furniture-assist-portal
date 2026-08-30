@@ -4,9 +4,10 @@
 //
 // The agency portal's cancel / withdraw / reschedule dialogs.
 //
-// Lifted verbatim out of ReferralTable so the referral detail page can offer
-// the same actions without a second copy. Behaviour, copy and styling are
-// unchanged; this is a move, not a redesign.
+// Lifted out of ReferralTable so the referral detail page can offer the same
+// actions without a second copy. Both dialogs name the client and, where there
+// is one, the appointment date + time in bold navy — the facts someone checks
+// before confirming.
 //
 // These are deliberately NOT the modals in components/internal/modals/. Those
 // let Dawson pick an exact time slot and book it, because he owns the
@@ -20,10 +21,22 @@
 
 import { useEffect, useState } from 'react'
 import { TIME_ORDER } from '@/lib/schedule/capacity'
+import { addDaysISO, formatDateOnly } from '@/lib/dates'
+import { formatSlot } from '@/lib/referrals/slot-display'
+import { NO_SHOW_RESCHEDULE_WINDOW_DAYS } from '@/lib/referrals/no-show-window'
 
-// The client name is what the reader verifies before confirming, so it is bold
-// navy against the muted body text — the most scannable thing in the sentence.
+// The facts the reader verifies before confirming — client name, appointment
+// date, time — are bold navy against the muted body text.
 const SUBJECT: React.CSSProperties = { color: '#1B2B4B', fontWeight: 700 }
+
+// "Sep 26, 2026 at 10am" — same phrasing the detail page and Active list use
+// (formatSlot), with the date formatted UTC-anchored like everywhere else.
+function slotPhrase(date?: string | null, time?: string | null): string | null {
+  if (!date) return null
+  return formatSlot(date, time ?? null, iso =>
+    formatDateOnly(iso, { month: 'short', day: 'numeric', year: 'numeric' }),
+  )
+}
 
 export type AvailableDate = {
   date: string           // 'YYYY-MM-DD'
@@ -36,6 +49,10 @@ export type ConfirmModalState = {
   type: 'cancel' | 'withdraw' | null
   id: string
   name: string
+  /** The appointment being cancelled, when there is one (a Scheduling /
+      awaiting-date cancel has neither, and withdraw never does). */
+  date?: string | null
+  time?: string | null
 }
 
 export function ConfirmModal({ modal, onConfirm, onClose, loading, error }: {
@@ -59,6 +76,7 @@ export function ConfirmModal({ modal, onConfirm, onClose, loading, error }: {
   if (!modal.open) return null
   const isCancel = modal.type === 'cancel'
   const isWithdraw = modal.type === 'withdraw'
+  const slot = slotPhrase(modal.date, modal.time)
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -71,9 +89,15 @@ export function ConfirmModal({ modal, onConfirm, onClose, loading, error }: {
         </h3>
         <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '24px' }}>
           {isWithdraw ? (
-            <>Are you sure you want to withdraw the referral for <strong style={SUBJECT}>{modal.name}</strong>? It will be removed from the review queue.</>
+            <>Withdraw the referral for <strong style={SUBJECT}>{modal.name}</strong>? It will be removed from the review queue. This can&apos;t be undone.</>
+          ) : slot ? (
+            <>
+              Cancel the appointment for <strong style={SUBJECT}>{modal.name}</strong> on <strong style={SUBJECT}>{slotPhrase(modal.date, null)}</strong>
+              {modal.time ? <> at <strong style={SUBJECT}>{modal.time}</strong></> : null}?
+              {' '}Furniture Assist will be notified and you&apos;ll receive a confirmation by email. This can&apos;t be undone.
+            </>
           ) : (
-            <>Are you sure you want to cancel the appointment for <strong style={SUBJECT}>{modal.name}</strong>? Furniture Assist will be notified.</>
+            <>Cancel this referral for <strong style={SUBJECT}>{modal.name}</strong>? Furniture Assist will be notified. This can&apos;t be undone.</>
           )}
         </p>
         {error && (
@@ -99,6 +123,12 @@ export type RescheduleModalState = {
   open: boolean
   id: string
   name: string
+  /** The appointment being moved, shown above the picker for context. */
+  date?: string | null
+  time?: string | null
+  /** No-show reschedule: there's nothing to move, so the line reads
+      "Missed:" not "Currently:". */
+  missed?: boolean
 }
 
 export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading, submitError }: {
@@ -132,6 +162,15 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
 
   if (!modal.open) return null
 
+  const shortDate = (iso: string) =>
+    formatDateOnly(iso, { month: 'short', day: 'numeric', year: 'numeric' })
+  const slot = slotPhrase(modal.date, modal.time)
+  // Same cutoff the detail page shows: appointmentDate + the window constant.
+  const deadline = modal.missed && modal.date
+    ? shortDate(addDaysISO(modal.date, NO_SHOW_RESCHEDULE_WINDOW_DAYS))
+    : null
+  const contextLine = modal.missed ? deadline : slot
+
   const handleConfirm = () => {
     setError(null)
     if (!flexible && !preferredDate) {
@@ -152,9 +191,26 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
         <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
           Reschedule Appointment
         </h3>
-        <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '20px' }}>
-          Reschedule for <strong style={SUBJECT}>{modal.name}</strong>. Choose a Saturday. We&apos;ll check availability and confirm by email.
+        <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: contextLine ? '10px' : '20px' }}>
+          {modal.missed ? (
+            <>
+              Request a new date for <strong style={SUBJECT}>{modal.name}</strong>
+              {slotPhrase(modal.date, null) && <>, who missed their appointment on <strong style={SUBJECT}>{slotPhrase(modal.date, null)}</strong></>}.
+              {' '}Furniture Assist will confirm by email.
+            </>
+          ) : (
+            <>
+              Request a new date for <strong style={SUBJECT}>{modal.name}</strong>. Furniture Assist will confirm the change by email — the current appointment stands until then.
+            </>
+          )}
         </p>
+        {contextLine && (
+          <p style={{ fontSize: '13px', color: '#1B2B4B', margin: '0 0 20px' }}>
+            {modal.missed
+              ? <>Reschedule available until <strong style={SUBJECT}>{deadline}</strong>.</>
+              : <>Currently: <strong style={SUBJECT}>{slot}</strong></>}
+          </p>
+        )}
 
         <label style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block' }}>
           Preferred Saturday
@@ -207,7 +263,7 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
             )}
           </div>
           <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: flexible ? 600 : 400 }}>
-            I&apos;m flexible — Furniture Assist will pick the next available Saturday and email you the details.
+            I&apos;m flexible — Furniture Assist will pick a Saturday that works and email you the details.
           </span>
         </label>
 
@@ -222,7 +278,7 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
             Back
           </button>
           <button onClick={handleConfirm} disabled={loading} style={{ padding: '10px 20px', borderRadius: '7px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer', opacity: loading ? 0.5 : 1 }}>
-            {loading ? '...' : 'Reschedule'}
+            {loading ? '...' : 'Send Request'}
           </button>
         </div>
       </div>

@@ -12,6 +12,7 @@ import {
 } from '@/lib/airtable'
 import ReferralTable from '@/components/agency/ReferralTable'
 import { StaffFilterProvider } from '@/components/agency/ActiveReferralsFilter'
+import { isAwaitingOutcome } from '@/lib/referrals/no-show-window'
 
 // Active = not yet approved OR upcoming appointment.
 // Excludes Completed, Cancelled, Rejected and No Show.
@@ -67,7 +68,16 @@ export default async function ActiveReferralsPage() {
       ? await getReferralsByAgencyId(agency.name)
       : await getReferralsByStaffName(agency.name, agencyUser.name)
 
-  const activeReferrals = allReferrals.filter(isActive)
+  // `awaitingOutcome`: Scheduled, but the appointment date has passed and no
+  // outcome is recorded yet. Computed here (server, Eastern "today") with the
+  // same helper the Dashboard and referral detail page use, so the client
+  // table carries no date arithmetic and no hydration seam.
+  const activeReferrals = allReferrals.filter(isActive).map(
+    (r: { appointmentStatus: string; appointmentDate: string | null }) => ({
+      ...r,
+      awaitingOutcome: isAwaitingOutcome(r.appointmentStatus, r.appointmentDate),
+    }),
+  )
 
   // StaffFilterProvider holds the active set + the staff filter; the table
   // (and its search) read from it. The navy hero that used to sit here was

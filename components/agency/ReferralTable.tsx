@@ -55,6 +55,9 @@ type Referral = {
   preferredDate?: string | null
   preferredTime?: string | null
   schedulingFlexibility?: string | null
+  // Set on the server (active/page.tsx): Scheduled + appointment date past +
+  // no outcome recorded. Groups as "Awaiting outcome" with no row actions.
+  awaitingOutcome?: boolean
 }
 
 // ---------------------------------------------------------------- formatting
@@ -80,7 +83,7 @@ function timeRank(time: string | null): number {
 
 // ------------------------------------------------------------------ grouping
 
-type GroupKey = 'pending' | 'scheduled' | 'reschedule' | 'awaitingDate'
+type GroupKey = 'pending' | 'scheduled' | 'reschedule' | 'awaitingOutcome' | 'awaitingDate'
 
 // Exactly one bucket per referral. The page's isActive() has already dropped
 // Rejected / Completed / Cancelled / No Show upstream, so everything here is a
@@ -90,9 +93,14 @@ type GroupKey = 'pending' | 'scheduled' | 'reschedule' | 'awaitingDate'
 // Group 3 keys on Appointment Status alone (not Review) — an agency reschedule
 // request leaves Referral Review = 'Approved'. Pending is checked first only so
 // a would-be Pending+Reschedule contradiction lands in "awaiting approval".
+//
+// awaitingOutcome (set on the server) is checked before 'scheduled' so a
+// past-dated Scheduled referral leaves the Scheduled group — it isn't upcoming
+// and must not carry Reschedule / Cancel actions.
 function classify(r: Referral): GroupKey {
   if (r.referralReview === 'Pending') return 'pending'
   if (r.appointmentStatus === 'Reschedule') return 'reschedule'
+  if (r.awaitingOutcome) return 'awaitingOutcome'
   if (r.appointmentStatus === 'Scheduled') return 'scheduled'
   return 'awaitingDate'
 }
@@ -115,11 +123,13 @@ const DATE_HEADING: React.CSSProperties = {
 // ------------------------------------------------------------------- rows
 
 function Row({
-  r, dateLabel, dateCell, items, menuOpen, onMenuOpen, onMenuClose,
+  r, dateLabel, dateCell, note, items, menuOpen, onMenuOpen, onMenuClose,
 }: {
   r: Referral
   dateLabel: string
   dateCell: React.ReactNode
+  /** Muted line under the address — only the Awaiting outcome rows carry one. */
+  note?: React.ReactNode
   items: MenuItem[]
   menuOpen: boolean
   onMenuOpen: () => void
@@ -134,6 +144,11 @@ function Row({
         <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '2px', overflowWrap: 'anywhere' }}>
           {clientAddressLine(r) || '—'}
         </div>
+        {note && (
+          <div style={{ fontSize: '12px', color: '#9AA6B2', marginTop: '3px', overflowWrap: 'anywhere' }}>
+            {note}
+          </div>
+        )}
       </div>
 
       <div style={{ fontSize: '12px', color: '#7A8899', minWidth: 0, overflowWrap: 'anywhere' }}>
@@ -144,14 +159,18 @@ function Row({
         <span className="fa-active-mobile-label">{dateLabel} </span>{dateCell}
       </div>
 
+      {/* No ⋯ at all when there are no actions (Awaiting outcome) — the column
+          just stays empty rather than showing a dead trigger. */}
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
-        <OverflowMenu
-          open={menuOpen}
-          onOpen={onMenuOpen}
-          onClose={onMenuClose}
-          items={items}
-          label={`Actions for ${r.clientName}`}
-        />
+        {items.length > 0 && (
+          <OverflowMenu
+            open={menuOpen}
+            onOpen={onMenuOpen}
+            onClose={onMenuClose}
+            items={items}
+            label={`Actions for ${r.clientName}`}
+          />
+        )}
       </div>
     </div>
   )
@@ -159,19 +178,22 @@ function Row({
 
 // Every card carries a 3px left accent bar. `gold` (#C9A84C bar, #8B7724
 // heading) = waiting on Furniture Assist to act; `teal` (#2A7F6F both) = a
-// Saturday appointment is set. The bar is border-box, so the left padding is
-// 15px against 18px elsewhere, keeping row content on one vertical line.
+// Saturday appointment is set; `grey` (#9AA6B2 bar, #7A8899 heading) = the
+// referral is past the point of agency action — the Awaiting outcome group,
+// same treatment as the Dashboard's Last Saturday card. The bar is border-box,
+// so the left padding is 15px against 18px elsewhere, keeping row content on
+// one vertical line.
 function GroupCard({
   title, columns, children, accent, hideHead = false,
 }: {
   title: string
   columns: string[]
   children: React.ReactNode
-  accent: 'gold' | 'teal'
+  accent: 'gold' | 'teal' | 'grey'
   hideHead?: boolean
 }) {
-  const barColor = accent === 'gold' ? '#C9A84C' : '#2A7F6F'
-  const headingColor = accent === 'gold' ? '#8B7724' : '#2A7F6F'
+  const barColor = accent === 'gold' ? '#C9A84C' : accent === 'grey' ? '#9AA6B2' : '#2A7F6F'
+  const headingColor = accent === 'gold' ? '#8B7724' : accent === 'grey' ? '#7A8899' : '#2A7F6F'
   return (
     <section style={{
       background: 'white', borderRadius: '12px',
@@ -265,9 +287,11 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
     }
   }
 
-  const openReschedule = (id: string, name: string) => { setActionError(null); setRescheduleModal({ open: true, id, name }) }
-  const openCancel = (id: string, name: string) => { setActionError(null); setConfirmModal({ open: true, type: 'cancel', id, name }) }
-  const openWithdraw = (id: string, name: string) => { setActionError(null); setConfirmModal({ open: true, type: 'withdraw', id, name }) }
+  // On the Active list a Reschedule is always on a Scheduled row (Missed
+  // Appointments are filtered out upstream), so `missed` is never set here.
+  const openReschedule = (r: Referral) => { setActionError(null); setRescheduleModal({ open: true, id: r.id, name: r.clientName, date: r.appointmentDate, time: r.appointmentTime }) }
+  const openCancel = (r: Referral) => { setActionError(null); setConfirmModal({ open: true, type: 'cancel', id: r.id, name: r.clientName, date: r.appointmentDate, time: r.appointmentTime }) }
+  const openWithdraw = (r: Referral) => { setActionError(null); setConfirmModal({ open: true, type: 'withdraw', id: r.id, name: r.clientName }) }
 
   // staffFiltered is already staff-scoped; layer the client-name search on top.
   const rows = useMemo(
@@ -276,11 +300,17 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
   )
 
   const buckets = useMemo(() => {
-    const b: Record<GroupKey, Referral[]> = { pending: [], scheduled: [], reschedule: [], awaitingDate: [] }
+    const b: Record<GroupKey, Referral[]> = { pending: [], scheduled: [], reschedule: [], awaitingOutcome: [], awaitingDate: [] }
     for (const r of rows) b[classify(r)].push(r)
     b.pending.sort((a, z) => (a.referralDate < z.referralDate ? 1 : a.referralDate > z.referralDate ? -1 : 0))
     b.reschedule.sort((a, z) => (a.referralDate < z.referralDate ? 1 : a.referralDate > z.referralDate ? -1 : 0))
     b.awaitingDate.sort((a, z) => (a.referralDate < z.referralDate ? 1 : a.referralDate > z.referralDate ? -1 : 0))
+    // Oldest appointment first — the most overdue for an outcome is at the top.
+    b.awaitingOutcome.sort((a, z) =>
+      (a.appointmentDate ?? '') < (z.appointmentDate ?? '') ? -1 :
+      (a.appointmentDate ?? '') > (z.appointmentDate ?? '') ? 1 :
+      a.clientName.localeCompare(z.clientName),
+    )
     return b
   }, [rows])
 
@@ -301,22 +331,27 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
   }, [buckets.scheduled])
 
   const menuFor = (r: Referral, group: GroupKey): MenuItem[] => {
+    // Past-dated Scheduled: no actions. Reschedule / Cancel here could move or
+    // void an appointment the client already attended. Server routes reject it
+    // too (isAwaitingOutcome guard in reschedule/route.ts and cancel/route.ts).
+    if (group === 'awaitingOutcome') return []
+
     const status = getPortalStatus(r.referralReview, r.appointmentStatus)
     const { isReschedulable, isCancellable, isWithdrawable } = agencyReferralActions(status)
     const items: MenuItem[] = []
 
     if (group === 'pending') {
-      if (isWithdrawable) items.push({ label: 'Withdraw Referral', color: '#C0392B', icon: WITHDRAW_ICON, onClick: () => openWithdraw(r.id, r.clientName) })
+      if (isWithdrawable) items.push({ label: 'Withdraw Referral', color: '#C0392B', icon: WITHDRAW_ICON, onClick: () => openWithdraw(r) })
       return items
     }
     if (group === 'scheduled') {
       if (r.appointmentSlipUrl) items.push({ label: 'Appointment Slip', color: '#2A7F6F', icon: DOC_ICON, href: r.appointmentSlipUrl })
-      if (isReschedulable) items.push({ label: 'Reschedule', color: '#C9A84C', icon: RESCHEDULE_ICON, onClick: () => openReschedule(r.id, r.clientName) })
-      if (isCancellable) items.push({ label: 'Cancel Appointment', color: '#C0392B', icon: CANCEL_ICON, onClick: () => openCancel(r.id, r.clientName), divider: items.length > 0 })
+      if (isReschedulable) items.push({ label: 'Reschedule', color: '#C9A84C', icon: RESCHEDULE_ICON, onClick: () => openReschedule(r) })
+      if (isCancellable) items.push({ label: 'Cancel Appointment', color: '#C0392B', icon: CANCEL_ICON, onClick: () => openCancel(r), divider: items.length > 0 })
       return items
     }
     // reschedule + awaitingDate: Cancel only.
-    if (isCancellable) items.push({ label: 'Cancel Appointment', color: '#C0392B', icon: CANCEL_ICON, onClick: () => openCancel(r.id, r.clientName) })
+    if (isCancellable) items.push({ label: 'Cancel Appointment', color: '#C0392B', icon: CANCEL_ICON, onClick: () => openCancel(r) })
     return items
   }
 
@@ -437,6 +472,35 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
                       <br />
                       <span style={{ color: '#8B7724' }}>
                         Requested: {formatRequestedSlot(requestedSlot(r), formatDate)}
+                      </span>
+                    </span>
+                  }
+                />
+              ))}
+            </GroupCard>
+          )}
+
+          {/* Past-dated Scheduled — the visit may have happened but Furniture
+              Assist hasn't recorded the outcome (the scan runs Tuesday). Sits
+              between Reschedule requested and Scheduled: it's neither a live
+              request nor an upcoming appointment. No Saturday date heading, so
+              the row prints the full appointment date. */}
+          {buckets.awaitingOutcome.length > 0 && (
+            <GroupCard title="Awaiting outcome" accent="grey" columns={['Client', 'Referred by', 'Appointment']}>
+              {buckets.awaitingOutcome.map(r => (
+                <Row
+                  key={r.id}
+                  {...rowProps(r, 'awaitingOutcome')}
+                  dateLabel="Appointment"
+                  note="Furniture Assist has not recorded this appointment yet."
+                  dateCell={
+                    <span style={{ display: 'block', lineHeight: 1.5 }}>
+                      <span style={{ color: '#1B2B4B' }}>
+                        {formatSlot(r.appointmentDate, r.appointmentTime, formatDate)}
+                      </span>
+                      <br />
+                      <span style={{ display: 'inline-block', marginTop: '4px', padding: '2px 8px', borderRadius: '20px', fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: '#EDEBE7', color: '#7A8899' }}>
+                        Awaiting outcome
                       </span>
                     </span>
                   }
