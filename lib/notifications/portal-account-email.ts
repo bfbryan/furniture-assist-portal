@@ -13,9 +13,16 @@
 // dialect, keyed on the inner name. The keys each template expects:
 //
 //   "Agency Welcome to Portal - Claimed":     Admin First Name, Agency Name, token
-//   "Agency Staff Welcome to Portal - Invite": firstName, agencyName, magicLink
+//   "Agency Staff Welcome to Portal - Invite": First Name, Agency Name, magicLink
 //   "Agency Inactive Notice":                  contactFirstName, agencyName
 //   "Agency Reinstate Notice":                 contactFirstName, agencyName
+//
+// Keys are matched by fillTemplate EXACTLY. There's no single naming
+// convention across the four (the welcome pair uses "First Name" / "Agency
+// Name"; the notice pair uses camelCase) — each is right for its own
+// template. The staff invite used to pass firstName / agencyName and rendered
+// a blank greeting; corrected to match the template's "First Name" / "Agency
+// Name" placeholders.
 //
 // Both are built from a RAW Clerk sign-in token, and both end up pointing at
 // the portal. They just differ in WHERE the portal URL is written down:

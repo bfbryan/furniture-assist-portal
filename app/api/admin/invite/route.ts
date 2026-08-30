@@ -256,12 +256,16 @@ export async function POST(req: NextRequest) {
   //    Resend failure comes back as { skipped } / { sent: false } and the
   //    invite still counts as created (the row exists, the link is live).
   //    Surface it so a non-send is visible without being fatal.
+  // Token keys are the EXACT placeholder names in the Airtable template
+  // ("Agency Staff Welcome to Portal - Invite"): {{=gives[...]["First Name"]}},
+  // ["Agency Name"], ["magicLink"]. fillTemplate does an exact-match lookup, so
+  // camelCase keys resolved to "" and the email read "Dear ," with no agency.
   const emailResult = await sendPortalAccountEmail({
     automationName: 'Agency Staff Welcome to Portal - Invite',
     to: email,
     tokens: {
-      firstName,
-      agencyName: agencyName ?? '',
+      'First Name': firstName,
+      'Agency Name': agencyName ?? '',
       magicLink,
     },
     agencyRecordId: agencyId,
