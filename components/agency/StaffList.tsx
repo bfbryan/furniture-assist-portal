@@ -218,21 +218,25 @@ type ActionKey =
   | 'send-invite' | 'resend' | 'revoke' | 'not-here'
   | 'make-admin' | 'remove-admin' | 'deactivate' | 'reactivate'
 
+// The subject — the name the reader scans before confirming — is bold navy so
+// it's the most scannable thing in the sentence.
+const SUBJECT: React.CSSProperties = { color: '#1B2B4B', fontWeight: 700 }
+
 // Only three actions stop for a confirm; the rest fire and flash.
-const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string) => string; button: string; danger?: boolean }>> = {
+const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string) => React.ReactNode; button: string; danger?: boolean }>> = {
   revoke: {
     title: 'Revoke invitation',
-    body: n => `Revoke the invitation for ${n}? Their invite link will stop working.`,
+    body: n => <>Revoke the invitation for <strong style={SUBJECT}>{n}</strong>? Their invite link will stop working.</>,
     button: 'Revoke Invite', danger: true,
   },
   'not-here': {
     title: 'Not at this office',
-    body: n => `Furniture Assist will move ${n} to the correct agency. They'll no longer appear on your team list.`,
+    body: n => <>Furniture Assist will move <strong style={SUBJECT}>{n}</strong> to the correct agency. They&apos;ll no longer appear on your team list.</>,
     button: 'Confirm', danger: true,
   },
   deactivate: {
     title: 'Remove portal access',
-    body: n => `Remove ${n}'s access to the portal? Their referral history stays on file and access can be restored later.`,
+    body: n => <>Remove <strong style={SUBJECT}>{n}</strong>&apos;s access to the portal? Their referral history stays on file and access can be restored later.</>,
     button: 'Deactivate', danger: true,
   },
 }
