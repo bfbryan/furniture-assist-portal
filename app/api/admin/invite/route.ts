@@ -193,7 +193,10 @@ export async function POST(req: NextRequest) {
       role: role || 'org:member',
     })
   } catch (err) {
-    if (clerkErr(err)?.code !== 'organization_membership_exists') {
+    // Already in the org (a reused Clerk user from the form_identifier_exists
+    // branch) is fine. Clerk has used both spellings for this.
+    const code = clerkErr(err)?.code
+    if (code !== 'organization_membership_exists' && code !== 'already_a_member_in_organization') {
       await rollback()
       console.error('Invite: createOrganizationMembership failed:', err)
       return NextResponse.json(
