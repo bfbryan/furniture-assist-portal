@@ -3,9 +3,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { usePathname } from 'next/navigation'
-import { UserButton } from '@clerk/nextjs'
 import Link from 'next/link'
 import AgencyPageBar from './AgencyPageBar'
+import AgencyAvatarMenu from './AgencyAvatarMenu'
 
 type Props = {
   children: React.ReactNode
@@ -342,17 +342,10 @@ export default function AgencyPortalShell({
           <span className="font-extrabold text-sm text-white tracking-wide">
             Furniture Assist <span className="text-[#3AA08D]">| Agency Portal</span>
           </span>
-          <UserButton
-            appearance={{
-              elements: {
-                avatarBox: { width: '32px', height: '32px' },
-              },
-            }}
-          >
-            <UserButton.MenuItems>
-              <UserButton.Action label="signOut" />
-            </UserButton.MenuItems>
-          </UserButton>
+          {/* Same custom avatar + menu as the page bar (Airtable identity,
+              sign-out only). The page bar's own avatar is hidden below 1280,
+              so this is the one that shows on a phone. */}
+          <AgencyAvatarMenu userName={userName} agencyName={agencyName} />
         </header>
 
         {/* Slim page bar — every page. Below the mobile top bar on a phone,
