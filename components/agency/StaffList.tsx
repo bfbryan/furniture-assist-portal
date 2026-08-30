@@ -392,8 +392,10 @@ export default function StaffList({
             Manage who at your agency has access to the Furniture Assist portal.
           </p>
           {/* One step more muted than the line above — purpose vs. operational note.
-              #9AA6B2 is the same grey already used for the Inactive accent / counts. */}
-          <p style={{ color: '#9AA6B2', margin: 0 }}>
+              #9AA6B2 is the same grey already used for the Inactive accent / counts.
+              The 6px top margin keeps the two sentences reading as distinct lines
+              rather than one wrapped paragraph, especially once the first wraps. */}
+          <p style={{ color: '#9AA6B2', margin: '6px 0 0' }}>
             People already in our records appear below — use Add Staff Member for anyone who isn&apos;t listed.
           </p>
         </div>
