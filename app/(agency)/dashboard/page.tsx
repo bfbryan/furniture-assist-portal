@@ -1,12 +1,15 @@
 // app/(agency)/dashboard/page.tsx
 // Agency Dashboard — home page for the agency portal.
-// - Left: Upcoming Appointments grouped by Saturday (scheduled/pending, future dates only)
-// - Right: Quick Actions
 //
-// Scope rules:
-// - Admin: sees ALL agency referrals
-// - Staff: sees only referrals they personally submitted (matches ReferralTable rule)
-
+//   Left  (actionable):  two count cards (This Saturday, Awaiting approval)
+//                        + the Last Saturday outcome card.
+//   Right (reference):    an Announcement card + "What to tell your client".
+//
+// Quick Actions is gone — every item in it was one click away in the rail.
+//
+// Scope: Admin sees agency-wide counts, Staff sees only their own referrals.
+// Scoped at the Airtable query (the same branch Active / History / Team use),
+// not fetched-then-filtered.
 
 import Link from 'next/link'
 import { auth, clerkClient } from '@clerk/nextjs/server'
@@ -17,674 +20,211 @@ import {
   getReferralsByAgencyId,
   getReferralsByStaffName,
 } from '@/lib/airtable'
-import {
-  differenceInDaysISO,
-  easternTodayISO,
-  formatDateOnly,
-  parseDateOnly,
-} from '@/lib/dates'
+import { easternTodayISO, addDaysISO, parseDateOnly, formatDateOnly } from '@/lib/dates'
+import { clientAddressLine } from '@/lib/address'
+import { effectiveAppointmentDate } from '@/lib/referrals/effective-date'
+import { withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
+import DashboardLastSaturday, { type LastSatRow } from '@/components/agency/DashboardLastSaturday'
+import ClientGuidelinesBrief from '@/components/agency/ClientGuidelinesBrief'
 
+// 'Scheduled' is included: a referral still on last Saturday with no outcome
+// recorded yet (the scan runs Tuesday) is shown with an "Awaiting outcome"
+// row rather than dropped, so the list length matches what the agency booked.
+const LAST_SAT_STATUSES = ['Completed', 'No Show', 'Cancelled', 'Scheduled'] as const
 
-// ---------- helpers ----------
-
-
-// "Today" is the Eastern calendar day, passed in from the render so the whole
-// page agrees on one date. Deriving it from the runtime clock meant that on
-// Vercel (UTC) everything rolled over at 8pm Eastern: the evening's remaining
-// appointments dropped out of Upcoming and "Tomorrow" was labelled "Today".
-function isTodayOrFuture(iso: string | null | undefined, todayISO: string): boolean {
-  const diff = differenceInDaysISO(todayISO, iso)
-  return diff !== null && diff >= 0
+// The subset of the list-view referral shape (lib/airtable/referrals.ts
+// shapeReferralListItem, which is untyped) this page reads.
+type ScopedReferral = {
+  id: string
+  clientName: string
+  appointmentDate: string | null
+  appointmentStatus: string
+  referralReview: string
+  clientReceiptUrl: string | null
+  originalAppointmentDate: string | null
+  address: string | null
+  address2: string | null
+  city: string | null
+  state: string | null
+  zip: string | null
 }
 
+// ---------- count card ----------
 
-function daysUntil(iso: string, todayISO: string): number {
-  return differenceInDaysISO(todayISO, iso) ?? 0
+function CountCard({ accent, count, line, href }: {
+  accent: 'teal' | 'gold'
+  count: number
+  line: string
+  href: string
+}) {
+  const bar = accent === 'teal' ? '#2A7F6F' : '#C9A84C'
+  return (
+    <Link
+      href={href}
+      style={{
+        display: 'block',
+        textDecoration: 'none',
+        background: 'white',
+        borderRadius: '12px',
+        boxShadow: '0 2px 12px rgba(27,43,75,0.07)',
+        borderLeft: `3px solid ${bar}`,
+        padding: '18px 18px 18px 15px',
+      }}
+    >
+      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '34px', color: '#1B2B4B', lineHeight: 1 }}>
+        {count}
+      </div>
+      <div style={{ fontSize: '12.5px', color: '#7A8899', marginTop: '8px', lineHeight: 1.45 }}>
+        {line}
+      </div>
+    </Link>
+  )
 }
-
-
-function formatSaturday(iso: string): string {
-  // Unparseable dates fall back to the raw string, as before.
-  if (!parseDateOnly(iso)) return iso
-  return formatDateOnly(iso, {
-    weekday: 'long',
-    month: 'short',
-    day: 'numeric',
-  })
-}
-
-
-function statusPillClass(status: string | null): { bg: string; color: string; label: string } {
-  const s = (status || '').toLowerCase()
-  if (s === 'scheduled') return { bg: 'rgba(42,127,111,0.10)', color: '#2A7F6F', label: 'Scheduled' }
-  if (s === 'reschedule') return { bg: 'rgba(74,144,201,0.12)', color: '#4A90C9', label: 'Rescheduling' }
-  if (s === 'pending' || !status)
-    return { bg: 'rgba(201,168,76,0.12)', color: '#8B7724', label: 'Pending' }
-  return { bg: 'rgba(122,136,153,0.15)', color: '#2C3A4A', label: status }
-}
-
-
-function accentColor(status: string | null): string {
-  const s = (status || '').toLowerCase()
-  if (s === 'scheduled') return '#2A7F6F'
-  if (s === 'reschedule') return '#4A90C9'
-  return '#C9A84C'
-}
-
 
 // ---------- page ----------
-
 
 export default async function DashboardPage() {
   const { userId, orgId } = await auth()
   if (!userId) redirect('/sign-in')
 
-
   if (orgId) {
     const client = await clerkClient()
-    const org = await client.organizations.getOrganization({
-      organizationId: orgId,
-    })
-    if (org.publicMetadata?.status === 'Inactive') {
-      redirect('/inactive')
-    }
+    const org = await client.organizations.getOrganization({ organizationId: orgId })
+    if (org.publicMetadata?.status === 'Inactive') redirect('/inactive')
   }
-
 
   const agencyUser = await getAgencyUserByClerkId(userId)
   if (!agencyUser) redirect('/sign-in')
   if (agencyUser.status === 'Inactive') redirect('/inactive')
 
-
   const agency = await getAgencyById(agencyUser.agencyId!)
   const isAdmin = agencyUser.role === 'Admin'
 
-
-  // Scoped at the Airtable query, the same branch the Active and History pages
-  // use: Admin gets the whole agency, Staff gets only their own referrals.
-  // Not fetched-then-filtered — a Staff user's rows are the only ones this
-  // server component ever receives.
-  const scopedReferrals = isAdmin
+  const scopedReferrals: ScopedReferral[] = isAdmin
     ? await getReferralsByAgencyId(agency.name)
     : await getReferralsByStaffName(agency.name, agencyUser.name)
 
-
-  // One Eastern "today" for the whole render, so the filter below and the
-  // day labels further down cannot straddle midnight.
+  // One Eastern "today" for the whole render.
   const todayISO = easternTodayISO()
+  const dow = parseDateOnly(todayISO)!.getUTCDay() // 0 Sun … 6 Sat
 
+  // "This Saturday" is the next upcoming Saturday (today if today is Saturday).
+  const nextSaturdayISO = addDaysISO(todayISO, (6 - dow + 7) % 7)
+  // "Last Saturday" is the most recent PAST Saturday — on a Saturday itself the
+  // day hasn't passed yet, so it's still the one a week back.
+  const lastSaturdayISO = addDaysISO(todayISO, -(dow === 6 ? 7 : (dow + 1) % 7))
 
-  // Upcoming appointments — future Saturdays, not cancelled/rejected/completed
-  const upcoming = scopedReferrals
-    .filter((r: any) => {
-      if (r.referralReview === 'Rejected') return false
-      const s = r.appointmentStatus
-      if (s === 'Completed' || s === 'Cancelled' || s === 'No Show') return false
-      return isTodayOrFuture(r.appointmentDate, todayISO)
-    })
-    .sort((a: any, b: any) => {
-      const ta = parseDateOnly(a.appointmentDate)?.getTime() ?? 0
-      const tb = parseDateOnly(b.appointmentDate)?.getTime() ?? 0
-      return ta - tb
-    })
+  const thisSatCount = scopedReferrals.filter(
+    r => r.appointmentStatus === 'Scheduled' && r.appointmentDate === nextSaturdayISO,
+  ).length
 
+  const pendingCount = scopedReferrals.filter(r => r.referralReview === 'Pending').length
 
-  // Group by Saturday date
-  const groups = new Map<string, any[]>()
-  for (const r of upcoming) {
-    const key = r.appointmentDate as string
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key)!.push(r)
-  }
-  // Preserve chronological order
-  const groupedList = Array.from(groups.entries()).slice(0, 4) // show at most next 4 Saturdays
+  const lastSatRows: LastSatRow[] = scopedReferrals
+    .filter(r =>
+      effectiveAppointmentDate(r) === lastSaturdayISO &&
+      (LAST_SAT_STATUSES as readonly string[]).includes(r.appointmentStatus),
+    )
+    .map(r => ({
+      id: r.id,
+      clientName: r.clientName || 'Unknown Client',
+      addressLine: clientAddressLine(r),
+      outcome: r.appointmentStatus as LastSatRow['outcome'],
+      hasReceipt: !!r.clientReceiptUrl,
+      receiptUrl: r.clientReceiptUrl,
+      canReschedule:
+        r.appointmentStatus === 'No Show' &&
+        withinNoShowRescheduleWindow(r.appointmentDate, todayISO),
+      note:
+        r.appointmentStatus === 'Scheduled'
+          ? 'Furniture Assist has not recorded this appointment yet.'
+          : undefined,
+    }))
+    .sort((a, z) => a.clientName.localeCompare(z.clientName))
 
+  const nextSatShort = formatDateOnly(nextSaturdayISO, { month: 'short', day: 'numeric' })
+  const lastSatShort = formatDateOnly(lastSaturdayISO, { month: 'short', day: 'numeric' })
+
+  // The counts already differ by role (query-level scoping above); the labels
+  // say so, so a Staff user doesn't read their own number as the office total.
+  const mine = isAdmin ? '' : 'your '
+  const thisSatLine =
+    thisSatCount === 0
+      ? isAdmin
+        ? 'no appointments this Saturday'
+        : 'you have no appointments this Saturday'
+      : `${mine}appointment${thisSatCount === 1 ? '' : 's'} this Saturday, ${nextSatShort}`
 
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
-      {/* Column tracks live in globals.css (.fa-dashboard-grid) so they can stack below 1280px. */}
+      {/* Column tracks live in globals.css (.fa-dashboard-grid) so they stack below 1280px. */}
       <main
         className="fa-dashboard-grid max-w-7xl mx-auto px-8 py-9 grid gap-7"
         style={{ alignItems: 'start' }}
       >
-        {/* ============ LEFT: Upcoming Appointments ============ */}
-        {/* Padding narrows below 1280px via .fa-dash-panel in globals.css, so
-            the appointment cards inside get the width their first line needs
-            once the status pill joins it. */}
-        <div
-          className="fa-dash-panel"
-          style={{
-            background: 'white',
-            borderRadius: '14px',
-            boxShadow: '0 2px 12px rgba(27,43,75,0.07)',
-            padding: '22px 24px',
-          }}
-        >
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              paddingBottom: '14px',
-              marginBottom: '18px',
-              borderBottom: '1px solid #EDE9E1',
-            }}
-          >
-            <h2
-              style={{
-                fontFamily: 'var(--font-montserrat)',
-                fontWeight: 800,
-                fontSize: '15px',
-                color: '#1B2B4B',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-              }}
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#2A7F6F"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              Upcoming Appointments
-            </h2>
-            <Link
+        {/* ============ LEFT — actionable ============ */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0 }}>
+          {/* Count cards — side by side when they fit, stacked otherwise (auto-fit). */}
+          <div className="fa-dash-counts" style={{ display: 'grid', gap: '16px' }}>
+            <CountCard accent="teal" count={thisSatCount} line={thisSatLine} href="/referrals/active" />
+            <CountCard
+              accent="gold"
+              count={pendingCount}
+              line={`${mine}referrals awaiting Furniture Assist approval`}
               href="/referrals/active"
-              style={{
-                fontSize: '12px',
-                fontWeight: 700,
-                letterSpacing: '0.04em',
-                textTransform: 'uppercase',
-                color: '#2A7F6F',
-                textDecoration: 'none',
-              }}
-            >
-              View all →
-            </Link>
+            />
           </div>
 
-
-          {groupedList.length === 0 ? (
-            <div
-              style={{
-                textAlign: 'center',
-                padding: '32px 16px',
-                color: '#7A8899',
-                fontSize: '13px',
-              }}
-            >
-              <div
-                style={{
-                  fontFamily: 'var(--font-montserrat)',
-                  fontWeight: 700,
-                  fontSize: '14px',
-                  color: '#1B2B4B',
-                  marginBottom: '6px',
-                }}
-              >
-                No upcoming appointments
-              </div>
-              <div>
-                {isAdmin
-                  ? 'When referrals are scheduled, they will appear here.'
-                  : 'Your submitted referrals will appear here once scheduled.'}
-              </div>
-            </div>
-          ) : (
-            groupedList.map(([date, refs]) => {
-              const days = daysUntil(date, todayISO)
-              const dayLabel =
-                days === 0
-                  ? 'Today'
-                  : days === 1
-                  ? 'Tomorrow'
-                  : days < 0
-                  ? `${Math.abs(days)} days ago`
-                  : `${days} days away`
-
-
-              return (
-                <div key={date} style={{ marginBottom: '20px' }}>
-                  {/* Wrapping lives in globals.css (.fa-dash-day-header) so the
-                      referral count pill gets clear of the date line below 1280px
-                      instead of being pushed hard against it. */}
-                  <div
-                    className="fa-dash-day-header"
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      marginBottom: '10px',
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontFamily: 'var(--font-montserrat)',
-                        fontWeight: 700,
-                        fontSize: '14px',
-                        color: '#1B2B4B',
-                      }}
-                    >
-                      {formatSaturday(date)}
-                      <span
-                        style={{
-                          fontWeight: 500,
-                          color: '#7A8899',
-                          marginLeft: '6px',
-                          fontSize: '13px',
-                        }}
-                      >
-                        · {dayLabel}
-                      </span>
-                    </div>
-                    <span
-                      style={{
-                        fontSize: '10px',
-                        fontWeight: 700,
-                        letterSpacing: '0.06em',
-                        textTransform: 'uppercase',
-                        background: 'rgba(42,127,111,0.10)',
-                        color: '#2A7F6F',
-                        padding: '3px 8px',
-                        borderRadius: '20px',
-                      }}
-                    >
-                      {refs.length} {refs.length === 1 ? 'referral' : 'referrals'}
-                    </span>
-                  </div>
-
-
-                  {refs.map((r: any) => {
-                    const pill = statusPillClass(r.appointmentStatus)
-
-                    // Defensive: try multiple field name shapes for name + address
-                    const firstName =
-                      r.clientFirstName ?? r.firstName ?? r.client_first_name ?? ''
-                    const lastName =
-                      r.clientLastName ?? r.lastName ?? r.client_last_name ?? ''
-                    const fullName =
-                      lastName && firstName
-                        ? `${lastName}, ${firstName}`
-                        : lastName || firstName || r.clientName || 'Unknown Client'
-
-                    const address =
-                      r.clientAddress ?? r.address ?? r.streetAddress ?? r.street ?? ''
-                    const city = r.clientCity ?? r.city ?? ''
-                    const state = r.clientState ?? r.state ?? ''
-                    const zip = r.clientZip ?? r.zip ?? r.zipCode ?? r.postalCode ?? ''
-                    const cityStateZip = [
-                      [city, state].filter(Boolean).join(' '),
-                      zip,
-                    ]
-                      .filter(Boolean)
-                      .join(' ')
-
-                    return (
-                      <div
-                        key={r.id}
-                        className="fa-dash-appt-row"
-                        style={{
-                          display: 'grid',
-                          alignItems: 'center',
-                          background: '#FBFAF7',
-                          border: '1px solid #EDE9E1',
-                          borderRadius: '10px',
-                          marginBottom: '8px',
-                          overflow: 'hidden',
-                        }}
-                      >
-                        <div
-                          style={{
-                            background: accentColor(r.appointmentStatus),
-                            alignSelf: 'stretch',
-                          }}
-                        />
-                        <div style={{ padding: '12px 14px', minWidth: 0 }}>
-                          {/* Client name, appointment time and status pill all
-                              share the first line. The pill used to sit alone
-                              on a footer row below the address, spending a
-                              full row of card height on one word — Ben asked
-                              for it up here, and the row it left behind is
-                              gone.
-
-                              FLOAT, not flex, and that is the whole trick.
-                              Flexed, the name gets its own column for ALL of
-                              its lines, so on a 375px phone it is boxed into
-                              ~85px and a real name stacks three lines deep —
-                              measured, and taller than the footer row it was
-                              meant to save. Floated, only the name's FIRST
-                              line is short; every line after it runs the full
-                              width of the card, under the pill. So a long name
-                              costs one extra line at most and a short one
-                              costs nothing.
-
-                              overflow:hidden makes this div a block formatting
-                              context, which keeps the float inside it — the
-                              address below must not wrap around the pill too.
-                              Time and pill stay in one nowrap group so they
-                              break together rather than the pill orphaning. */}
-                          <div style={{ overflow: 'hidden' }}>
-                            <span
-                              style={{
-                                float: 'right',
-                                display: 'inline-flex',
-                                alignItems: 'baseline',
-                                gap: '8px',
-                                marginLeft: '10px',
-                                whiteSpace: 'nowrap',
-                              }}
-                            >
-                              <span
-                                style={{
-                                  fontFamily: 'var(--font-montserrat)',
-                                  fontWeight: 700,
-                                  fontSize: '13px',
-                                  color: '#1B2B4B',
-                                }}
-                              >
-                                {r.appointmentTime || '—'}
-                              </span>
-                              <span
-                                style={{
-                                  display: 'inline-block',
-                                  padding: '3px 8px',
-                                  borderRadius: '20px',
-                                  fontSize: '10px',
-                                  fontWeight: 700,
-                                  letterSpacing: '0.06em',
-                                  textTransform: 'uppercase',
-                                  background: pill.bg,
-                                  color: pill.color,
-                                }}
-                              >
-                                {pill.label}
-                              </span>
-                            </span>
-                            <Link
-                              href={`/referrals/${r.id}`}
-                              style={{
-                                fontFamily: 'var(--font-montserrat)',
-                                fontWeight: 700,
-                                fontSize: '14px',
-                                color: '#2A7F6F',
-                                textDecoration: 'none',
-                                // The name wraps rather than ellipsing: real
-                                // names were being cut mid-surname and you
-                                // could not tell whose appointment it was.
-                                // break-word is the backstop for a surname too
-                                // long to fit even a full line on its own.
-                                overflowWrap: 'break-word',
-                              }}
-                              className="hover:underline"
-                            >
-                              {fullName}
-                            </Link>
-                          </div>
-                          {/* Who submitted it. Admin only, and that is the
-                              whole point of it: an admin sees every referral
-                              in the agency and had no way to tell one
-                              person's from another's. A staff user is only
-                              ever sent their own - see scopedReferrals above
- - so for them this line would say the same name
-                              on every card.
-
-                              `referredBy` is the Referring Staff lookup on
-                              Client Referrals, which resolves through
-                              Referring Staff Link to the Agency Users "Full
-                              Name" formula, i.e. first and last name. It is
-                              the same value the Active and History pages
-                              already show in their "Referred By" column and
-                              the same one their staff filter matches on. */}
-                          {isAdmin && r.referredBy && (
-                            <div
-                              style={{
-                                fontSize: '11px',
-                                color: '#7A8899',
-                                marginTop: '3px',
-                                lineHeight: '1.35',
-                                overflowWrap: 'break-word',
-                              }}
-                            >
-                              Referred by{' '}
-                              <span style={{ fontWeight: 600, color: '#2C3A4A' }}>
-                                {r.referredBy}
-                              </span>
-                            </div>
-                          )}
-                          {(address || cityStateZip) && (
-                            <div
-                              style={{
-                                fontSize: '11px',
-                                color: '#7A8899',
-                                marginTop: '3px',
-                                lineHeight: '1.35',
-                              }}
-                            >
-                              {address && (
-                                <div
-                                  style={{
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                  }}
-                                >
-                                  {address}
-                                </div>
-                              )}
-                              {cityStateZip && (
-                                <div
-                                  style={{
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis',
-                                  }}
-                                >
-                                  {cityStateZip}
-                                </div>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                </div>
-              )
-            })
-          )}
+          <DashboardLastSaturday
+            rows={lastSatRows}
+            dateLabel={lastSatShort}
+            heading={isAdmin ? 'Last Saturday' : 'Your Last Saturday'}
+          />
         </div>
 
-
-        {/* ============ RIGHT: Quick Actions ============ */}
-        <div
-          style={{
-            background: 'white',
-            borderRadius: '14px',
-            boxShadow: '0 2px 12px rgba(27,43,75,0.07)',
-            padding: '22px 24px',
-          }}
-        >
-          <h2
+        {/* ============ RIGHT — reference ============ */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0 }}>
+          {/* PLACEHOLDER. Hardcoded until an Airtable "Announcements" table and a
+              publish flow exist — then this reads the current row (label /
+              heading / body / optional link) the way sendPortalAccountEmail
+              reads Email Automations. Keep the shape: label, heading, one or
+              two short paragraphs. */}
+          <section
             style={{
-              fontFamily: 'var(--font-montserrat)',
-              fontWeight: 800,
-              fontSize: '15px',
-              color: '#1B2B4B',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              marginBottom: '16px',
+              background: 'white',
+              borderRadius: '12px',
+              boxShadow: '0 2px 12px rgba(27,43,75,0.07)',
+              padding: '16px 18px 16px 15px',
+              borderLeft: '3px solid #C9A84C',
             }}
           >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="#2A7F6F"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-            >
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-            </svg>
-            Quick Actions
-          </h2>
-
-
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-            {/* Submit New Referral — disabled/coming soon */}
-            <div
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 14px',
-                borderRadius: '10px',
-                color: 'rgba(122,136,153,0.7)',
-                fontSize: '13.5px',
-                fontWeight: 600,
-                cursor: 'not-allowed',
-                background: 'rgba(42,127,111,0.05)',
-                border: '1px solid rgba(42,127,111,0.15)',
-              }}
-              title="Coming soon"
-            >
-              <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="rgba(122,136,153,0.5)"
-                  strokeWidth="2.5"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                >
-                  <line x1="12" y1="5" x2="12" y2="19" />
-                  <line x1="5" y1="12" x2="19" y2="12" />
-                </svg>
-                Submit New Referral
-              </div>
-              <span
-                style={{
-                  fontSize: '9px',
-                  fontWeight: 700,
-                  letterSpacing: '0.05em',
-                  textTransform: 'uppercase',
-                  background: 'rgba(122,136,153,0.15)',
-                  color: '#7A8899',
-                  padding: '2px 6px',
-                  borderRadius: '4px',
-                }}
-              >
-                Soon
-              </span>
+            <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8B7724', marginBottom: '6px' }}>
+              Announcement
             </div>
+            <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', color: '#1B2B4B', margin: '0 0 6px' }}>
+              Welcome to the Furniture Assist Agency Portal
+            </h3>
+            <p style={{ fontSize: '13px', color: '#2C3A4A', lineHeight: 1.55, margin: 0 }}>
+              Take a minute to check your agency details and{' '}
+              <Link href="/profile" style={{ color: '#2A7F6F', fontWeight: 700, textDecoration: 'none' }}>
+                your own profile
+              </Link>{' '}
+              are up to date.
+              {isAdmin && (
+                <>
+                  {' '}If anyone on your team is missing, add them from the{' '}
+                  <Link href="/team" style={{ color: '#2A7F6F', fontWeight: 700, textDecoration: 'none' }}>
+                    Team page
+                  </Link>
+                  .
+                </>
+              )}
+            </p>
+          </section>
 
-
-            <QuickActionLink
-              href="/referrals/active"
-              icon={
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2A7F6F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                  <line x1="16" y1="2" x2="16" y2="6" />
-                  <line x1="8" y1="2" x2="8" y2="6" />
-                  <line x1="3" y1="10" x2="21" y2="10" />
-                </svg>
-              }
-              label="View Active Referrals"
-            />
-            <QuickActionLink
-              href="/referrals/history"
-              icon={
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2A7F6F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M3 3h18v18H3z" />
-                  <polyline points="3 9 21 9" />
-                  <polyline points="3 15 21 15" />
-                  <polyline points="9 3 9 21" />
-                </svg>
-              }
-              label="Referral History"
-            />
-            <QuickActionLink
-              href="/profile"
-              icon={
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2A7F6F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
-                  <circle cx="12" cy="7" r="4" />
-                </svg>
-              }
-              label="Agency Profile"
-            />
-            {isAdmin && (
-              <QuickActionLink
-                href="/team"
-                icon={
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#2A7F6F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                    <circle cx="9" cy="7" r="4" />
-                    <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                    <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                  </svg>
-                }
-                label="Team Management"
-              />
-            )}
-          </div>
+          <ClientGuidelinesBrief />
         </div>
       </main>
     </div>
-  )
-}
-
-
-// ---------- small inline component ----------
-
-
-function QuickActionLink({
-  href,
-  icon,
-  label,
-}: {
-  href: string
-  icon: React.ReactNode
-  label: string
-}) {
-  return (
-    <Link
-      href={href}
-      style={{
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'space-between',
-        gap: '10px',
-        padding: '12px 14px',
-        borderRadius: '10px',
-        color: '#2C3A4A',
-        fontSize: '13.5px',
-        fontWeight: 600,
-        textDecoration: 'none',
-        border: '1px solid transparent',
-        transition: 'background 0.15s',
-      }}
-      className="hover:bg-[#F7F5F1] hover:border-[#EDE9E1]"
-    >
-      <span style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-        <span style={{ display: 'flex', alignItems: 'center' }}>{icon}</span>
-        {label}
-      </span>
-      <span style={{ color: '#7A8899', fontSize: '16px' }}>›</span>
-    </Link>
   )
 }

@@ -64,3 +64,28 @@ export function withinNoShowRescheduleWindow(
   const days = daysSinceAppointment(appointmentDate, todayISO)
   return days !== null && days >= 0 && days <= NO_SHOW_RESCHEDULE_WINDOW_DAYS
 }
+
+/**
+ * True for a still-Scheduled referral whose appointment date is strictly
+ * before today (Eastern): the visit may already have happened but Furniture
+ * Assist has not recorded the outcome yet (the scan runs Tuesday).
+ *
+ * Such a referral must not be rescheduled or cancelled from the agency side —
+ * cancelling an appointment the client attended would corrupt the record. The
+ * referral detail page and the Dashboard's Last Saturday card both show it as
+ * "Awaiting outcome" with no actions; POST /api/referrals/[id]/reschedule and
+ * /cancel reject it. A hidden button is not access control — the same
+ * reasoning withinNoShowRescheduleWindow carries for the missed-visit window.
+ *
+ * `appointmentStatus` is the RAW Airtable value ('Scheduled'), not the portal
+ * status.
+ */
+export function isAwaitingOutcome(
+  appointmentStatus: string | null | undefined,
+  appointmentDate: string | null | undefined,
+  todayISO: string = easternTodayISO(),
+): boolean {
+  if (appointmentStatus !== 'Scheduled') return false
+  const days = daysSinceAppointment(appointmentDate, todayISO)
+  return days !== null && days > 0
+}

@@ -39,6 +39,7 @@ import { VALID_TIMES } from '@/lib/schedule/capacity'
 import {
   NO_SHOW_RESCHEDULE_WINDOW_DAYS,
   withinNoShowRescheduleWindow,
+  isAwaitingOutcome,
 } from '@/lib/referrals/no-show-window'
 import {
   assertReferralClientMayBeRescheduled,
@@ -106,6 +107,21 @@ export async function POST(
     return NextResponse.json(
       {
         error: `This appointment was missed more than ${NO_SHOW_RESCHEDULE_WINDOW_DAYS} days ago. Please submit a new referral instead.`,
+      },
+      { status: 409 },
+    )
+  }
+
+  // A still-Scheduled referral whose date has already passed: the visit may
+  // have happened but no outcome is recorded yet. Rescheduling it would move
+  // an appointment that may be done. The detail page and the Dashboard's Last
+  // Saturday card both hide the action on this rule; enforced here because the
+  // route is reachable directly.
+  if (isAwaitingOutcome(access.referral.appointmentStatus, access.referral.appointmentDate)) {
+    return NextResponse.json(
+      {
+        error:
+          "This appointment's date has passed and Furniture Assist has not recorded the outcome yet. Contact Furniture Assist if it needs to change.",
       },
       { status: 409 },
     )

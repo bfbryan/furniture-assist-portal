@@ -29,7 +29,7 @@ import { AGENCY_CONTACT_EMAIL, ONLINE_SUBMISSION_COMING_SOON } from '@/lib/conta
 import { addDaysISO, formatDob } from '@/lib/dates'
 import { agencyReferralActions } from '@/lib/referrals/agency-actions'
 import { agencyEditWindow, agencyNotesEditable, getPortalStatus } from '@/lib/referrals/edit-window'
-import { NO_SHOW_RESCHEDULE_WINDOW_DAYS, withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
+import { NO_SHOW_RESCHEDULE_WINDOW_DAYS, withinNoShowRescheduleWindow, isAwaitingOutcome } from '@/lib/referrals/no-show-window'
 import { formatRequestedSlot, formatSlot } from '@/lib/referrals/slot-display'
 // Shared with components/agency/ReferralTable.tsx, which fills the same blank
 // on the same referral from the same three Airtable fields.
@@ -1086,7 +1086,19 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     missedInRescheduleWindow,
   )
 
-  const showApptSlipButton = status === 'Scheduled' && !!referral.appointmentSlipUrl
+  // Scheduled, appointment date already passed, no outcome recorded (the scan
+  // runs Tuesday). The visit may have happened, so Reschedule / Cancel /
+  // Appointment Slip come off and the pill reads "Awaiting outcome" — same as
+  // the Dashboard's Last Saturday card. Enforced server-side in the reschedule
+  // and cancel routes too. `isAwaitingOutcome` keys on the raw Airtable status.
+  const awaitingOutcome =
+    status === 'Scheduled' && isAwaitingOutcome(referral.appointmentStatus, referral.appointmentDate)
+
+  const pillLabel = awaitingOutcome ? 'Awaiting outcome' : status
+  const pillColors = awaitingOutcome ? { badgeBg: '#EDEBE7', badgeText: '#7A8899' } : colors
+
+  const showApptSlipButton =
+    status === 'Scheduled' && !!referral.appointmentSlipUrl && !awaitingOutcome
   const showClientReceiptButton = status === 'Completed' && !!referral.clientReceiptUrl
 
   const showItemsReceived = status === 'Completed'
@@ -1152,12 +1164,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           {showApptSlipButton && (
             <HeaderButton tier="doc" href={referral.appointmentSlipUrl!}>Appointment Slip</HeaderButton>
           )}
-          {isReschedulable && (
+          {isReschedulable && !awaitingOutcome && (
             <HeaderButton tier="amber" onClick={() => setRescheduleModal({ open: true, id: referral.id, name: referral.clientName })}>
               Reschedule
             </HeaderButton>
           )}
-          {isCancellable && (
+          {isCancellable && !awaitingOutcome && (
             <HeaderButton tier="danger" onClick={() => setConfirmModal({ open: true, type: 'cancel', id: referral.id, name: referral.clientName })}>
               Cancel
             </HeaderButton>
@@ -1172,8 +1184,8 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           )}
         </div>
 
-        <span className="fa-detail-status-pill" style={{ padding: '6px 16px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: colors.badgeBg, color: colors.badgeText }}>
-          {status}
+        <span className="fa-detail-status-pill" style={{ padding: '6px 16px', borderRadius: '999px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: pillColors.badgeBg, color: pillColors.badgeText }}>
+          {pillLabel}
         </span>
       </header>
 
@@ -1181,17 +1193,19 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           (.fa-referral-detail-grid) so they can stack below 1280px. */}
       <div className="fa-referral-detail-grid" style={{ padding: '28px 32px', margin: '0 auto', display: 'grid', gap: '20px', alignItems: 'start' }}>
 
+        {/* Why the Edit buttons are gone. Spans both columns — the lock applies
+            to the whole record, including Your Notes in the right rail — and
+            reads as a page-level note: gold left accent + tint kept, padding
+            and type stepped down from the old boxed warning. */}
+        {locked && editWindow.reason === 'past-cutoff' && (
+          <div style={{ gridColumn: '1 / -1', background: 'rgba(201,168,76,0.10)', borderLeft: '3px solid #C9A84C', borderRadius: '8px', padding: '7px 14px', fontSize: '11.5px', color: '#7A6A28', lineHeight: 1.5 }}>
+            Editing closed on {formatDate(editWindow.cutoffDate)}, the Monday before this appointment.
+            Contact Furniture Assist if something needs to change.
+          </div>
+        )}
+
         {/* LEFT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-          {/* Why the Edit buttons are gone. Said once here rather than on each
-              card, and only when a cutoff actually caused it. */}
-          {locked && editWindow.reason === 'past-cutoff' && (
-            <div style={{ background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.35)', borderRadius: '10px', padding: '12px 16px', fontSize: '12.5px', color: '#7A6A28', lineHeight: 1.6 }}>
-              Editing closed on {formatDate(editWindow.cutoffDate)}, the Monday before this appointment.
-              Contact Furniture Assist if something needs to change.
-            </div>
-          )}
 
           <ClientInfoCard referral={referral} locked={locked} showLockedBadge={showLockedBadge} onSaved={applyUpdate} />
           <ItemsRequestedCard referral={referral} locked={locked} showLockedBadge={showLockedBadge} onSaved={applyUpdate} />
@@ -1244,6 +1258,14 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
                 }}>
                   {appointment.value}
                 </div>
+              </div>
+            )}
+
+            {/* Scheduled + past-dated: Furniture Assist hasn't logged the
+                outcome yet. Same line the Dashboard's Last Saturday card shows. */}
+            {awaitingOutcome && (
+              <div style={{ fontSize: '12.5px', color: '#7A8899', lineHeight: 1.6, paddingTop: '8px' }}>
+                Furniture Assist has not recorded this appointment yet.
               </div>
             )}
 
