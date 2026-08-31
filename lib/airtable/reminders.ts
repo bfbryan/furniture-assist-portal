@@ -15,6 +15,7 @@ const base = new Airtable({ apiKey: process.env.AIRTABLE_API_KEY }).base(
 export const CLIENT_REFERRAL_TABLE = "Client Referrals";
 export const EMAIL_AUTOMATIONS_TABLE = "Email Automations";
 export const EMAIL_LOG_TABLE = "Email Log";
+export const AGENCY_USERS_TABLE = "Agency Users";
 
 // The existing view that already filters:
 // Status = Scheduled, Reminder Email Sent = blank, Appt Date within 5 days
@@ -81,6 +82,35 @@ export async function getDueReminders(): Promise<ClientReferralRecord[]> {
     id: r.id,
     fields: r.fields as ClientReferralRecord["fields"],
   }));
+}
+
+/**
+ * TEMPORARY — hybrid-rollout scaffolding. Delete this helper (and its call in
+ * app/api/cron/appointment-reminders/route.ts) once every partner agency is on
+ * the portal and the reminder can point everyone at it unconditionally.
+ *
+ * The set of Agency User email addresses that currently have portal access:
+ * Status = "Active" AND Portal Invite Status = "Claimed". Addresses are
+ * trimmed and lowercased so the caller can match case-insensitively against
+ * the reminder's "Agency Email" lookup value (which resolves through Referring
+ * Staff Link to a single Agency User).
+ */
+export async function getPortalReadyEmails(): Promise<Set<string>> {
+  const records = await base(AGENCY_USERS_TABLE)
+    .select({
+      filterByFormula: `AND({Status} = "Active", {Portal Invite Status} = "Claimed")`,
+      fields: ["Email"],
+    })
+    .all();
+
+  const emails = new Set<string>();
+  for (const r of records) {
+    const value = r.get("Email");
+    if (typeof value === "string" && value.trim()) {
+      emails.add(value.trim().toLowerCase());
+    }
+  }
+  return emails;
 }
 
 /** Mark a Client Referral record as reminded. */
