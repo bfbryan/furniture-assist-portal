@@ -13,11 +13,19 @@
 //
 // And it is where "first login goes to the profile page, every login after
 // that goes to the dashboard" is decided. That is NOT a Clerk setting and
-// cannot be one: Clerk's after-sign-in URL is a single static value (it is set
-// to this page, via NEXT_PUBLIC_CLERK_AFTER_SIGN_IN_URL), and Clerk has no
-// knowledge of whether this is someone's first time in the PORTAL - that fact
-// lives in Airtable, as Agency Users.Claimed Date. This page already had to
-// read it in order to stamp it, so the decision costs nothing extra here.
+// cannot be one: Clerk's sign-in fallback redirect is a single static value
+// (it is set to this page, via NEXT_PUBLIC_CLERK_SIGN_IN_FALLBACK_REDIRECT_URL),
+// and Clerk has no knowledge of whether this is someone's first time in the
+// PORTAL - that fact lives in Airtable, as Agency Users.Claimed Date. This page
+// already had to read it in order to stamp it, so the decision costs nothing
+// extra here.
+//
+// "Fallback" matters: when the sign-in URL carries a ?redirect_url= (an
+// unauthenticated deep link that auth.protect() bounced through /sign-in),
+// Clerk sends the person straight to that URL and this page never runs. When
+// it DOES run with a redirect_url in its own query, it honours it below, after
+// the stamping — so a first-time claimer who followed a referral link still
+// gets their account claimed on the way through.
 
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
@@ -28,15 +36,61 @@ import {
   updateAgencyUserStatus,
 } from '@/lib/airtable'
 import { isDawsonPortalUser } from '@/lib/auth/dawson-access'
+import { PORTAL_ORIGIN } from '@/lib/auth/portal-sign-in-link'
 
-export default async function RedirectPage() {
+// An unvalidated post-sign-in redirect target is an open-redirect vulnerability:
+// a crafted ?redirect_url=https://evil.example/phish would bounce a freshly
+// authenticated user straight off-site, portal as referrer. Only two shapes are
+// safe to hand to redirect():
+//   - a site-relative path: exactly one leading "/", and none of the forms a
+//     browser treats as protocol-relative or as a scheme ("//host", "/\host",
+//     "http://...", an embedded "://", any backslash).
+//   - an absolute URL whose origin is exactly PORTAL_ORIGIN, reduced to its
+//     pathname + search.
+// Anything else returns null and the caller falls through to its normal
+// destination — no error page, the bad value is just ignored.
+//
+// Exported (rather than file-private) so it can be unit-tested directly: it
+// is a security boundary and the rejection cases matter more than the page.
+export function safeRedirectPath(raw: string | undefined): string | null {
+  if (!raw) return null
+
+  if (/^https?:\/\//i.test(raw)) {
+    try {
+      const parsed = new URL(raw)
+      if (parsed.origin !== PORTAL_ORIGIN) return null
+      return parsed.pathname + parsed.search
+    } catch {
+      return null
+    }
+  }
+
+  if (!raw.startsWith('/')) return null   // must be rooted
+  if (raw.startsWith('//')) return null   // protocol-relative -> off-site
+  if (raw.startsWith('/\\')) return null  // browsers coerce "/\" to "//"
+  if (raw.includes('\\')) return null     // any backslash: treat as hostile
+  if (raw.includes('://')) return null    // embedded scheme
+  return raw
+}
+
+export default async function RedirectPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ [key: string]: string | string[] | undefined }>
+}) {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
 
-  // Dawson users go straight to /dawson
+  // Dawson users go straight to /dawson — before the redirect_url is even
+  // read, so a deep link can never divert a Dawson sign-in.
   if (isDawsonPortalUser(userId)) {
     redirect('/dawson')
   }
+
+  const sp = await searchParams
+  const redirectTarget = safeRedirectPath(
+    typeof sp.redirect_url === 'string' ? sp.redirect_url : undefined,
+  )
 
   const agencyUser = await getAgencyUserByClerkId(userId)
 
@@ -84,6 +138,21 @@ export default async function RedirectPage() {
   // Dawson users returned at the top: Last Login is an Agency Users field and
   // they have no row in that table.
   if (agencyUser) await stampLastLogin(agencyUser.id)
+
+  // Destination, after the stamping work above, in priority order:
+  //   1. Dawson -> /dawson. Already handled at the top of this function, so it
+  //      is listed here only to say it outranks everything and ignores
+  //      redirect_url by design.
+  //   2. A validated redirect_url -> that path. It is the page the person
+  //      asked for before auth.protect() bounced them to sign-in, normally a
+  //      deep link from an email about one specific referral. This BEATS the
+  //      first-login /profile rule on purpose: someone who clicked through
+  //      from an appointment email should land on that appointment, not a
+  //      profile form, even the first time they sign in. /profile is still one
+  //      click away in the nav.
+  //   3. First login -> /profile (the note below).
+  //   4. Everyone else -> /dashboard.
+  if (redirectTarget) redirect(redirectTarget)
 
   // Ben: land on the profile page the first time, the dashboard every time
   // after. The first thing a newly-claimed account is asked to do is confirm
