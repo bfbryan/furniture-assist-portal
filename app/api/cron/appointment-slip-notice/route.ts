@@ -7,8 +7,13 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { Resend } from "resend";
-import { getAutomationSettings, logEmailSend } from "@/lib/airtable/reminders";
+import {
+  getAutomationSettings,
+  getPortalReadyEmails,
+  logEmailSend,
+} from "@/lib/airtable/reminders";
 import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/notifications/template";
+import { PORTAL_ORIGIN } from "@/lib/auth/portal-sign-in-link";
 import {
   getConfirmEmailPending,
   generateAndStoreSlip,
@@ -31,6 +36,14 @@ const FROM_ADDRESS =
 // (mail.furnitureassist.com isn't a monitored inbox).
 const REPLY_TO_ADDRESS =
   process.env.REMINDER_REPLY_TO_ADDRESS || "agencies@furnitureassist.com";
+
+// Hybrid-rollout fallback for recipients without portal access: the cancel /
+// reschedule line points them at the shared mailbox instead of a portal link.
+// Kept as a literal (not REPLY_TO_ADDRESS, which an env var can override) so
+// the sentence in the email is deterministic. Remove alongside
+// getPortalReadyEmails() once every agency is on the portal.
+const CHANGE_FALLBACK_URL = "mailto:agencies@furnitureassist.com";
+const CHANGE_FALLBACK_LABEL = "email agencies@furnitureassist.com";
 
 // Created on first use rather than at import. The Resend constructor throws
 // when the key is falsy, so building this module must not require a runtime
@@ -98,7 +111,28 @@ export async function GET(req: NextRequest) {
   const template = automation.fields.Template || "";
   const subject = automation.fields["Subject Line"] || "Appointment Confirmed";
 
-  const results: { recordId: string; status: string; error?: string }[] = [];
+  // HYBRID ROLLOUT (temporary): one lookup for the whole run of which
+  // recipients can be sent straight to the portal. A failure here must not
+  // stop confirmations — fall back to an empty set, i.e. everyone gets the
+  // "email us" variant. Remove this (and getPortalReadyEmails) once every
+  // agency is on the portal.
+  let portalReadyEmails: Set<string>;
+  try {
+    portalReadyEmails = await getPortalReadyEmails();
+  } catch (err) {
+    console.error(
+      "appointment-slip-notice: getPortalReadyEmails() failed — every confirmation this run will use the email-us variant:",
+      err
+    );
+    portalReadyEmails = new Set();
+  }
+
+  const results: {
+    recordId: string;
+    status: string;
+    error?: string;
+    variant?: "portal" | "mailto";
+  }[] = [];
 
   for (const record of pending) {
     const f = record.fields;
@@ -116,6 +150,26 @@ export async function GET(req: NextRequest) {
     }
 
     const to = toList.join(", ");
+
+    // HYBRID ROLLOUT (temporary): does this recipient have portal access?
+    // "Agency Email" resolves through Referring Staff Link to one Agency User,
+    // so there is normally a single address. If there is somehow more than
+    // one, require ALL of them to be portal-ready before linking to the
+    // portal — otherwise someone gets pointed at a portal they can't reach.
+    // Declared before the try: generateAndStoreSlip() can throw, and the
+    // outer catch's results.push needs `variant` in scope.
+    const recipientsReady =
+      toList.length > 0 &&
+      toList.every((addr) =>
+        portalReadyEmails.has(String(addr).trim().toLowerCase())
+      );
+    const variant: "portal" | "mailto" = recipientsReady ? "portal" : "mailto";
+    const changeUrl = recipientsReady
+      ? `${PORTAL_ORIGIN}/referrals/${record.id}`
+      : CHANGE_FALLBACK_URL;
+    const changeLabel = recipientsReady
+      ? "cancel or reschedule it in the Agency Portal"
+      : CHANGE_FALLBACK_LABEL;
 
     const rawApptDate = f["Appointment Date"];
     const apptDateStr = Array.isArray(rawApptDate) ? rawApptDate[0] : rawApptDate;
@@ -136,6 +190,12 @@ export async function GET(req: NextRequest) {
         HouseholdSize: toTokenValue(f["# in HH"]),
         NumChildren: toTokenValue(f["# Children"]),
         ItemsRequested: toTokenValue(f["Items Requested"]),
+        // Hybrid rollout: the Airtable template hard-codes the <a> around these
+        // two plain-string tokens. Passed unconditionally — before the template
+        // carries {{ChangeUrl}}/{{ChangeLabel}}, fillTemplate simply never looks
+        // them up, so shipping this ahead of the template edit is a no-op.
+        ChangeUrl: toTokenValue(changeUrl),
+        ChangeLabel: toTokenValue(changeLabel),
       });
 
       const clientLastName = toTokenValue(f["Last Name"]) || record.id;
@@ -155,7 +215,7 @@ export async function GET(req: NextRequest) {
       });
 
       if (error) {
-        results.push({ recordId: record.id, status: "failed", error: error.message });
+        results.push({ recordId: record.id, status: "failed", error: error.message, variant });
         await logEmailSend({
           automationRecordId: automation.id,
           clientReferralRecordId: record.id,
@@ -187,12 +247,13 @@ export async function GET(req: NextRequest) {
         console.error(`Failed to mark ${record.id} as confirmed:`, markErr);
       }
 
-      results.push({ recordId: record.id, status: "sent" });
+      results.push({ recordId: record.id, status: "sent", variant });
     } catch (err) {
       results.push({
         recordId: record.id,
         status: "failed",
         error: err instanceof Error ? err.message : String(err),
+        variant,
       });
     }
   }
