@@ -13,8 +13,6 @@ import {
   airtableFetch,
   airtableFetchAll,
   safeLookupString,
-  unwrapLookup,
-  REC_ID_RE,
   BASE_ID,
   HEADERS,
 } from './client'
@@ -110,9 +108,27 @@ export async function getAllReferrals(filters?: {
   // July 2026: renamed from `dateFrom` (Referral Date) to `appointmentDateFrom`
   // so history-style views filter on when the appointment actually happened,
   // not when the referral was submitted. Legacy `dateFrom` is still accepted
-  // for backwards compat and treated as appointmentDateFrom.
-  appointmentDateFrom?: string
-  dateFrom?: string
+  // and treated as appointmentDateFrom.
+  //
+  // Sep 2026: both bounds now filter on {Effective Appointment Date} — an
+  // Airtable formula field, IF({Appointment Date}, {Appointment Date},
+  // {Original Appointment Date}). {Appointment Date} is a lookup through the
+  // Saturday Schedule link and empties when that link is cleared on cancel /
+  // withdraw, so filtering on it alone dropped every cancelled and withdrawn
+  // referral out of every date-bounded range. {Original Appointment Date} is
+  // the snapshot end-referral.ts writes when a slot is released, so the
+  // coalesce puts them back. See lib/referrals/effective-date.ts.
+  appointmentDateFrom?: string   // inclusive lower bound, ISO date
+  appointmentDateTo?: string     // inclusive upper bound, ISO date
+  dateFrom?: string              // legacy alias for appointmentDateFrom
+  agency?: string                // Agencies record id — matched against {Referring Agency ID}
+  limit?: number                 // cap total rows (server-side maxRecords, applied after sort)
+  // Substring match on client name / agency / staff, applied in JS AFTER the
+  // server filter + limit — i.e. over the already-narrowed slice, never over
+  // the whole table. Client/agency/staff are all lookup fields; matching them
+  // in filterByFormula needs ARRAYJOIN gymnastics that have been a bug source
+  // here before, so this stays in code. No current caller passes it (the list
+  // pages run their own search over their own fetch); kept for the merged page.
   search?: string
 }) {
   const conditions: string[] = []
@@ -128,12 +144,22 @@ export async function getAllReferrals(filters?: {
     conditions.push(`OR(${statusOr})`)
   }
 
+  if (filters?.agency) {
+    // {Referring Agency ID} is a lookup: Referring Staff Link → Agency Users →
+    // Agency Record ID. Single-value, so string equality works — same as the
+    // {Referring Agency} name equality the older code relied on.
+    conditions.push(`{Referring Agency ID} = "${filters.agency}"`)
+  }
+
   const apptDateFrom = filters?.appointmentDateFrom ?? filters?.dateFrom
   if (apptDateFrom) {
-    // Filter by Appointment Date, not Referral Date. Inclusive of boundary:
-    // returns appointments ON or AFTER apptDateFrom.
     conditions.push(
-      `OR(IS_AFTER({Appointment Date}, "${apptDateFrom}"), IS_SAME({Appointment Date}, "${apptDateFrom}", 'day'))`
+      `OR(IS_AFTER({Effective Appointment Date}, "${apptDateFrom}"), IS_SAME({Effective Appointment Date}, "${apptDateFrom}", 'day'))`
+    )
+  }
+  if (filters?.appointmentDateTo) {
+    conditions.push(
+      `OR(IS_BEFORE({Effective Appointment Date}, "${filters.appointmentDateTo}"), IS_SAME({Effective Appointment Date}, "${filters.appointmentDateTo}", 'day'))`
     )
   }
 
@@ -141,40 +167,22 @@ export async function getAllReferrals(filters?: {
     ? encodeURIComponent(`AND(${conditions.join(', ')})`)
     : ''
 
-  const params = formula
-    ? `?filterByFormula=${formula}&sort[0][field]=Referral%20Date&sort[0][direction]=desc`
-    : `?sort[0][field]=Referral%20Date&sort[0][direction]=desc`
+  // Primary sort: Effective Appointment Date desc — what a merged Referrals
+  // page groups by. Secondary: Referral Date desc — the tiebreaker for rows
+  // with no effective date (a Pending review queue, or a cancel that released
+  // no slot). That secondary keeps the Awaiting Review page's
+  // newest-submitted-first order unchanged, since all its rows tie on a blank
+  // effective date and fall through to it.
+  const sort =
+    'sort[0][field]=Effective%20Appointment%20Date&sort[0][direction]=desc' +
+    '&sort[1][field]=Referral%20Date&sort[1][direction]=desc'
+  const maxParam = filters?.limit ? `&maxRecords=${filters.limit}` : ''
+  const params = `?${formula ? `filterByFormula=${formula}&` : ''}${sort}${maxParam}`
 
-  // Fetch referrals + agency name→id map in parallel.
-  // The map enables a clickable Agency cell on the Scheduled page (and any
-  // other list view) without requiring a linked-record migration on Client
-  // Referrals. Stays in sync because we rebuild on every list fetch.
-  const [data, agencyIndex] = await Promise.all([
-    airtableFetchAll('Client Referrals', params),
-    // Paginated — without this, agencies past record 100 don't appear in
-    // the name→id map and their referrals render as plain text instead of
-    // teal-linked. Table currently has 131 agencies and grows over time.
-    airtableFetchAll('Agencies', '?fields%5B%5D=Agency%20Name'),
-  ])
-
-  // Build TWO indexes: one by name (when Referring Agency lookup returns
-  // a clean name string) and one by rec ID (defensive fallback for the
-  // case where Referring Agency is still a link field returning rec IDs).
-  //
-  // Aggressive normalization for the name key so punctuation drift between
-  // "St. Joseph" (Agencies table) and "St Joseph" (Referring Agency lookup)
-  // doesn't miss the map — strip all non-alphanumerics, lowercase, collapse.
-  const normalizeAgencyKey = (raw: string) =>
-    raw.toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().replace(/\s+/g, ' ')
-
-  const agencyIdByName = new Map<string, string>()
-  const agencyNameById = new Map<string, string>()
-  for (const a of agencyIndex.records) {
-    const raw = (a.fields['Agency Name'] as string) || ''
-    const key = normalizeAgencyKey(raw)
-    if (key) agencyIdByName.set(key, a.id)
-    if (raw) agencyNameById.set(a.id, raw)
-  }
+  // One fetch. The agency record id per referral now comes from the
+  // {Referring Agency ID} lookup (added Sep 2026), so this no longer pulls
+  // the entire Agencies table to build a name→id map on every call.
+  const data = await airtableFetchAll('Client Referrals', params)
 
   const records = data.records.map((record: any) => {
     const f = record.fields
@@ -185,34 +193,15 @@ export async function getAllReferrals(filters?: {
     const lastName = safeLookupString(f['Last Name']) ?? ''
 
     // Referring Agency / Staff / Phone are LOOKUPS post-migration.
-    // safeLookupString returns null for rec-ID strings (caught by guard)
-    // so the UI never accidentally renders a "recAbCd..." instead of a name.
-    let agencyName = safeLookupString(f['Referring Agency'])
+    const agencyName = safeLookupString(f['Referring Agency'])
     const staffName = safeLookupString(f['Referring Staff'])
     const staffPhone = safeLookupString(f['Staff Phone'])
 
-    // FALLBACK: if Referring Agency got filtered to null because it's
-    // still misconfigured as a link field, try to recover the name via
-    // the raw rec ID through our agencyNameById index.
-    const rawAgencyValue = unwrapLookup<string>(f['Referring Agency'])
-    if (!agencyName && typeof rawAgencyValue === 'string' && REC_ID_RE.test(rawAgencyValue)) {
-      agencyName = agencyNameById.get(rawAgencyValue) ?? null
-    }
-
-    const agencyKey = agencyName ? normalizeAgencyKey(agencyName) : ''
-    let referringAgencyId = agencyKey
-      ? (agencyIdByName.get(agencyKey) ?? null)
-      : null
-
-    // Second fallback for the ID: if the raw value already IS a rec ID
-    // (link-field case), use it directly so the link still works.
-    if (
-      !referringAgencyId &&
-      typeof rawAgencyValue === 'string' &&
-      REC_ID_RE.test(rawAgencyValue)
-    ) {
-      referringAgencyId = rawAgencyValue
-    }
+    // Agency record id, straight off the lookup — Referring Staff Link →
+    // Agency Users → Agency Record ID. Populated on every row that has a
+    // staff link (all 452 today); blank for the rare link-less import rows,
+    // exactly as the old name→id map also failed to resolve those.
+    const referringAgencyId = (f['Referring Agency ID'] as string[])?.[0] ?? null
 
     // Referring Staff Link is a single link field; grab the linked user id
     // so the list view can deep-link to a Staff ID page when we build it.
@@ -227,6 +216,15 @@ export async function getAllReferrals(filters?: {
       appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
       saturdayDate: (f['Appointment Date'] as string[])?.[0] ?? null,
       appointmentTime: (f['Appointment Time'] as string) ?? null,
+      // The live Appointment Date coalesced with the Original snapshot — the
+      // date a terminal (cancelled/withdrawn) referral should be filed under.
+      // Read from the same {Effective Appointment Date} formula the date
+      // filter above uses, so the two can't disagree. Additive; see
+      // lib/referrals/effective-date.ts for the pre-field JS equivalent.
+      effectiveAppointmentDate:
+        (Array.isArray(f['Effective Appointment Date'])
+          ? (f['Effective Appointment Date'] as string[])[0]
+          : (f['Effective Appointment Date'] as string)) ?? null,
       // What the agency ASKED for, as opposed to what is currently booked.
       // Only meaningful while Appointment Status is 'Reschedule'; the Awaiting
       // Review page reads these to offer Dawson "accept as requested".
@@ -242,6 +240,14 @@ export async function getAllReferrals(filters?: {
       // list shape so History can link straight to a completed client's
       // receipt without opening the record.
       clientReceiptUrl: attachmentUrl(f['Client Receipt']),
+      // The slot a terminal referral last held, snapshotted by
+      // end-referral.ts. History's fallback for the Appointment column /
+      // month grouping once it reads from here. Same defensive array unwrap
+      // shapeReferralListItem uses.
+      originalAppointmentDate: Array.isArray(f['Original Appointment Date'])
+        ? ((f['Original Appointment Date'] as string[])[0] ?? null)
+        : ((f['Original Appointment Date'] as string) ?? null),
+      originalAppointmentTime: (f['Original Appointment Time'] as string) ?? null,
       referredBy: staffName,
       staffName,
       staffPhone,
@@ -258,7 +264,7 @@ export async function getAllReferrals(filters?: {
     }
   })
 
-  // Client-side search filter
+  // Substring search — over the narrowed slice above, not the whole table.
   if (filters?.search) {
     const q = filters.search
     return records.filter((r: any) =>

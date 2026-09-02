@@ -13,15 +13,22 @@ export async function GET(req: NextRequest) {
   const review = searchParams.get('review') ?? undefined
   const statuses = searchParams.getAll('status')
   const appointmentDateFrom =
-  searchParams.get('appointmentDateFrom')
-  ?? searchParams.get('dateFrom')
-  ?? undefined
+    searchParams.get('appointmentDateFrom')
+    ?? searchParams.get('dateFrom')
+    ?? undefined
+  const appointmentDateTo = searchParams.get('appointmentDateTo') ?? undefined
+  const agency = searchParams.get('agency') ?? undefined
+  const limitRaw = searchParams.get('limit')
+  const limit = limitRaw && /^\d+$/.test(limitRaw) ? Number(limitRaw) : undefined
 
   const referrals = await getAllReferrals({
-  review,
-  statuses: statuses.length > 0 ? statuses : undefined,
-  appointmentDateFrom,
-})
+    review,
+    statuses: statuses.length > 0 ? statuses : undefined,
+    appointmentDateFrom,
+    appointmentDateTo,
+    agency,
+    limit,
+  })
 
   return NextResponse.json(referrals)
 }
