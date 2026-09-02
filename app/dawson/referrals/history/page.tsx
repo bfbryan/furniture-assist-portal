@@ -16,6 +16,11 @@ type Referral = {
   clientName: string
   referralDate: string
   appointmentDate: string | null
+  // {Appointment Date} coalesced with the {Original Appointment Date} snapshot
+  // (getAllReferrals, Sep 2026). Used for month grouping so a cancelled
+  // referral — whose live Appointment Date is empty — files under the Saturday
+  // it was booked for, not the undated group. No row cell reads it.
+  effectiveAppointmentDate: string | null
   appointmentTime: string | null
   referralReview: string
   appointmentStatus: string
@@ -452,19 +457,29 @@ export default function HistoryPage() {
   const cancelled = filtered.filter(r => r.appointmentStatus === 'Cancelled').length
 
 
-  // Group by Saturday date — DESC (most recent first), no-date pinned at bottom
+  // Group by Saturday date — DESC (most recent first), no-date pinned at bottom.
+  // Keyed on effectiveAppointmentDate so cancelled referrals (empty live
+  // Appointment Date) file under their original Saturday rather than the
+  // undated group. The group heading formats this key; no per-row cell uses it.
   const byDate: Record<string, Referral[]> = {}
   const noDate: Referral[] = []
   filtered.forEach(r => {
-    if (r.appointmentDate) {
-      if (!byDate[r.appointmentDate]) byDate[r.appointmentDate] = []
-      byDate[r.appointmentDate].push(r)
+    const key = r.effectiveAppointmentDate
+    if (key) {
+      if (!byDate[key]) byDate[key] = []
+      byDate[key].push(r)
     } else {
       noDate.push(r)
     }
   })
   const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a))
-  const mostRecentDated = sortedDates[0]
+  // Auto-open the most recent PAST Saturday, not sortedDates[0] — grouping on
+  // effectiveAppointmentDate means a cancelled referral with a future original
+  // date can sort to the top, and opening a future date with only cancellations
+  // on a page called History reads wrong. Falls back to sortedDates[0] if every
+  // group is future-dated.
+  const mostRecentDated =
+    sortedDates.find(d => d <= easternTodayISO()) ?? sortedDates[0]
 
 
   return (
