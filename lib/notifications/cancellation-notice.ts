@@ -24,6 +24,7 @@
 import { Resend } from "resend";
 import { getAutomationSettings, logEmailSend } from "@/lib/airtable/reminders";
 import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/notifications/template";
+import { resolveChangeInstruction } from "@/lib/notifications/change-instruction";
 
 const AUTOMATION_NAME = "Cancellation Notice"; // must match the row's primary field value in Email Automations
 const FROM_ADDRESS =
@@ -125,6 +126,13 @@ export async function sendCancellationNotice(
     const subject =
       automation.fields["Subject Line"] || "Appointment Cancellation Confirmed";
 
+    // Hybrid rollout: portal deep link if this recipient is Active + Claimed,
+    // else the shared mailbox. Single targeted lookup — this is event-fired to
+    // one recipient, not a batch. Never throws; a failed lookup returns the
+    // mailto variant. The Airtable template hard-codes the <a> around these two
+    // tokens; until it does, fillTemplate ignores them and this is a no-op.
+    const change = await resolveChangeInstruction(toList[0], recordId, "Cancellation Notice");
+
     const html = fillTemplate(template, {
       ReferringStaff: toTokenValue(f["Referring Staff"]),
       ReferringAgency: toTokenValue(f["Referring Agency"]),
@@ -133,6 +141,8 @@ export async function sendCancellationNotice(
       ClientFirstName: toTokenValue(f["First Name"]),
       ClientLastName: toTokenValue(f["Last Name"]),
       ItemsRequested: toTokenValue(f["Items Requested"]),
+      ChangeUrl: toTokenValue(change.changeUrl),
+      ChangeLabel: toTokenValue(change.changeLabel),
     });
 
     const to = toList.join(", ");

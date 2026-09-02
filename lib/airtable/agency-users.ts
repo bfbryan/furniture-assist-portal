@@ -300,7 +300,8 @@ export async function getAgencyUsersByAgencyId(agencyId: string) {
 /**
  * Look up an Agency Users row by email, across all agencies. Used by the
  * Add Staff Member route to catch a duplicate before creating a second
- * record — either at this agency or another one.
+ * record, and by lib/notifications/change-instruction.ts to decide whether a
+ * notice recipient can be sent to the portal (needs status + portalInviteStatus).
  */
 export async function getAgencyUserByEmail(email: string) {
   const formula = encodeURIComponent(`LOWER({Email}) = "${email.trim().toLowerCase()}"`)
@@ -316,6 +317,7 @@ export async function getAgencyUserByEmail(email: string) {
     email: r.fields['Email'] as string,
     agencyId: (r.fields['Agency'] as string[])?.[0] ?? null,
     status: r.fields['Status'] as string,
+    portalInviteStatus: (r.fields['Portal Invite Status'] as string) ?? 'Not Invited',
   }
 }
 
