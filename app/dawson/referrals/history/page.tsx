@@ -7,6 +7,7 @@ import { addDaysISO, differenceInDaysISO, easternTodayISO } from '@/lib/dates'
 import { NO_SHOW_RESCHEDULE_WINDOW_DAYS } from '@/lib/referrals/no-show-window'
 import CancelModal from '@/components/internal/modals/CancelModal'
 import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
+import DawsonPageControls from '@/components/internal/DawsonPageControls'
 import { matchesSearch } from '@/lib/search'
 
 
@@ -468,24 +469,21 @@ export default function HistoryPage() {
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>History</div>
-          {!loading && (
-            <>
-              <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(27,43,75,0.08)', color: '#1B2B4B' }}>
-                {completed} completed
-              </span>
-              <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
-                {noShow} no show
-              </span>
-              <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B' }}>
-                {cancelled} cancelled
-              </span>
-            </>
-          )}
-        </div>
-      </header>
+      <DawsonPageControls>
+        {!loading && (
+          <>
+            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(27,43,75,0.08)', color: '#1B2B4B' }}>
+              {completed} completed
+            </span>
+            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
+              {noShow} no show
+            </span>
+            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B' }}>
+              {cancelled} cancelled
+            </span>
+          </>
+        )}
+      </DawsonPageControls>
 
 
       <div style={{ padding: '28px 32px' }}>

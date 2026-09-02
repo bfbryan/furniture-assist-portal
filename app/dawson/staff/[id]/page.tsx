@@ -15,6 +15,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import AgencyReferralsPanel, { AgencyReferral, ReferralStatus } from '@/components/internal/AgencyReferralsPanel'
+import { DAWSON_PAGE_BAR_HEIGHT } from '@/components/internal/DawsonPageBar'
 import { formatEasternTimestamp } from '@/lib/dates'
 
 type Referral = {
@@ -159,7 +160,9 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
         background: 'white', borderBottom: '1px solid #EDE9E1',
         padding: '0 32px', height: '60px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        position: 'sticky', top: 0, zIndex: 50,
+        // Sticks below the shell page bar (DawsonPageBar), not at the viewport
+        // top — the bar stays pinned on this route too.
+        position: 'sticky', top: DAWSON_PAGE_BAR_HEIGHT, zIndex: 50,
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           {/* Fallback to /dawson/agencies/active when opened in a fresh tab —

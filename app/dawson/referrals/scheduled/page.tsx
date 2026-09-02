@@ -5,6 +5,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import CancelModal from '@/components/internal/modals/CancelModal'
 import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
+import DawsonPageControls from '@/components/internal/DawsonPageControls'
 import { matchesSearch } from '@/lib/search'
 
 
@@ -378,20 +379,15 @@ export default function ScheduledPage() {
       `}</style>
 
 
-      <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>Scheduled</div>
-          {!loading && (
-            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(42,127,111,0.12)', color: '#2A7F6F' }}>
-              {filtered.length} referral{filtered.length !== 1 ? 's' : ''}
-            </span>
-          )}
-          {refreshing && (
-            <span style={{ fontSize: '12px', color: '#7A8899', fontStyle: 'italic' }}>Refreshing…</span>
-          )}
-        </div>
-
-
+      <DawsonPageControls>
+        {!loading && (
+          <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(42,127,111,0.12)', color: '#2A7F6F' }}>
+            {filtered.length} referral{filtered.length !== 1 ? 's' : ''}
+          </span>
+        )}
+        {refreshing && (
+          <span style={{ fontSize: '12px', color: '#7A8899', fontStyle: 'italic' }}>Refreshing…</span>
+        )}
         <button
           onClick={() => fetchSchedule(true)}
           disabled={refreshing}
@@ -410,7 +406,7 @@ export default function ScheduledPage() {
           </svg>
           Refresh
         </button>
-      </header>
+      </DawsonPageControls>
 
 
       <div style={{ padding: '28px 32px' }}>

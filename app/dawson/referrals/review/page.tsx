@@ -28,6 +28,7 @@
 
 import { useState, useEffect } from 'react'
 import RescheduleModal, { type AvailableDate, type TimeSlot } from '@/components/internal/modals/RescheduleModal'
+import DawsonPageControls from '@/components/internal/DawsonPageControls'
 import { TIME_CAPS, VALID_TIMES, type TimeSlot as Slot } from '@/lib/schedule/capacity'
 import { matchesSearch } from '@/lib/search'
 
@@ -500,16 +501,13 @@ export default function AwaitingReviewPage() {
         onConfirm={handleOverrideConfirm}
       />
 
-      <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>Awaiting Review</div>
-          {!loading && (
-            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
-              {filtered.length} referral{filtered.length !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-      </header>
+      <DawsonPageControls>
+        {!loading && (
+          <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
+            {filtered.length} referral{filtered.length !== 1 ? 's' : ''}
+          </span>
+        )}
+      </DawsonPageControls>
 
       <div style={{ padding: '28px 32px' }}>
         <input type="text" placeholder="Search by client, agency, or staff..." value={search} onChange={e => setSearch(e.target.value)}

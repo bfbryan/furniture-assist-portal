@@ -1034,12 +1034,6 @@ useEffect(() => {
 
     return (
       <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-        <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 50 }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>
-            Reschedule No-Show
-          </div>
-        </header>
-
         <div style={{ maxWidth: '600px', margin: '0 auto', padding: '32px' }}>
           <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
             <div style={SECTION}>Reschedule No-Show</div>
@@ -1147,14 +1141,6 @@ useEffect(() => {
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '0 32px', height: '60px', display: 'flex', alignItems: 'center', position: 'sticky', top: 0, zIndex: 50 }}>
-        <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>
-          Add Referral
-        </div>
-      </header>
-
-
-
       <div style={{ maxWidth: '780px', margin: '0 auto', padding: '32px' }}>
         <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
 

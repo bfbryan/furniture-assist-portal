@@ -171,20 +171,12 @@ export default function ScansUploadPage() {
     <div style={{ minHeight: '100vh', background: BG, color: TEXT, padding: '32px 24px' }}>
       <div style={{ maxWidth: 960, margin: '0 auto' }}>
 
-        {/* Header */}
+        {/* Intro. The page title is in the shell bar (DawsonPageBar). */}
         <div style={{ marginBottom: 32 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
-            <div>
-              <h1 style={{ fontSize: 28, fontWeight: 600, marginBottom: 4 }}>
-                Upload Saturday Scan
-              </h1>
-              <p style={{ color: TEXT_MUTED, fontSize: 14 }}>
-                Upload the consolidated scan of completed pickup sheets. The portal will split,
-                OCR, and update each client&apos;s record automatically.
-              </p>
-            </div>
-            {/* Scan history link removed — page not built yet */}
-          </div>
+          <p style={{ color: TEXT_MUTED, fontSize: 14 }}>
+            Upload the consolidated scan of completed pickup sheets. The portal will split,
+            OCR, and update each client&apos;s record automatically.
+          </p>
         </div>
 
         {/* Upload form (hidden when result shown) */}

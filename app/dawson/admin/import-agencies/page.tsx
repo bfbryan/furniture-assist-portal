@@ -203,7 +203,7 @@ export default function ImportAgenciesPage() {
 
   return (
     <div style={{ maxWidth: 1100, margin: '40px auto', padding: '0 24px', fontFamily: 'system-ui, sans-serif' }}>
-      <h1 style={{ fontSize: 28, marginBottom: 8 }}>Import Agencies (CSV)</h1>
+      {/* Title is in the shell bar (DawsonPageBar). */}
       <p style={{ color: '#555', marginBottom: 24 }}>
         Upload OCR'd referral-slip data. Every row creates (or finds) an Agency
         plus an Agency User, both with status <strong>Unclaimed</strong>. Re-uploading

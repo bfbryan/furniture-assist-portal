@@ -1,7 +1,7 @@
 import { auth, currentUser } from '@clerk/nextjs/server'
-import { SignOutButton } from '@clerk/nextjs'
 import { redirect } from 'next/navigation'
 import { isDawsonPortalUser, isPortalAdmin } from '@/lib/auth/dawson-access'
+import DawsonPageBar from '@/components/internal/DawsonPageBar'
 
 // Nav category labels — "Overview", "Agencies", "Referrals", "Schedule",
 // "Admin". Ben asked for these a little larger so the grouping reads more
@@ -9,21 +9,34 @@ import { isDawsonPortalUser, isPortalAdmin } from '@/lib/auth/dawson-access'
 // and the header stay as they are, so this is HIM overriding his own
 // constraint, not a change made on his behalf; it is noted as such in the PR.
 //
-// Only the two size-related values move — 10px to 11.5px, and the tracking
-// eased from 0.12em to 0.10em because letter-spacing that wide starts to
-// separate the word at the larger size. Weight, colour, transform and padding
-// are untouched, so the labels still read as labels and not as links.
-//
-// Six identical copies of this object were inline in the nav below (five live,
-// one in the commented-out Reports block). They are now one constant, so the
-// next size change is one edit rather than six.
+// Sep 2026: stepped up again alongside the nav links below — 11.5px to 12.5px,
+// padding 12/8/6 to 14/8/7 — as part of bringing the Dawson shell in line with
+// the agency side while keeping Dawson's larger type / hit areas. Weight,
+// colour and transform are untouched, so the labels still read as labels.
 const NAV_SECTION_LABEL: React.CSSProperties = {
-  fontSize: '11.5px',
+  fontSize: '12.5px',
   fontWeight: 700,
   letterSpacing: '0.10em',
   textTransform: 'uppercase',
   color: 'rgba(255,255,255,0.3)',
-  padding: '12px 8px 6px',
+  padding: '14px 8px 7px',
+}
+
+// One style for every rail link. Was eleven identical inline copies; now one
+// constant so the next size change is a single edit. Sep 2026 step-up (Ben's
+// override, see above): font 13.5px -> 15px, padding 9/12 -> 12/14, gap 10 ->
+// 12, so a rail row clears a ~46px hit target. Weight stays 500 — density on
+// Dawson's side comes from space, not weight.
+const NAV_LINK: React.CSSProperties = {
+  display: 'flex',
+  alignItems: 'center',
+  gap: '12px',
+  padding: '12px 14px',
+  borderRadius: '8px',
+  color: 'rgba(255,255,255,0.6)',
+  fontSize: '15px',
+  fontWeight: 500,
+  textDecoration: 'none',
 }
 
 export default async function DawsonLayout({
@@ -79,13 +92,13 @@ export default async function DawsonLayout({
           pages and Awaiting Review have been live and reachable by URL the
           whole time, they simply had no way in from the sidebar.
         */}
-        <nav style={{ flex: 1, padding: '16px 12px', display: 'flex', flexDirection: 'column', gap: '2px', overflowY: 'auto' }}>
+        <nav style={{ flex: 1, padding: '16px 10px', display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto' }}>
 
-          
+
           <div style={NAV_SECTION_LABEL}>Overview</div>
 
-          <a href="/dawson" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          <a href="/dawson" style={NAV_LINK}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
             Dashboard
           </a>
 
@@ -102,12 +115,12 @@ export default async function DawsonLayout({
               like the rest of the portal. Hiding a link does not close a
               route. */}
           {showAdmin && (
-            <a href="/dawson/admin" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+            <a href="/dawson/admin" style={NAV_LINK}>
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
               Admin
             </a>
           )}
-          
+
 
           <div style={NAV_SECTION_LABEL}>Agencies</div>
 
@@ -115,109 +128,76 @@ export default async function DawsonLayout({
     Pending Approval, Active, then Inactive & Rejected — rather than putting
     the busiest page first. Ben: "should follow the flow." Only the order
     changed; every link, icon and label is untouched. */}
-<a href="/dawson/agencies/unclaimed" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
+<a href="/dawson/agencies/unclaimed" style={NAV_LINK}>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
   Unclaimed
 </a>
 
-<a href="/dawson/agencies/pending" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+<a href="/dawson/agencies/pending" style={NAV_LINK}>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
   Pending Approval
 </a>
 
-<a href="/dawson/agencies/active" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+<a href="/dawson/agencies/active" style={NAV_LINK}>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
   Active Agencies
 </a>
 
-<a href="/dawson/agencies/inactive" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+<a href="/dawson/agencies/inactive" style={NAV_LINK}>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
   Inactive & Rejected
 </a>
 
           <div style={NAV_SECTION_LABEL}>Referrals</div>
 
-<a href="/dawson/referrals/review" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+<a href="/dawson/referrals/review" style={NAV_LINK}>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
   Awaiting Review
 </a>
 
-<a href="/dawson/referrals/scheduled" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+<a href="/dawson/referrals/scheduled" style={NAV_LINK}>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
   Scheduled
 </a>
 
-<a href="/dawson/referrals/history" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h18v18H3z"/><polyline points="3 9 21 9"/><polyline points="3 15 21 15"/><polyline points="9 3 9 21"/></svg>
+<a href="/dawson/referrals/history" style={NAV_LINK}>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h18v18H3z"/><polyline points="3 9 21 9"/><polyline points="3 15 21 15"/><polyline points="9 3 9 21"/></svg>
   History
 </a>
 
-<a href="/dawson/referrals/new" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+<a href="/dawson/referrals/new" style={NAV_LINK}>
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
   Add Referral
 </a>
 
           <div style={NAV_SECTION_LABEL}>Schedule</div>
 
-          <a href="/dawson/schedule" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+          <a href="/dawson/schedule" style={NAV_LINK}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             Saturday Schedule
           </a>
 
           {/* --- HIDDEN: Reports (Statistics page not built yet) ---
           <div style={NAV_SECTION_LABEL}>Reports</div>
 
-          <a href="/dawson/reports" style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '9px 12px', borderRadius: '8px', color: 'rgba(255,255,255,0.6)', fontSize: '13.5px', fontWeight: 500, textDecoration: 'none' }}>
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          <a href="/dawson/reports" style={NAV_LINK}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
             Statistics
           </a>
           --- END HIDDEN: Reports --- */}
 
         </nav>
 
-                        {/* Footer — signed-in user; the whole row is the sign-out control */}
-        <div style={{ padding: '12px', borderTop: '1px solid rgba(255,255,255,0.08)' }}>
-          <SignOutButton redirectUrl="/sign-in">
-            <button
-              title="Sign out"
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '10px',
-                padding: '8px',
-                borderRadius: '8px',
-                border: 'none',
-                background: 'rgba(255,255,255,0.06)',
-                cursor: 'pointer',
-                textAlign: 'left',
-              }}
-            >
-              <div style={{ width: '32px', height: '32px', background: '#2A7F6F', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '12px', color: 'white', flexShrink: 0 }}>
-                {initials}
-              </div>
-
-              <div style={{ minWidth: 0, flex: 1 }}>
-                <div style={{ fontSize: '13px', fontWeight: 600, color: 'white', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {fullName}
-                </div>
-                <div style={{ fontSize: '11px', color: 'rgba(255,255,255,0.4)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {email}
-                </div>
-              </div>
-
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.45)" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0 }}>
-                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-                <polyline points="16 17 21 12 16 7" />
-                <line x1="21" y1="12" x2="9" y2="12" />
-              </svg>
-            </button>
-          </SignOutButton>
-        </div>
+        {/* No footer. User identity and Sign out moved to the page bar's
+            avatar menu (DawsonPageBar / DawsonAvatarMenu); the empty rail
+            bottom is intentional, matching the agency side. The old
+            sidebar-footer SignOutButton was removed — it was easy to miss and
+            easy to hit by accident. */}
 
       </aside>
 
       <main style={{ marginLeft: '240px', flex: 1 }}>
+        <DawsonPageBar fullName={fullName} email={email} initials={initials} />
         {children}
       </main>
     </div>

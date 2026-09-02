@@ -880,17 +880,8 @@ export default function ImportReferralsPage() {
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh', padding: '28px 32px' }}>
       <div style={{ maxWidth: '1100px', margin: '0 auto' }}>
-        {/* Header */}
+        {/* Intro. The page title is in the shell bar (DawsonPageBar). */}
         <div style={{ marginBottom: '20px' }}>
-          <h1 style={{
-            fontFamily: 'var(--font-montserrat)',
-            fontWeight: 800,
-            fontSize: '22px',
-            color: '#1B2B4B',
-            margin: '0 0 6px',
-          }}>
-            Import Referrals from Dawson&apos;s Excel
-          </h1>
           <p style={{ fontSize: '13px', color: '#7A8899', margin: 0, lineHeight: 1.6 }}>
             Reads Dawson&apos;s native Excel format. Pick a Saturday and import just that
             week&apos;s referrals. Re-runs are safe — already-imported referrals
