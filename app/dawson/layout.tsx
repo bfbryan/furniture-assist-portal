@@ -122,31 +122,21 @@ export default async function DawsonLayout({
           )}
 
 
-          <div style={NAV_SECTION_LABEL}>Agencies</div>
+          {/* Sep 2026: the four Agencies pages (Active / Pending Approval /
+              Unclaimed / Inactive & Rejected) collapsed into one — same task
+              on different records, so one screen with a status filter. This is
+              now a lone top-level item, no section header, matching the
+              proposal Ben approved.
 
-{/* Order follows the lifecycle an agency actually moves through — Unclaimed,
-    Pending Approval, Active, then Inactive & Rejected — rather than putting
-    the busiest page first. Ben: "should follow the flow." Only the order
-    changed; every link, icon and label is untouched. */}
-<a href="/dawson/agencies/unclaimed" style={NAV_LINK}>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"/></svg>
-  Unclaimed
-</a>
-
-<a href="/dawson/agencies/pending" style={NAV_LINK}>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-  Pending Approval
-</a>
-
-<a href="/dawson/agencies/active" style={NAV_LINK}>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
-  Active Agencies
-</a>
-
-<a href="/dawson/agencies/inactive" style={NAV_LINK}>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
-  Inactive & Rejected
-</a>
+              PENDING APPROVAL is deliberately not in the nav: it's a decision
+              queue, not a browse list, and folds into a Needs Action page that
+              isn't built yet. Until then /dawson/agencies/pending stays a
+              working route with no link — reach it by URL. TEMPORARY; remove
+              this note when Needs Action ships. */}
+          <a href="/dawson/agencies" style={NAV_LINK}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            Agencies
+          </a>
 
           <div style={NAV_SECTION_LABEL}>Referrals</div>
 

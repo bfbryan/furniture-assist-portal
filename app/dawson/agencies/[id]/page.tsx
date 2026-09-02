@@ -100,6 +100,9 @@ type Agency = {
   contactLastName: string | null
   contactPhone: string | null
   primaryAdminId: string | null
+  // Airtable checkbox Ben ticks once he's verified an imported agency. Gates
+  // the Invite button below, same as it gates the invite route.
+  reconciled: boolean
   status: string
   registrationDate: string | null
   approvalDate: string | null
@@ -220,6 +223,12 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
   const [loading, setLoading] = useState(true)
   const [statusLoading, setStatusLoading] = useState(false)
   const [confirm, setConfirm] = useState<string | null>(null)
+  // Invite flow — kept separate from statusLoading/confirm so the two-step
+  // inline confirm doesn't tangle with the status buttons. `inviteNote` holds
+  // the post-send line (success, or the "marked Invited but email didn't send"
+  // partial-success warning ported from the old Unclaimed list page).
+  const [inviteLoading, setInviteLoading] = useState(false)
+  const [inviteNote, setInviteNote] = useState<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(null)
   const [agencyId, setAgencyId] = useState<string>('')
   const [notesModal, setNotesModal] = useState(false)
   const [notesSaving, setNotesSaving] = useState(false)
@@ -267,6 +276,47 @@ useEffect(() => {
     } finally { setStatusLoading(false) }
   }
 
+  // Invite / Resend the agency's Primary Admin to the portal. Reuses
+  // POST /api/dawson/agencies/[id]/invite unchanged — the same call the old
+  // Unclaimed list page made. The route re-checks reconciled / admin / email
+  // server-side and returns a UI-ready `error` string on a 400.
+  async function handleInvite() {
+    if (!agency) return
+    if (confirm !== 'invite') { setConfirm('invite'); setInviteNote(null); return }
+    setInviteLoading(true)
+    setInviteNote(null)
+    try {
+      const res = await fetch(`/api/dawson/agencies/${agencyId}/invite`, { method: 'POST' })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setInviteNote({ kind: 'error', text: body?.error || `Invite failed (${res.status})` })
+        return
+      }
+      // Stamps are committed server-side regardless of whether the email went
+      // out, so the status flips either way — matching the old list page.
+      setAgency({ ...agency, status: 'Invited', invitedDate: new Date().toISOString() })
+      setConfirm(null)
+
+      const email = body?.email
+      if (email && email.skipped === false && email.sent === false) {
+        // The partial-success case: Invited on the record, but no mail. This is
+        // the failure that used to be swallowed on staff invites.
+        setInviteNote({
+          kind: 'warn',
+          text:
+            `${agency.name} is marked Invited, but the email did not send: ${email.error ?? 'unknown error'}. ` +
+            `Use Resend Invite once that is fixed.`,
+        })
+      } else {
+        setInviteNote({ kind: 'ok', text: 'Invite sent.' })
+      }
+    } catch {
+      setInviteNote({ kind: 'error', text: 'Network error. Please try again.' })
+    } finally {
+      setInviteLoading(false)
+    }
+  }
+
   async function handleSaveNotes(notes: string) {
     setNotesSaving(true)
     try {
@@ -308,6 +358,25 @@ useEffect(() => {
   const panelReferrals = agency.referrals.map(toAgencyReferral)
 
   const locality = cityStateZip(agency.city, agency.state, agency.zip)
+
+  // Invite button state. Shown for Unclaimed/Invited only; enabled only when
+  // the same three gates the invite route enforces are met. When a gate fails
+  // the button still renders (disabled) with the reason beside it, rather than
+  // vanishing with no explanation. `blockReason` names the FIRST unmet gate.
+  const canInviteAgency =
+    (agency.status === 'Unclaimed' || agency.status === 'Invited')
+  const inviteReady = !!agency.primaryAdminId && !!agency.email && agency.reconciled
+  const inviteBlockReason = !agency.primaryAdminId
+    ? 'Link a Primary Admin in Airtable to invite.'
+    : !agency.email
+    ? 'The Primary Admin has no email in Airtable.'
+    : !agency.reconciled
+    ? 'Tick Reconciled in Airtable to invite.'
+    : null
+  const isResendInvite = agency.status === 'Invited'
+  const inviteRecipient =
+    [agency.contactFirstName, agency.contactLastName].filter(Boolean).join(' ') ||
+    'the Primary Admin'
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
@@ -388,14 +457,67 @@ useEffect(() => {
               {statusLoading ? '...' : confirm === 'Approved' ? 'Confirm' : 'Reinstate'}
             </button>
           )}
+
+          {canInviteAgency && (
+            <>
+              <button onClick={handleInvite} disabled={!inviteReady || inviteLoading}
+                style={{ padding: '8px 18px', borderRadius: '7px', border: 'none', background: confirm === 'invite' ? '#2A7F6F' : 'rgba(42,127,111,0.1)', color: confirm === 'invite' ? 'white' : '#2A7F6F', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: inviteReady ? 'pointer' : 'not-allowed', opacity: inviteReady ? 1 : 0.45 }}>
+                {inviteLoading
+                  ? '...'
+                  : confirm === 'invite'
+                  ? (isResendInvite ? 'Confirm Resend' : 'Confirm Send Invite')
+                  : (isResendInvite ? 'Resend Invite' : 'Invite to Portal')}
+              </button>
+              {inviteBlockReason && (
+                <span style={{ fontSize: '12px', color: '#7A8899', maxWidth: '240px', lineHeight: 1.35 }}>
+                  {inviteBlockReason}
+                </span>
+              )}
+            </>
+          )}
+
           {confirm && (
-            <button onClick={() => setConfirm(null)}
+            <button onClick={() => { setConfirm(null); setInviteNote(null) }}
               style={{ padding: '8px 14px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
               Cancel
             </button>
           )}
         </div>
       </header>
+
+      {(confirm === 'invite' || inviteNote) && (
+        <div style={{
+          padding: '12px 32px',
+          borderBottom: '1px solid #EDE9E1',
+          fontSize: '13px',
+          color: '#2C3A4A',
+          background:
+            inviteNote?.kind === 'warn' ? 'rgba(201,168,76,0.12)'
+            : inviteNote?.kind === 'error' ? 'rgba(192,57,43,0.08)'
+            : inviteNote?.kind === 'ok' ? 'rgba(42,127,111,0.08)'
+            : '#F7F5F1',
+        }}>
+          {confirm === 'invite' && !inviteNote && (
+            <>
+              {isResendInvite ? 'Re-send the portal sign-in link to ' : 'Send a portal sign-in link to '}
+              <strong style={{ color: '#1B2B4B' }}>{inviteRecipient}</strong>
+              {' — '}
+              <strong style={{ color: '#1B2B4B', fontSize: '14px' }}>{agency.email}</strong>?
+            </>
+          )}
+          {inviteNote && (
+            <span style={{
+              fontWeight: inviteNote.kind === 'ok' ? 500 : 600,
+              color:
+                inviteNote.kind === 'warn' ? '#8A6D1F'
+                : inviteNote.kind === 'error' ? '#C0392B'
+                : '#2A7F6F',
+            }}>
+              {inviteNote.text}
+            </span>
+          )}
+        </div>
+      )}
 
       <div style={{ padding: '28px 32px', display: 'grid', gridTemplateColumns: '1fr 320px', gap: '20px', alignItems: 'start' }}>
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>

@@ -174,6 +174,10 @@ export async function getAgencyWithDetails(agencyId: string) {
     contactLastName: adminLast || null,
     contactPhone: adminPhone,
     primaryAdminId,                                  // for the admin-confirm UI
+    // Gates the Invite button on the detail page, same as it gates the invite
+    // route: only a reconciled agency with a primary admin + email can be
+    // invited.
+    reconciled: (af['Reconciled'] as boolean) ?? false,
     status: optionalString(af['Status']) ?? '',
     // FIXED: "Registration Date" → "Record Creation Date"
     registrationDate: optionalString(af['Record Creation Date']),
