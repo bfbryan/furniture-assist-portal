@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { differenceInDaysISO, easternTodayISO } from '@/lib/dates'
 import { TIME_CAPS } from '@/lib/schedule/capacity'
+import DawsonPageControls from '@/components/internal/DawsonPageControls'
 
 type Saturday = {
   id: string
@@ -292,37 +293,27 @@ export default function SchedulePage() {
         .spinning { animation: spin 0.8s linear infinite; }
       `}</style>
 
-      <header style={{
-        background: 'white', borderBottom: '1px solid #EDE9E1',
-        padding: '0 32px', height: '60px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        position: 'sticky', top: 0, zIndex: 50,
-      }}>
-        <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>
-          Saturday Schedule
-        </div>
-        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-          {refreshing && (
-            <span style={{ fontSize: '12px', color: '#7A8899', marginRight: '4px' }}>
-              Refreshing…
-            </span>
-          )}
-          <button onClick={fetchSchedule}
-            disabled={refreshing}
-            title="Refresh"
-            style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', fontSize: '13px', fontWeight: 600, color: '#2A7F6F', cursor: refreshing ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', opacity: refreshing ? 0.7 : 1 }}>
-            <svg className={refreshing ? 'spinning' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="23 4 23 10 17 10"/>
-              <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
-            </svg>
-            Refresh
-          </button>
-          <button onClick={() => setShowPast(!showPast)}
-            style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', fontSize: '13px', fontWeight: 600, color: '#7A8899', cursor: 'pointer' }}>
-            {showPast ? 'Hide Past Dates' : 'Show Past Dates'}
-          </button>
-        </div>
-      </header>
+      <DawsonPageControls>
+        {refreshing && (
+          <span style={{ fontSize: '12px', color: '#7A8899', marginRight: '4px' }}>
+            Refreshing…
+          </span>
+        )}
+        <button onClick={fetchSchedule}
+          disabled={refreshing}
+          title="Refresh"
+          style={{ padding: '8px 12px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', fontSize: '13px', fontWeight: 600, color: '#2A7F6F', cursor: refreshing ? 'wait' : 'pointer', display: 'flex', alignItems: 'center', gap: '6px', opacity: refreshing ? 0.7 : 1 }}>
+          <svg className={refreshing ? 'spinning' : ''} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="23 4 23 10 17 10"/>
+            <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+          </svg>
+          Refresh
+        </button>
+        <button onClick={() => setShowPast(!showPast)}
+          style={{ padding: '8px 16px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', fontSize: '13px', fontWeight: 600, color: '#7A8899', cursor: 'pointer' }}>
+          {showPast ? 'Hide Past Dates' : 'Show Past Dates'}
+        </button>
+      </DawsonPageControls>
 
       <div style={{ padding: '28px 32px' }}>
 

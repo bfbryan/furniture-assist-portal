@@ -18,27 +18,19 @@
 //
 // Ben is watching Resend directly in the meantime.
 //
-// Header chrome matches the other Dawson list pages so it does not read as a
-// broken route.
+// The "Coming soon" pill (all that's left of this page's old header now that
+// the title is in the shell bar) keeps it from reading as a broken route.
+
+import DawsonPageControls from '@/components/internal/DawsonPageControls'
 
 export default function EmailLogReportPage() {
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      <header style={{
-        background: 'white', borderBottom: '1px solid #EDE9E1',
-        padding: '0 32px', height: '60px',
-        display: 'flex', alignItems: 'center',
-        position: 'sticky', top: 0, zIndex: 50,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>
-            Email Log
-          </div>
-          <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
-            Coming soon
-          </span>
-        </div>
-      </header>
+      <DawsonPageControls>
+        <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
+          Coming soon
+        </span>
+      </DawsonPageControls>
 
       <div style={{ padding: '28px 32px' }}>
         <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '60px 32px', textAlign: 'center' }}>

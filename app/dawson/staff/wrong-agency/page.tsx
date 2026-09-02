@@ -25,6 +25,7 @@
 import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
 import { formatDateOnly, formatEasternTimestamp } from '@/lib/dates'
+import DawsonPageControls from '@/components/internal/DawsonPageControls'
 
 type FlaggedStaff = {
   id: string
@@ -188,30 +189,13 @@ export default function WrongAgencyStaffPage() {
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      <header
-        style={{
-          background: 'white',
-          borderBottom: '1px solid #EDE9E1',
-          padding: '0 32px',
-          height: '60px',
-          display: 'flex',
-          alignItems: 'center',
-          position: 'sticky',
-          top: 0,
-          zIndex: 50,
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>
-            Flagged Wrong Agency
-          </div>
-          {!loading && !error && (
-            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.18)', color: '#B8912F' }}>
-              {filtered.length} {filtered.length === 1 ? 'person' : 'people'}
-            </span>
-          )}
-        </div>
-      </header>
+      <DawsonPageControls>
+        {!loading && !error && (
+          <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.18)', color: '#B8912F' }}>
+            {filtered.length} {filtered.length === 1 ? 'person' : 'people'}
+          </span>
+        )}
+      </DawsonPageControls>
 
       <div style={{ padding: '28px 32px' }}>
         <div style={{ fontSize: '12px', color: '#7A8899', lineHeight: 1.6, marginBottom: '16px', maxWidth: '760px' }}>

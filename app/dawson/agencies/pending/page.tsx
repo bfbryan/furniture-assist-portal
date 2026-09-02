@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
 import { useAgencyStaffSearch } from '@/components/internal/useAgencyStaffSearch'
 import StaffMatchHint from '@/components/internal/StaffMatchHint'
+import DawsonPageControls from '@/components/internal/DawsonPageControls'
 import { cityStateZip } from '@/lib/address'
 
 // Optional Airtable fields are string | null — Airtable omits blank fields,
@@ -205,21 +206,13 @@ export default function PendingAgenciesPage() {
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      <header style={{
-        background: 'white', borderBottom: '1px solid #EDE9E1',
-        padding: '0 32px', height: '60px',
-        display: 'flex', alignItems: 'center',
-        position: 'sticky', top: 0, zIndex: 50,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>Pending Approval</div>
-          {!loading && (
-            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
-              {filtered.length} application{filtered.length !== 1 ? 's' : ''}
-            </span>
-          )}
-        </div>
-      </header>
+      <DawsonPageControls>
+        {!loading && (
+          <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
+            {filtered.length} application{filtered.length !== 1 ? 's' : ''}
+          </span>
+        )}
+      </DawsonPageControls>
 
       <div style={{ padding: '28px 32px' }}>
         <input

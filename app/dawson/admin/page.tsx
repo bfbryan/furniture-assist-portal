@@ -45,17 +45,6 @@ const LINKS = [
 export default function DawsonAdminPage() {
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      <header style={{
-        background: 'white', borderBottom: '1px solid #EDE9E1',
-        padding: '0 32px', height: '60px',
-        display: 'flex', alignItems: 'center',
-        position: 'sticky', top: 0, zIndex: 50,
-      }}>
-        <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>
-          Admin
-        </div>
-      </header>
-
       <div style={{ padding: '28px 32px' }}>
         <div style={{ fontSize: '12px', color: '#7A8899', lineHeight: 1.6, marginBottom: '16px', maxWidth: '760px' }}>
           Back-office screens, kept out of the main nav so the day-to-day

@@ -44,6 +44,7 @@ import {
 } from '@/lib/dates'
 import { getSaturdaySchedule, getAllReferrals, getAllAgencies } from '@/lib/airtable'
 import { TIME_ORDER } from '@/lib/schedule/capacity'
+import DawsonPageControls from '@/components/internal/DawsonPageControls'
 
 // The slices of getSaturdaySchedule / getAllReferrals / getAllAgencies this page
 // reads. Structural rather than imported, so a change to one of those helpers
@@ -292,20 +293,9 @@ export default async function DawsonDashboard() {
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
 
-      {/* Top bar */}
-      <header style={{
-        background: 'white', borderBottom: `1px solid ${BORDER}`,
-        padding: '0 32px', height: '60px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        position: 'sticky', top: 0, zIndex: 50,
-      }}>
-        <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: NAVY }}>
-          Operations Dashboard
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-          <span style={{ fontSize: '12px', color: MUTED }}>{dateStr}</span>
-        </div>
-      </header>
+      <DawsonPageControls>
+        <span style={{ fontSize: '12px', color: MUTED }}>{dateStr}</span>
+      </DawsonPageControls>
 
       <div style={{ padding: '28px 32px', maxWidth: '1200px', margin: '0 auto' }}>
 

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
 import { useAgencyStaffSearch } from '@/components/internal/useAgencyStaffSearch'
 import StaffMatchHint from '@/components/internal/StaffMatchHint'
+import DawsonPageControls from '@/components/internal/DawsonPageControls'
 import { cityStateZip } from '@/lib/address'
 import { formatEasternTimestamp } from '@/lib/dates'
 
@@ -341,21 +342,13 @@ export default function UnclaimedAgenciesPage() {
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      <header style={{
-        background: 'white', borderBottom: '1px solid #EDE9E1',
-        padding: '0 32px', height: '60px',
-        display: 'flex', alignItems: 'center',
-        position: 'sticky', top: 0, zIndex: 50,
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>Unclaimed Agencies</div>
-          {!loading && (
-            <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(122,136,153,0.15)', color: '#7A8899' }}>
-              {filtered.length} {filtered.length === 1 ? 'agency' : 'agencies'}
-            </span>
-          )}
-        </div>
-      </header>
+      <DawsonPageControls>
+        {!loading && (
+          <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(122,136,153,0.15)', color: '#7A8899' }}>
+            {filtered.length} {filtered.length === 1 ? 'agency' : 'agencies'}
+          </span>
+        )}
+      </DawsonPageControls>
 
       <div style={{ padding: '28px 32px' }}>
         <input
