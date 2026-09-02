@@ -45,10 +45,11 @@ const TITLES: Record<string, string> = {
   '/dawson/admin': 'Admin',
   '/dawson/admin/import': 'Import Referrals',
   '/dawson/admin/import-agencies': 'Import Agencies',
-  '/dawson/agencies/active': 'Active Agencies',
+  '/dawson/agencies': 'Agencies',
+  // Sep 2026: active / unclaimed / inactive collapsed into /dawson/agencies
+  // (and 308-redirect there). /dawson/agencies/pending is kept here — it's
+  // still a working, unlinked route.
   '/dawson/agencies/pending': 'Pending Approval',
-  '/dawson/agencies/unclaimed': 'Unclaimed Agencies',
-  '/dawson/agencies/inactive': 'Inactive & Rejected',
   '/dawson/referrals/review': 'Awaiting Review',
   '/dawson/referrals/scheduled': 'Scheduled',
   '/dawson/referrals/history': 'History',

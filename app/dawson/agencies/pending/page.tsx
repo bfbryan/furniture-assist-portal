@@ -196,7 +196,7 @@ export default function PendingAgenciesPage() {
   // one read of Agency Users per page load. The hint under an agency's name is
   // shown only when the agency itself did NOT match, so typing an agency name
   // changes nothing about how this page already looked.
-  const staffMatches = useAgencyStaffSearch()
+  const { matchNames: staffMatches } = useAgencyStaffSearch()
   const selfMatch = (a: Agency) => matchesSearch(search, a.name, a.city, a.contactName, a.officeName)
   const staffHint = (a: Agency) => (selfMatch(a) ? [] : staffMatches(a.id, search))
 

@@ -24,18 +24,29 @@
 // search came to hide agencies that had just been created; this list is cheap
 // enough that a fresh read per page load is the simpler correct answer.
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { matchesSearch } from '@/lib/search'
 
 type StaffEntry = { id: string; name: string; email: string; agencyId: string }
 
 /**
- * Returns `staffMatches(agencyId, query)` - the display names of that agency's
- * people matching the query, or an empty array (also while the index is still
- * loading, and if the request failed).
+ * One read of the Agency Users index per mount, exposed two ways:
+ *
+ *   matchNames(agencyId, query) - display names of that agency's people
+ *     matching the query, or [] (also while loading / on failure).
+ *   count(agencyId) - how many people that agency has, or `null` while the
+ *     index is still loading OR if the request failed. `null` is deliberate:
+ *     the Agencies list renders a "—" for an unknown count and a real number
+ *     (including 0) once known — a 0 shown during loading would read as "this
+ *     agency has no staff", which may be wrong.
+ *
+ * Both are backed by the same fetch, so a page needing counts and person-
+ * search does not hit /api/dawson/agencies/staff-index twice.
  */
 export function useAgencyStaffSearch() {
-  const [byAgency, setByAgency] = useState<Map<string, StaffEntry[]>>(() => new Map())
+  // null = not loaded yet, or the request failed. Distinct from an empty Map,
+  // which would mean "loaded, and no agency has staff".
+  const [byAgency, setByAgency] = useState<Map<string, StaffEntry[]> | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -53,16 +64,16 @@ export function useAgencyStaffSearch() {
         setByAgency(map)
       })
       .catch(() => {
-        // Leaves the map empty: the pages keep matching on the agency's own
-        // fields exactly as they did before.
+        // Leaves byAgency null: person-search falls back to the agency's own
+        // fields exactly as before, and count() keeps returning null.
       })
 
     return () => { cancelled = true }
   }, [])
 
-  return useCallback(
+  const matchNames = useCallback(
     (agencyId: string, query: string): string[] => {
-      if (!query.trim()) return []
+      if (!query.trim() || !byAgency) return []
       const list = byAgency.get(agencyId)
       if (!list) return []
       return list
@@ -72,6 +83,16 @@ export function useAgencyStaffSearch() {
     },
     [byAgency],
   )
+
+  const count = useCallback(
+    (agencyId: string): number | null => {
+      if (!byAgency) return null
+      return byAgency.get(agencyId)?.length ?? 0
+    },
+    [byAgency],
+  )
+
+  return useMemo(() => ({ matchNames, count }), [matchNames, count])
 }
 
 /** How many matched names a hint prints before it says "and N more". */
