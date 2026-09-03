@@ -50,9 +50,11 @@ const TITLES: Record<string, string> = {
   // (and 308-redirect there). /dawson/agencies/pending is kept here — it's
   // still a working, unlinked route.
   '/dawson/agencies/pending': 'Pending Approval',
+  '/dawson/referrals': 'Referrals',
+  // Sep 2026: Scheduled and History collapsed into /dawson/referrals (and
+  // 307-redirect there). Awaiting Review keeps its own route until it folds
+  // into a Needs Action page.
   '/dawson/referrals/review': 'Awaiting Review',
-  '/dawson/referrals/scheduled': 'Scheduled',
-  '/dawson/referrals/history': 'History',
   '/dawson/referrals/new': 'Add Referral',
   '/dawson/schedule': 'Saturday Schedule',
   '/dawson/reports/email-log': 'Email Log',

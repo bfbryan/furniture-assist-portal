@@ -4,7 +4,7 @@
 //
 // Used by:
 //   - app/dawson/referrals/[id]/page.tsx  (detail page action bar)
-//   - app/dawson/referrals/scheduled/page.tsx  (row action)
+//   - app/dawson/referrals/page.tsx       (row ⋯ action)
 //
 // Both call sites POST to /api/dawson/referrals/:id/cancel on confirm.
 

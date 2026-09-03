@@ -16,6 +16,14 @@ const nextConfig: NextConfig = {
       { source: "/dawson/agencies/active", destination: "/dawson/agencies", permanent: false },
       { source: "/dawson/agencies/unclaimed", destination: "/dawson/agencies", permanent: false },
       { source: "/dawson/agencies/inactive", destination: "/dawson/agencies", permanent: false },
+
+      // Sep 2026: Scheduled and History collapsed into one /dawson/referrals
+      // page — same records, one lookup screen with a status filter and a date
+      // range instead of two destinations. permanent: false for the same
+      // reason as above (a permanent redirect hard-caches and would fight a
+      // later change to this area).
+      { source: "/dawson/referrals/scheduled", destination: "/dawson/referrals", permanent: false },
+      { source: "/dawson/referrals/history", destination: "/dawson/referrals", permanent: false },
     ];
   },
 };
