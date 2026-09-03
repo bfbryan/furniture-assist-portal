@@ -24,6 +24,12 @@ const nextConfig: NextConfig = {
       // later change to this area).
       { source: "/dawson/referrals/scheduled", destination: "/dawson/referrals", permanent: false },
       { source: "/dawson/referrals/history", destination: "/dawson/referrals", permanent: false },
+
+      // Sep 2026: Awaiting Review and Pending Approval folded into the Needs
+      // Action page — each became one of its five cards. Same permanent: false
+      // reasoning as above.
+      { source: "/dawson/referrals/review", destination: "/dawson/needs-action", permanent: false },
+      { source: "/dawson/agencies/pending", destination: "/dawson/needs-action", permanent: false },
     ];
   },
 };

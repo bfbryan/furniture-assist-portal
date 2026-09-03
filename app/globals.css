@@ -560,6 +560,29 @@ h1, h2, h3, h4, h5, h6 {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
 
+/* Needs Action: cards column + the capacity-grid rail. Two columns only when
+   there is room for the ~500px rail (six data columns now — five hours plus a
+   Total) beside cards that stay usable; below that the rail drops under the
+   cards (see the media query below). The page wrapper caps at 1440px; at that
+   width the card column is ~852px. */
+.fa-needs-action-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 600px;
+  gap: 24px;
+  align-items: start;
+}
+
+/* Below 1440px the shell's fixed 240px sidebar leaves too little for the card
+   column plus a legible ~460px rail, so the rail drops under the cards. Its
+   own breakpoint (not the portal-wide 1280) because that is where THIS
+   layout stops fitting. Stacked, the rail card keeps its own max-width so it
+   doesn't sprawl. */
+@media (max-width: 1439.98px) {
+  .fa-needs-action-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 /* ==========================================================================
    Below 1280px — stack
    ========================================================================== */

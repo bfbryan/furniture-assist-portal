@@ -2,6 +2,7 @@ import { auth, currentUser } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { isDawsonPortalUser, isPortalAdmin } from '@/lib/auth/dawson-access'
 import DawsonPageBar from '@/components/internal/DawsonPageBar'
+import NeedsActionBadge from '@/components/internal/NeedsActionBadge'
 
 // Sep 2026: the rail is now a flat list, no section headers. OVERVIEW /
 // REFERRALS / SCHEDULE stopped earning their place once Agencies collapsed to
@@ -68,9 +69,13 @@ export default async function DawsonLayout({
         </div>
 
         {/* Nav — one flat list (Sep 2026; see the note by NAV_LINK). Order is
-            Dashboard / Admin / Agencies / Awaiting Review / Referrals / Add
-            Referral / Saturday Schedule. Ben will reorder once a Needs Action
-            page exists.
+            Dashboard / Admin / Agencies / Needs action / Referrals / Add
+            Referral / Saturday Schedule.
+
+            Sep 2026: "Awaiting Review" replaced by "Needs action" — the queue
+            it was became one of five cards on /dawson/needs-action. The count
+            badge is a client island (NeedsActionBadge) so the server layout
+            stays cheap.
 
             PHASED ROLLOUT (2026-07-06): only surface what Dawson needs. The
             one hidden item left (Statistics) is commented out below — the
@@ -120,9 +125,10 @@ export default async function DawsonLayout({
             Agencies
           </a>
 
-          <a href="/dawson/referrals/review" style={NAV_LINK}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-            Awaiting Review
+          <a href="/dawson/needs-action" style={NAV_LINK}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 9v4"/><path d="M12 17h.01"/><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/></svg>
+            Needs action
+            <NeedsActionBadge />
           </a>
 
           {/* Sep 2026: Scheduled + History collapsed into one Referrals lookup

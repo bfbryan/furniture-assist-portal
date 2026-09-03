@@ -100,7 +100,7 @@ const PILLS: { key: PillKey; label: string }[] = [
   { key: 'scheduled', label: 'Scheduled' },
   { key: 'awaiting', label: 'Awaiting' },
   { key: 'completed', label: 'Completed' },
-  { key: 'missed', label: 'Missed' },
+  { key: 'missed', label: 'No Show' },
   { key: 'cancelled', label: 'Cancelled' },
   { key: 'withdrawn', label: 'Withdrawn' },
 ]
@@ -109,15 +109,16 @@ const PILL_KEYS = PILLS.map(p => p.key) as PillKey[]
 // Row status pill. All colours are already in the codebase — teal/navy/gold/red
 // from the brand palette, the greys from globals.css. 'Awaiting outcome' reuses
 // the exact treatment the agency side uses (DashboardLastSaturday, referral
-// detail). 'Missed' is the user-facing word for Airtable's 'No Show', which
-// never appears in the UI.
+// detail). The `missed` derived status is labelled 'No Show' here — the
+// internal term, matching the Airtable value. The agency portal deliberately
+// shows the same status as "Missed Appointment"; different audience.
 const STATUS_UI: Record<DerivedStatus, { label: string; bg: string; color: string }> = {
   pending: { label: 'Pending', bg: 'rgba(122,136,153,0.14)', color: '#5A6878' },
   reschedule: { label: 'Reschedule requested', bg: 'rgba(201,168,76,0.18)', color: '#8A6D14' },
   scheduled: { label: 'Scheduled', bg: 'rgba(42,127,111,0.12)', color: '#2A7F6F' },
   awaiting: { label: 'Awaiting outcome', bg: '#EDEBE7', color: '#7A8899' },
   completed: { label: 'Completed', bg: 'rgba(27,43,75,0.08)', color: '#1B2B4B' },
-  missed: { label: 'Missed', bg: 'rgba(201,168,76,0.15)', color: '#C9A84C' },
+  missed: { label: 'No Show', bg: 'rgba(201,168,76,0.15)', color: '#C9A84C' },
   cancelled: { label: 'Cancelled', bg: 'rgba(192,57,43,0.10)', color: '#C0392B' },
   withdrawn: { label: 'Withdrawn', bg: 'rgba(192,57,43,0.10)', color: '#C0392B' },
 }
@@ -657,7 +658,7 @@ function ReferralsView() {
       ].filter(Boolean)
     }
     // Counts only — no show rate. It's derived from what's shown, so a status
-    // filter makes it 100% (Completed) or 0% (Missed) by construction; it's
+    // filter makes it 100% (Completed) or 0% (No Show) by construction; it's
     // only meaningful when a group holds both outcomes. Show rate is an
     // analytics number and lives on the dashboard's past-four-Saturdays card,
     // where every outcome is always present. Not in two places with two

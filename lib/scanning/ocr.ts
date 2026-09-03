@@ -906,6 +906,13 @@ async function writeToAirtable(
     // got an email. The reschedule now happens in code, through the same
     // lib/referrals/reschedule.ts that Dawson's manual portal action uses.
     fields['Manual Review Needed'] = false
+
+    // Request age for the Needs Action "Reschedule requested" card. Stamped
+    // here and in the agency reschedule route — the only two writers of status
+    // 'Reschedule'. Only read while the record stays at that status: when
+    // applyScanReschedule() (below) parses a date it flips the record to
+    // 'Scheduled' straight away and this value is never looked at.
+    fields['Reschedule Requested At'] = new Date().toISOString()
   } else {
     // No Show: status-only update, but clear items/times/other/initials defensively
     // so a stale prior scan does not leave phantom data behind.

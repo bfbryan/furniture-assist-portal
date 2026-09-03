@@ -7,11 +7,12 @@
 // in Dawson's queue and changes nothing about the appointment.
 //
 //   Appointment Status-> 'Reschedule'   is what puts the record in the
-//                                       Reschedule Requests queue on
-//                                       /dawson/referrals/review (and on the
-//                                       Dawson home page). That queue keys on
+//                                       "Reschedule requested" card on
+//                                       /dawson/needs-action (and on the
+//                                       Dawson home page). That card keys on
 //                                       this status directly.
 //   Preferred Date / Preferred Time     what the agency actually asked for
+//   Reschedule Requested At             UTC stamp; the card's request age
 //
 // Referral Review is left ALONE — the referral stays 'Approved'. It used to be
 // forced to 'Pending' so the review queue (which keyed on Pending) would pick
@@ -161,10 +162,14 @@ export async function POST(
 
   const fields: Record<string, any> = {
     'Scheduling Flexibility': isFlexible ? 'Flexible' : 'Specific Date',
-    // This alone parks the record in the Reschedule Requests queue — that
-    // queue filters on Appointment Status = 'Reschedule' directly. Referral
-    // Review is deliberately not touched: the referral stays 'Approved'.
+    // This alone parks the record in the Needs Action "Reschedule requested"
+    // card — that card filters on Appointment Status = 'Reschedule' directly.
+    // Referral Review is deliberately not touched: the referral stays 'Approved'.
     'Appointment Status': 'Reschedule',
+    // Age of the request, for the Needs Action card. Stamped here and in the
+    // OCR no-usable-date branch (lib/scanning/ocr.ts) — the only two writers of
+    // status 'Reschedule' — so the age is right whichever origin it came from.
+    'Reschedule Requested At': new Date().toISOString(),
   }
 
   if (isFlexible) {
