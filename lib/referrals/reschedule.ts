@@ -10,13 +10,23 @@
 // over it. It is deliberately NOT reimplemented per caller: a reschedule is
 // five coupled writes plus an email, and two copies would drift.
 //
-// DEPENDENCY (recorded, not fixed here): app/api/dawson/referrals/submit/route.ts
-// still carries two more copies of this booking logic — an inline
-// specific-date block and rescheduleExistingReferral() — which have already
-// drifted once (a reminder re-arm was added here and missed there). That route
-// is separately broken (it writes plaintext to lookup fields) and Ben is
-// rewriting it as part of the agency New Referral work; the consolidation onto
-// this function happens there.
+// CONSOLIDATION STATUS: app/api/dawson/referrals/submit/route.ts used to carry
+// two more copies of this booking logic.
+//
+//   - rescheduleExistingReferral() (PATCH an existing no-show) — DONE. That
+//     route's reschedule-a-no-show branch now calls rescheduleReferral()
+//     directly; the copy and its private slot helpers are deleted.
+//
+//   - the inline specific-date / flexible block that books a BRAND-NEW referral
+//     — STILL THERE. It can't call this function, which PATCHes an existing
+//     record. The intended fix (b2) is to extract this function's slot-
+//     resolution core — findScheduleRecordByDate + Blackout check + explicit-
+//     or-pickFirstOpenSlot + capacityOverride — into an exported
+//     resolveSaturdaySlot(preferredDate, appointmentTime?) that both the PATCH
+//     path (here) and the CREATE path (that route) call. NOT the alternative
+//     of creating the row Pending Schedule then immediately booking it: that
+//     reintroduces the create-succeeds / book-fails window the Needs Action
+//     "Approve" design exists to close.
 //
 // Sep 2026: `review` param added so a first-time booking (Needs Action "Approve"
 // on a pending referral) can flip Referral Review to 'Approved' in the SAME
