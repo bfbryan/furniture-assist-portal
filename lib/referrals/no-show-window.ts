@@ -14,8 +14,8 @@
 //     argument lib/referrals/edit-window.ts makes for the edit cutoff.
 //   • app/dawson/referrals/[id]/page.tsx        — `noShowAged` gate (locks the
 //     record, drops the Reschedule/Cancel meta actions).
-//   • app/dawson/referrals/history/page.tsx     — `canManageNoShow` (the
-//     Reschedule/Cancel buttons on a No Show row).
+//   • app/dawson/referrals/page.tsx             — gates the Reschedule/Cancel
+//     items in a missed row's ⋯ menu (withinNoShowRescheduleWindow).
 //   • lib/referrals/match.ts                    — `eligibleForReschedule` on
 //     the Add Referral duplicate-check scenarios.
 //

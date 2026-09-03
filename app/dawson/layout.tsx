@@ -3,30 +3,20 @@ import { redirect } from 'next/navigation'
 import { isDawsonPortalUser, isPortalAdmin } from '@/lib/auth/dawson-access'
 import DawsonPageBar from '@/components/internal/DawsonPageBar'
 
-// Nav category labels — "Overview", "Agencies", "Referrals", "Schedule",
-// "Admin". Ben asked for these a little larger so the grouping reads more
-// clearly. He also has a standing rule that colour, font style, the left nav
-// and the header stay as they are, so this is HIM overriding his own
-// constraint, not a change made on his behalf; it is noted as such in the PR.
-//
-// Sep 2026: stepped up again alongside the nav links below — 11.5px to 12.5px,
-// padding 12/8/6 to 14/8/7 — as part of bringing the Dawson shell in line with
-// the agency side while keeping Dawson's larger type / hit areas. Weight,
-// colour and transform are untouched, so the labels still read as labels.
-const NAV_SECTION_LABEL: React.CSSProperties = {
-  fontSize: '12.5px',
-  fontWeight: 700,
-  letterSpacing: '0.10em',
-  textTransform: 'uppercase',
-  color: 'rgba(255,255,255,0.3)',
-  padding: '14px 8px 7px',
-}
+// Sep 2026: the rail is now a flat list, no section headers. OVERVIEW /
+// REFERRALS / SCHEDULE stopped earning their place once Agencies collapsed to
+// one item, Scheduled + History collapsed to one Referrals item, and SCHEDULE
+// was left with a single child — a header over one item, or over a list that
+// is already "the nav", labels nothing. The NAV_SECTION_LABEL style went with
+// them. The agency rail KEEPS its REFERRALS header because it still has real
+// sub-items under it; the two rails diverging here is intentional, not drift.
 
 // One style for every rail link. Was eleven identical inline copies; now one
 // constant so the next size change is a single edit. Sep 2026 step-up (Ben's
-// override, see above): font 13.5px -> 15px, padding 9/12 -> 12/14, gap 10 ->
-// 12, so a rail row clears a ~46px hit target. Weight stays 500 — density on
-// Dawson's side comes from space, not weight.
+// override of the "left nav stays as it is" rule, noted in that PR): font
+// 13.5px -> 15px, padding 9/12 -> 12/14, gap 10 -> 12, so a rail row clears a
+// ~46px hit target. Weight stays 500 — density on Dawson's side comes from
+// space, not weight.
 const NAV_LINK: React.CSSProperties = {
   display: 'flex',
   alignItems: 'center',
@@ -77,25 +67,17 @@ export default async function DawsonLayout({
           </div>
         </div>
 
-        {/* Nav */}
-        {/*
-          PHASED ROLLOUT (2026-07-06): only surface what Dawson needs day-1.
-          Hidden nav sections below are commented out — pages/routes still live
-          for admin (Ben) use. Uncomment blocks as each phase ships:
-            - Overview → when Dashboard is built                     [SHIPPED]
-            - Agencies (all 4) → when agency portal invites go out    [SHIPPED 2026-08-14]
-            - Referrals → Awaiting Review → when agencies start
-              submitting                                             [SHIPPED 2026-08-14]
-            - Reports → Statistics → when Statistics page is built
+        {/* Nav — one flat list (Sep 2026; see the note by NAV_LINK). Order is
+            Dashboard / Admin / Agencies / Awaiting Review / Referrals / Add
+            Referral / Saturday Schedule. Ben will reorder once a Needs Action
+            page exists.
 
-          Restoring a link does not change the page behind it: the four agency
-          pages and Awaiting Review have been live and reachable by URL the
-          whole time, they simply had no way in from the sidebar.
-        */}
+            PHASED ROLLOUT (2026-07-06): only surface what Dawson needs. The
+            one hidden item left (Statistics) is commented out below — the
+            route still lives for admin use. Restoring a link does not change
+            the page behind it; every Dawson page is gated on
+            requireDawsonAccess regardless of whether the rail links to it. */}
         <nav style={{ flex: 1, padding: '16px 10px', display: 'flex', flexDirection: 'column', gap: '3px', overflowY: 'auto' }}>
-
-
-          <div style={NAV_SECTION_LABEL}>Overview</div>
 
           <a href="/dawson" style={NAV_LINK}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
@@ -138,43 +120,35 @@ export default async function DawsonLayout({
             Agencies
           </a>
 
-          <div style={NAV_SECTION_LABEL}>Referrals</div>
+          <a href="/dawson/referrals/review" style={NAV_LINK}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+            Awaiting Review
+          </a>
 
-<a href="/dawson/referrals/review" style={NAV_LINK}>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
-  Awaiting Review
-</a>
+          {/* Sep 2026: Scheduled + History collapsed into one Referrals lookup
+              page. The two old routes 307-redirect to this one. */}
+          <a href="/dawson/referrals" style={NAV_LINK}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="8" y1="13" x2="16" y2="13"/><line x1="8" y1="17" x2="16" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>
+            Referrals
+          </a>
 
-<a href="/dawson/referrals/scheduled" style={NAV_LINK}>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
-  Scheduled
-</a>
-
-<a href="/dawson/referrals/history" style={NAV_LINK}>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M3 3h18v18H3z"/><polyline points="3 9 21 9"/><polyline points="3 15 21 15"/><polyline points="9 3 9 21"/></svg>
-  History
-</a>
-
-<a href="/dawson/referrals/new" style={NAV_LINK}>
-  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-  Add Referral
-</a>
-
-          <div style={NAV_SECTION_LABEL}>Schedule</div>
+          <a href="/dawson/referrals/new" style={NAV_LINK}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Referral
+          </a>
 
           <a href="/dawson/schedule" style={NAV_LINK}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             Saturday Schedule
           </a>
 
-          {/* --- HIDDEN: Reports (Statistics page not built yet) ---
-          <div style={NAV_SECTION_LABEL}>Reports</div>
-
+          {/* --- HIDDEN: Statistics (page not built yet). Restore as a flat
+              item, like the rest of the rail —
           <a href="/dawson/reports" style={NAV_LINK}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
             Statistics
           </a>
-          --- END HIDDEN: Reports --- */}
+          --- END HIDDEN --- */}
 
         </nav>
 

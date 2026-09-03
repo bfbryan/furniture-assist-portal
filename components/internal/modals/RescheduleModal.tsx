@@ -11,9 +11,10 @@
 // can override; a soft warning appears under the confirm button.
 //
 // Used by:
-//   - app/dawson/referrals/[id]/page.tsx         (detail page action bar)
-//   - app/dawson/referrals/scheduled/page.tsx    (row action)
-//   - app/dawson/referrals/history/page.tsx      (No Show row action)
+//   - app/dawson/referrals/[id]/page.tsx   (detail page action bar)
+//   - app/dawson/referrals/page.tsx        (row ⋯ action — scheduled,
+//                                            reschedule-requested, and in-window
+//                                            missed rows)
 
 
 
