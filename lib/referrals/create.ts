@@ -171,10 +171,11 @@ function buildClientUniqueId(
  *   {Last Name} & "-" & {First Name} & "-" & DATETIME_FORMAT({DOB}, 'MM/DD/YYYY')
  *     & IF({Appointment Date}, "-" & DATETIME_FORMAT({Appointment Date}, 'MM/DD/YYYY'), "")
  *
- * TRANSITION NOTE: Client Referrals still has plain-text First Name / Last Name
- * / DOB columns during this migration. After the schema trim step, those
- * columns move to lookups from Client. This formula will need to be re-pointed
- * at that time.
+ * Client Referrals' First Name / Last Name / DOB are lookups from {Client}
+ * now (July 2026 schema trim). The Airtable formula was re-pointed with
+ * ARRAYJOIN() to read the lookup shape (see the note in step 5 of the main
+ * function); this builder is unchanged because the string it produces is the
+ * same either way.
  */
 function buildReferralUniqueId(
   firstName: string,

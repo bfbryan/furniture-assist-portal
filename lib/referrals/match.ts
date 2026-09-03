@@ -169,6 +169,16 @@ function normalizeDob(s: string | undefined | null): string {
   return ''
 }
 
+// Clients' primary key formula renders DOB as DATETIME_FORMAT({DOB}, 'MM/DD/YYYY').
+// Reduce any accepted DOB shape to that exact form so an exact-key lookup matches.
+// Empty in -> empty out (a keyless client must never match).
+function toUniqueIdDob(s: string | undefined | null): string {
+  const iso = normalizeDob(s)
+  if (!iso) return ''
+  const [y, m, d] = iso.split('-')
+  return `${m.padStart(2, '0')}/${d.padStart(2, '0')}/${y}`
+}
+
 // Measured against the Eastern calendar day. Against the runtime clock the
 // count ticked over at 8pm Eastern, so on Vercel a No Show could age out of
 // the reschedule window an evening early.
@@ -500,6 +510,47 @@ export async function createClient(fields: {
   if (!res.ok) throw new Error(`Failed to create client: ${await res.text()}`)
   const data = await res.json()
   return data.id
+}
+
+/**
+ * Find a Client by EXACT identity — the Clients table's own primary key,
+ * `{Last Name}-{First Name}-{MM/DD/YYYY DOB}`. Returns the record id, or null
+ * when there is no exact match (including when DOB is absent — a keyless
+ * client is ambiguous and must not match).
+ *
+ * This is the ONLY safe way to auto-link a new referral to an existing Client
+ * without a human in the loop. findClientMatches() above is fuzzy and scored;
+ * it is for surfacing "possible duplicate" to staff in a modal, never for
+ * silent linking — a false positive there would attach a referral (and, over
+ * time, appointment history or a do-not-serve flag) to the wrong one of two
+ * same-named records, and nobody would notice.
+ *
+ * Throws on a failed lookup rather than returning null: if we cannot tell
+ * whether the client already exists, the caller must NOT create a new one —
+ * an unverified "not found" is exactly how duplicate Clients get made.
+ */
+export async function findClientByIdentity(input: {
+  firstName: string
+  lastName: string
+  dob: string
+}): Promise<string | null> {
+  const first = input.firstName.trim()
+  const last = input.lastName.trim()
+  const dobKey = toUniqueIdDob(input.dob)
+  if (!first || !last || !dobKey) return null
+
+  const uniqueId = `${last}-${first}-${dobKey}`
+  const formula = `{Unique ID} = "${uniqueId.replace(/"/g, '\\"')}"`
+  const url =
+    `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(CLIENTS_TABLE)}` +
+    `?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
+
+  const res = await fetch(url, { headers: HEADERS })
+  if (!res.ok) {
+    throw new Error(`findClientByIdentity lookup failed: ${res.status} ${await res.text()}`)
+  }
+  const data = await res.json()
+  return data.records?.[0]?.id ?? null
 }
 
 /**

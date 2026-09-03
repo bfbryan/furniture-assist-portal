@@ -34,10 +34,9 @@
 //   2. If `rescheduleReferralId` is present, the user chose "reschedule
 //      the existing no-show" in the banner -- moves that Client Referrals
 //      record straight to a new date/time and Appointment Status =
-//      Scheduled, using the same proven logic as
-//      app/api/dawson/referrals/[id]/reschedule (ported in Aug 2026 -- see
-//      rescheduleExistingReferral below). Returns early; nothing else in
-//      this route runs.
+//      Scheduled by calling the canonical rescheduleReferral() (Sep 2026;
+//      this used to carry its own ported copy, rescheduleExistingReferral).
+//      Returns early; nothing else in this route runs.
 //   3. Otherwise, find-or-create the Client (demographic fields live
 //      there now), then create a new Client Referrals record linked to it
 //      via the "Client" field, writing only fields that are still
@@ -49,24 +48,20 @@
 // re-engaging the same client.
 //
 // ============================================================
-// Reschedule-existing-no-show branch (Aug 2026)
+// Reschedule-existing-no-show branch
 // ============================================================
-// First shipped writing a no-slot Appointment Status ('Pending Schedule')
-// and a Preferred Date, on the assumption the same create-time auto-schedule
-// automation would pick it up and assign a real Appointment Date/Time
-// (see "new referral" scheduling behavior below). In practice it doesn't
-// -- that automation appears to trigger on record CREATION, not on a
-// PATCH to an already-existing record, so the status flipped but the
-// date/time never got set. Fixed by porting the proven, synchronous
-// logic from app/api/dawson/referrals/[id]/reschedule directly into
-// rescheduleExistingReferral() below: look up the Saturday Schedule row
-// for the picked date, resolve a time slot (explicit pick bypasses the
-// cap; no pick auto-allocates the first open slot under cap), and write
-// the Saturday Schedule link + Appointment Time + Scheduled status
-// directly -- no automation dependency. Also carries over that route's
-// Original Appointment Date/Time snapshot and Reschedule Notice email,
-// since a no-show reopened back into a real appointment is, from the
-// referring agency's perspective, genuinely the same kind of event.
+// Sep 2026: this branch now calls rescheduleReferral() in
+// lib/referrals/reschedule.ts -- the one canonical booker, also used by the
+// Dawson reschedule route, the OCR scan pipeline and Needs Action "Approve".
+// It looks up the Saturday Schedule row, resolves the time slot (explicit pick
+// bypasses the cap; no pick auto-allocates the first open slot under cap),
+// snapshots Original Appointment Date/Time, re-arms the Monday reminder, and
+// fires the Reschedule Notice -- and rejects a Blackout Saturday, which the
+// old local copy (rescheduleExistingReferral) did not.
+//
+// It used to carry its own ported copy of that logic. The copy drifted at
+// least once (a reminder re-arm added to the canonical function and missed
+// here) before being consolidated away.
 //
 // Scheduling behavior for a brand-new referral (Aug 2026):
 //
@@ -99,7 +94,7 @@
 
 import { NextResponse } from 'next/server'
 import { findClientMatches, createClient, clientDataDiverges } from '@/lib/referrals/match'
-import { sendRescheduleNotice } from '@/lib/notifications/reschedule-notice'
+import { rescheduleReferral } from '@/lib/referrals/reschedule'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { pickFirstOpenSlot, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
 import { findNextFlexibleSlot, FLEXIBLE_LEAD_DAYS } from '@/lib/schedule/flexible'
@@ -123,15 +118,14 @@ function isSaturday(isoDate: string): boolean {
   return !isNaN(dt.getTime()) && dt.getDay() === 6
 }
 
-// Slot names, capacities and fill order for the no-show reschedule branch.
-
 function toInt(v: any): number {
   const n = typeof v === 'number' ? v : parseInt(v, 10)
   return Number.isFinite(n) ? n : 0
 }
 
-// Look up a Saturday Schedule record by ISO date. Returns the full record
-// (id + per-slot booked counts) or null.
+// Look up a Saturday Schedule record by ISO date, for the brand-new-referral
+// specific-date branch below. Returns the full record (id + per-slot booked
+// counts) or null.
 async function findScheduleRecordByDate(isoDate: string): Promise<{
   id: string
   bookedByTime: Record<TimeSlot, number>
@@ -155,15 +149,6 @@ async function findScheduleRecordByDate(isoDate: string): Promise<{
       '1pm': toInt(rec.fields['1pm'] ?? rec.fields['1pm Booked']),
     },
   }
-}
-
-// Read the current referral so we can snapshot its pre-reschedule
-// Saturday Schedule + Appointment Time into the Original fields.
-async function getReferral(id: string): Promise<any | null> {
-  const url = `https://api.airtable.com/v0/${BASE_ID}/Client%20Referrals/${id}`
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${API_KEY}` } })
-  if (!res.ok) return null
-  return await res.json()
 }
 
 // Create an Agency in 'Unclaimed' status (Source = Created via Referral).
@@ -230,114 +215,6 @@ async function createUnclaimedAgencyUser(params: {
   return data.id
 }
 
-// Reopens an existing no-show Client Referrals record as a fresh booking,
-// instead of creating a brand-new record -- the "reschedule the existing
-// no-show" branch from the Add Referral banner. Mirrors
-// app/api/dawson/referrals/[id]/reschedule exactly: looks up the Saturday
-// Schedule row for the picked date, resolves a time slot (an explicit
-// pick from the time-slot pills bypasses the per-slot cap, same override
-// authority Dawson has elsewhere; no pick auto-allocates the first open
-// slot and DOES respect the cap), and writes the Saturday Schedule link +
-// Appointment Time + Appointment Status = 'Scheduled' directly -- no
-// dependency on the create-time auto-schedule automation, which doesn't
-// appear to fire on an update to an already-existing record.
-async function rescheduleExistingReferral(
-  referralId: string,
-  params: { preferredDate: string; appointmentTime?: string | null }
-): Promise<{ appointmentTime: TimeSlot; rescheduleNotice: any }> {
-  const hasTime = typeof params.appointmentTime === 'string' && VALID_TIMES.has(params.appointmentTime)
-
-  // Snapshot current values for Original Appointment Date/Time -- a
-  // no-show record typically still has its original Saturday Schedule
-  // link + Appointment Time on file from before it was marked No Show, so
-  // this fires the same as any other reschedule.
-  const current = await getReferral(referralId)
-
-  // Do-not-serve applies here too. This branch writes no new Client Referrals
-  // record, so it is not "creating a referral" in the literal sense — but it
-  // takes a no-show and puts that client back on a Saturday with a real time
-  // slot, which is the thing the flag exists to prevent. Leaving it out would
-  // mean the SAME banner that warns Dawson a client is flagged also carries a
-  // "Reschedule this appointment" button that sails straight past the block,
-  // while the button beside it is refused.
-  //
-  // Throws DoNotServeError, which the POST handler turns into a 403 rather
-  // than the generic 500 this function's other failures produce.
-  const currentClientLinks: string[] = current?.fields?.['Client'] ?? []
-  if (currentClientLinks[0]) {
-    await assertClientMayBeReferred(currentClientLinks[0])
-  }
-
-  const currentScheduleLinks: string[] = current?.fields?.['Saturday Schedule'] ?? []
-  const currentApptDateLookup = current?.fields?.['Appointment Date']
-  const currentApptTime: string | undefined = current?.fields?.['Appointment Time']
-  const currentApptDate: string | null = Array.isArray(currentApptDateLookup)
-    ? (currentApptDateLookup[0] as string) ?? null
-    : (currentApptDateLookup as string) ?? null
-  const shouldSnapshot = currentScheduleLinks.length > 0 && !!currentApptTime && !!currentApptDate
-
-  const scheduleRow = await findScheduleRecordByDate(params.preferredDate)
-  if (!scheduleRow) {
-    throw new Error(`No Saturday Schedule row found for ${params.preferredDate}.`)
-  }
-
-  let resolvedTime: TimeSlot
-  if (hasTime) {
-    resolvedTime = params.appointmentTime as TimeSlot
-  } else {
-    const picked = pickFirstOpenSlot(scheduleRow.bookedByTime)
-    if (!picked) {
-      throw new Error(
-        `All 5 time slots on ${params.preferredDate} are at capacity. Pick a specific time to override, or choose a different Saturday.`
-      )
-    }
-    resolvedTime = picked
-  }
-
-  const fields: Record<string, any> = {
-    'Scheduling Flexibility': 'Specific Date',
-    'Preferred Date': params.preferredDate,
-    'Saturday Schedule': [scheduleRow.id],
-    'Appointment Time': resolvedTime,
-    'Appointment Status': 'Scheduled',
-    // Re-arm the Monday reminder for the NEW date. The "Reminder Email Pending"
-    // view only matches rows where 'Reminder Email Sent' is blank, so a record
-    // that was already reminded for its previous appointment never re-enters
-    // the view and the client is never reminded about the new one.
-    //
-    // This is the same re-arm lib/referrals/reschedule.ts does. It was added
-    // there and missed here, because this branch is a second copy of that
-    // logic rather than a call to it. Two live records rescheduled through
-    // this path onto 2026-08-22 were skipped by the 2026-08-17 reminder run
-    // for exactly this reason.
-    'Reminder Email Sent': false,
-    'Reminder Sent At': null,
-  }
-  if (shouldSnapshot) {
-    fields['Original Appointment Date'] = currentApptDate
-    fields['Original Appointment Time'] = currentApptTime
-  }
-
-  const url = `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Client Referrals')}/${referralId}`
-  const res = await fetch(url, {
-    method: 'PATCH',
-    headers: HEADERS,
-    body: JSON.stringify({ fields, typecast: true }),
-  })
-  if (!res.ok) throw new Error(`Failed to reschedule existing referral: ${await res.text()}`)
-
-  // Same as the proven route: only fire the notice when there was a
-  // genuine previous appointment to report. That failing does NOT fail
-  // this request -- the Airtable write above is what matters
-  // operationally.
-  let rescheduleNotice: any = null
-  if (shouldSnapshot) {
-    rescheduleNotice = await sendRescheduleNotice(referralId, currentApptDate, currentApptTime ?? null)
-  }
-
-  return { appointmentTime: resolvedTime, rescheduleNotice }
-}
-
 export async function POST(req: Request) {
   const denied = await requireDawsonAccess()
   if (denied) return denied
@@ -382,17 +259,35 @@ export async function POST(req: Request) {
 
   // ---- Reschedule-existing-no-show branch ----
   // Short-circuits everything else -- no new Client or Client Referrals
-  // record gets created.
+  // record gets created. rescheduleReferral() is the canonical booker; it
+  // returns a discriminated result rather than throwing, so map the failure
+  // reasons to HTTP the same way the Needs Action /approve route does.
   if (rescheduleReferralId) {
-    try {
-      const result = await rescheduleExistingReferral(rescheduleReferralId, { preferredDate, appointmentTime })
-      return NextResponse.json({ success: true, rescheduled: true, ...result })
-    } catch (e: any) {
-      if (e instanceof DoNotServeError) {
-        return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
-      }
-      return NextResponse.json({ error: e.message }, { status: 500 })
+    const result = await rescheduleReferral({
+      referralId: rescheduleReferralId,
+      preferredDate,
+      appointmentTime,
+    })
+    if (!result.ok) {
+      const status =
+        result.reason === 'do-not-serve' ? 403
+        : result.reason === 'do-not-serve-unverified' ? 502
+        : result.reason === 'write-failed' || result.reason === 'lookup-failed' ? 500
+        : 400
+      return NextResponse.json(
+        result.reason === 'do-not-serve'
+          ? { error: result.message, doNotServe: true }
+          : { error: result.message },
+        { status },
+      )
     }
+    return NextResponse.json({
+      success: true,
+      rescheduled: true,
+      appointmentTime: result.appointmentTime,
+      snapshotTaken: result.snapshotTaken,
+      rescheduleNotice: result.rescheduleNotice,
+    })
   }
 
   // ---- Resolve scheduling for a brand-new referral ----
