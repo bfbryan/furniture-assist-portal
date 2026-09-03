@@ -233,6 +233,12 @@ export async function getAllReferrals(filters?: {
       preferredDate: (f['Preferred Date'] as string) ?? null,
       preferredTime: (f['Preferred Time'] as string) ?? null,
       schedulingFlexibility: (f['Scheduling Flexibility'] as string) ?? null,
+      // UTC timestamp stamped when Appointment Status is set to 'Reschedule',
+      // by both writers of that status (agency reschedule request, and the OCR
+      // no-usable-date branch). The Needs Action page reads it for the
+      // "requested N days ago" age on a reschedule card; null on rows that
+      // pre-date the field, rendered there as "request date unknown".
+      rescheduleRequestedAt: (f['Reschedule Requested At'] as string) ?? null,
       referralReview: f['Referral Review'] as string,
       appointmentStatus: f['Appointment Status'] as string,
       appointmentSlipUrl: attachmentUrl(f['Appt Slip']),

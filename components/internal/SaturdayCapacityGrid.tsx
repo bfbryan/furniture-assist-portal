@@ -65,6 +65,14 @@ type Props = {
 
   /** Escape hatch: render these rows instead of fetching. No horizon note. */
   initialData?: SaturdayGridRow[]
+
+  /**
+   * Bump this (a counter) to make the grid refetch — e.g. the Needs Action
+   * rail after an action books an appointment. The old rows stay on screen
+   * until the new data lands (no remount, no loading flash). Callers that
+   * fetch on mount only (the modal, the Add Referral form) leave it unset.
+   */
+  refreshToken?: number
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -79,7 +87,11 @@ type CellState = 'open' | 'soft' | 'full' | 'selected' | 'current' | 'disabled'
 
 const CELL: Record<CellState, { bg: string; fg: string; border: string }> = {
   open:     { bg: '#FFFFFF',               fg: '#1B2B4B', border: '#EDE9E1' },
-  soft:     { bg: 'rgba(201,168,76,0.10)', fg: '#8A6D14', border: 'rgba(201,168,76,0.35)' },
+  // Not a fullness signal — a discrete flag that this hour has pending
+  // requests. The gold +N chip below is the real marker; the tint just backs
+  // it. Rare (requests are few), so it never approaches a coloured-everywhere
+  // gradient, and red stays the only "genuine exception" colour.
+  soft:     { bg: 'rgba(201,168,76,0.14)', fg: '#1B2B4B', border: 'rgba(201,168,76,0.55)' },
   full:     { bg: 'rgba(192,57,43,0.08)',  fg: '#C0392B', border: 'rgba(192,57,43,0.30)' },
   selected: { bg: '#2A7F6F',               fg: '#FFFFFF', border: '#2A7F6F' },
   current:  { bg: 'rgba(42,127,111,0.12)', fg: '#2A7F6F', border: '#2A7F6F' },
@@ -90,6 +102,16 @@ const CELL: Record<CellState, { bg: string; fg: string; border: string }> = {
 const BLACKOUT = { band: '#F0F0F0', text: '#7A8899' }
 const SOFT_TEXT = '#8A6D14'
 const WARN = { bg: '#FDF6E7', border: '#C9A84C', text: '#8A6D14' }
+
+// The +N chip on a cell that carries pending requests. Its vertical space is
+// reserved in EVERY slot cell (an invisible copy when soft === 0) so a row
+// with requests isn't taller than one without — a height difference that
+// would otherwise read as a difference between the Saturdays themselves.
+const SOFT_CHIP: React.CSSProperties = {
+  display: 'inline-block', marginTop: '2px', padding: '0 6px', borderRadius: '9px',
+  background: 'rgba(201,168,76,0.22)', color: SOFT_TEXT, fontWeight: 800,
+  fontFamily: 'var(--font-montserrat)',
+}
 
 // Precedence, highest first: selected → disabled → current → full → soft →
 // open. The soft "+N" badge renders on top of whatever the base state is, so a
@@ -125,6 +147,7 @@ export default function SaturdayCapacityGrid({
   showSoft = true,
   dense = false,
   initialData,
+  refreshToken,
 }: Props) {
   const today = easternTodayISO()
   const windowStart = fromDate ?? today
@@ -170,7 +193,7 @@ export default function SaturdayCapacityGrid({
     return () => {
       cancelled = true
     }
-  }, [initialData, windowStart, windowEnd, showSoft, excludeReferralId, retry])
+  }, [initialData, windowStart, windowEnd, showSoft, excludeReferralId, retry, refreshToken])
 
   const { visible, bookableShown } = useMemo(() => {
     if (!data) return { visible: [] as SaturdayGridRow[], bookableShown: 0 }
@@ -194,9 +217,22 @@ export default function SaturdayCapacityGrid({
     return { date: value.date, time: value.time, booked: cell.booked, cap: cell.cap, dayFull }
   }, [mode, enforceCap, value, data])
 
-  const cellPad = dense ? '6px 4px' : '10px 6px'
-  const dateColW = dense ? '96px' : '124px'
-  const gridCols = `${dateColW} repeat(5, 1fr)`
+  // Non-dense is the reference rail (Needs Action) — the numbers there are
+  // consulted on every decision, so it's noticeably larger than dense (the
+  // Add Referral form and the Pick Another modal). Date column is trimmed on
+  // non-dense to make room for the Total column without shrinking the slot
+  // cells — "Sat, Sep 12" needs ~88px.
+  const cellPad = dense ? '6px 4px' : '12px 8px'
+  const dateColW = dense ? '96px' : '108px'
+  const cellGap = dense ? '4px' : '6px'
+  const numSize = dense ? '13px' : '16px'
+  const headSize = dense ? '11px' : '13px'
+  const subSize = dense ? '10px' : '11px'
+  const currentSize = dense ? '9px' : '10px'
+  // (the date cell's own font is set in the dateCell() style helper below)
+  // One track for the date, then six equal ones: the five bookable hours + a
+  // Total rollup. minmax(0, 1fr) — see the grid comment below for why not 1fr.
+  const gridCols = `${dateColW} repeat(6, minmax(0, 1fr))`
 
   if (loading) {
     return <div style={shell}><div style={muted}>Loading Saturdays…</div></div>
@@ -247,32 +283,44 @@ export default function SaturdayCapacityGrid({
 
   return (
     <div style={shell}>
-      {/* Header */}
-      <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '4px', marginBottom: '4px' }}>
+      {/* ONE grid. The header row and every data row are children of this
+          single grid and share its column tracks, so a column lines up top to
+          bottom when scanned. Each data row is a display:contents wrapper — its
+          seven cells (date + five hours + Total) drop straight onto these
+          tracks; the wrapper adds a React key without a layout box of its own.
+          The blackout row is a single `grid-column: 1 / -1` item that spans the
+          tracks instead of redefining them.
+
+          Tracks are `minmax(0, 1fr)`, NOT `1fr`: a bare `1fr` is
+          `minmax(auto, 1fr)`, whose `auto` floor lets a wide cell ("50/50", a
+          +N chip) push its own column wider. With separate per-row grids that
+          made each row size its columns independently and nothing aligned —
+          the bug this rewrite fixes. `minmax(0, …)` pins all six to equal. */}
+      <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: cellGap }}>
+        {/* Header */}
         <div />
-        {TIME_ORDER.map((t) => (
+        {[...TIME_ORDER, 'Total'].map((t) => (
           <div
-            key={t}
+            key={`h-${t}`}
             style={{
               textAlign: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 700,
-              fontSize: dense ? '11px' : '12px', color: '#7A8899',
+              fontSize: headSize, color: '#7A8899',
               textTransform: 'uppercase', letterSpacing: '0.04em',
+              padding: `0 ${dense ? '4px' : '8px'}`,
             }}
           >
             {t}
           </div>
         ))}
-      </div>
 
-      {/* Rows */}
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {visible.map((row) => {
           if (row.status === 'Blackout') {
             return (
               <div
                 key={row.id}
                 style={{
-                  display: 'grid', gridTemplateColumns: gridCols, gap: '4px',
+                  gridColumn: '1 / -1',
+                  display: 'grid', gridTemplateColumns: `${dateColW} 1fr`, gap: cellGap,
                   background: BLACKOUT.band, borderRadius: '8px',
                 }}
               >
@@ -281,8 +329,8 @@ export default function SaturdayCapacityGrid({
                 </div>
                 <div
                   style={{
-                    gridColumn: '2 / -1', display: 'flex', alignItems: 'center',
-                    padding: cellPad, fontSize: dense ? '11px' : '12px', color: BLACKOUT.text,
+                    display: 'flex', alignItems: 'center',
+                    padding: cellPad, fontSize: subSize, color: BLACKOUT.text,
                   }}
                 >
                   Blackout — warehouse closed
@@ -295,19 +343,9 @@ export default function SaturdayCapacityGrid({
           const dayFull = row.totalFilled >= row.totalCapacity
 
           return (
-            <div key={row.id} style={{ display: 'grid', gridTemplateColumns: gridCols, gap: '4px' }}>
+            <div key={row.id} style={{ display: 'contents' }}>
               <div style={{ ...dateCell(dense), color: preLead ? '#B8C1CC' : '#1B2B4B' }}>
                 {fmtDate(row.date)}
-                {dayFull && (
-                  <span
-                    style={{
-                      display: 'block', fontSize: '10px', fontWeight: 700, color: '#C0392B',
-                      letterSpacing: '0.06em', marginTop: '1px',
-                    }}
-                  >
-                    DAY FULL
-                  </span>
-                )}
               </div>
 
               {TIME_ORDER.map((t) => {
@@ -339,25 +377,44 @@ export default function SaturdayCapacityGrid({
                       textAlign: 'center', font: 'inherit', lineHeight: 1.25,
                     }}
                   >
-                    <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: dense ? '13px' : '15px' }}>
+                    <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: numSize }}>
                       {cell.booked}/{cell.cap}
                     </span>
-                    {showSoft && cell.soft > 0 && (
-                      <span
-                        style={{
-                          display: 'block', fontSize: '10px', fontWeight: 700,
-                          color: state === 'selected' ? 'rgba(255,255,255,0.9)' : SOFT_TEXT,
-                        }}
-                      >
-                        +{cell.soft} soft
+                    {/* Chip line — always present when soft counts are shown, so
+                        every row is the same height. soft === 0 renders an
+                        invisible copy (visibility:hidden keeps the box, drops it
+                        from the a11y tree). Not absolutely positioned — that
+                        would crowd the number above it. */}
+                    {showSoft && (
+                      <span style={{ display: 'block' }} aria-hidden={cell.soft === 0 || undefined}>
+                        <span
+                          style={
+                            cell.soft === 0
+                              ? { ...SOFT_CHIP, fontSize: subSize, visibility: 'hidden' }
+                              : state === 'selected'
+                                ? { ...SOFT_CHIP, background: 'rgba(255,255,255,0.25)', color: '#FFFFFF', fontSize: subSize }
+                                : { ...SOFT_CHIP, fontSize: subSize }
+                          }
+                        >
+                          +{cell.soft}
+                        </span>
                       </span>
                     )}
-                    {cell.current && (
+                    {/* "current" label — reserved in every cell of a grid that
+                        has an excludeReferralId (the only grids where it can
+                        appear), same invisible-placeholder trick as the chip
+                        above. Without this the one held-slot cell is ~10px
+                        taller than its row — and this grid is the PickSlotModal,
+                        where he's choosing from it, not just reading it. */}
+                    {excludeReferralId && (
                       <span
+                        aria-hidden={!cell.current || undefined}
                         style={{
-                          display: 'block', fontSize: '9px', fontWeight: 700,
+                          display: 'block', fontSize: currentSize, fontWeight: 700,
                           textTransform: 'uppercase', letterSpacing: '0.05em',
-                          color: state === 'selected' ? 'rgba(255,255,255,0.9)' : '#2A7F6F',
+                          ...(cell.current
+                            ? { color: state === 'selected' ? 'rgba(255,255,255,0.9)' : '#2A7F6F' }
+                            : { visibility: 'hidden' }),
                         }}
                       >
                         current
@@ -366,9 +423,37 @@ export default function SaturdayCapacityGrid({
                   </button>
                 )
               })}
+
+              {/* Total — a rollup, not a bookable slot, so it's plain text in
+                  its column, not a bordered cell like the five hours (the box
+                  made it read as the same kind of thing). Red, bold, when the
+                  day is at or over capacity. */}
+              <div
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  padding: cellPad, textAlign: 'center', lineHeight: 1.25,
+                  color: dayFull ? CELL.full.fg : '#1B2B4B',
+                }}
+              >
+                <span style={{
+                  fontFamily: 'var(--font-montserrat)',
+                  fontWeight: dayFull ? 800 : 600, fontSize: numSize,
+                }}>
+                  {row.totalFilled}/{row.totalCapacity}
+                </span>
+              </div>
             </div>
           )
         })}
+      </div>
+
+      {/* Legend — just the chip. The booked count is exactly booked: a pending
+          request shows as the +N chip and is NOT in it. Said outright because a
+          bare "4/14" otherwise invites the assumption that the 4 already
+          includes a request. The 1/5 shape needs no gloss. */}
+      <div style={{ ...muted, marginTop: '10px', fontSize: '11px', lineHeight: 1.7 }}>
+        <span style={{ ...SOFT_CHIP, fontSize: '10px', marginTop: 0, marginRight: '4px' }}>+1</span>
+        {' = requests not yet accepted, and not counted in the booked number.'}
       </div>
 
       {ranShort && (
@@ -406,8 +491,8 @@ const muted: React.CSSProperties = {
 function dateCell(dense: boolean): React.CSSProperties {
   return {
     display: 'flex', flexDirection: 'column', justifyContent: 'center',
-    padding: dense ? '6px 4px' : '10px 6px',
+    padding: dense ? '6px 4px' : '12px 8px',
     fontFamily: 'var(--font-montserrat)', fontWeight: 700,
-    fontSize: dense ? '12px' : '13px',
+    fontSize: dense ? '12px' : '14px',
   }
 }

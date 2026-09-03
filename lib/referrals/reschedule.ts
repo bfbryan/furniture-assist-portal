@@ -10,6 +10,20 @@
 // over it. It is deliberately NOT reimplemented per caller: a reschedule is
 // five coupled writes plus an email, and two copies would drift.
 //
+// DEPENDENCY (recorded, not fixed here): app/api/dawson/referrals/submit/route.ts
+// still carries two more copies of this booking logic — an inline
+// specific-date block and rescheduleExistingReferral() — which have already
+// drifted once (a reminder re-arm was added here and missed there). That route
+// is separately broken (it writes plaintext to lookup fields) and Ben is
+// rewriting it as part of the agency New Referral work; the consolidation onto
+// this function happens there.
+//
+// Sep 2026: `review` param added so a first-time booking (Needs Action "Approve"
+// on a pending referral) can flip Referral Review to 'Approved' in the SAME
+// PATCH as the slot write — no second call, no window where a failed follow-up
+// leaves a referral approved but booked nowhere. Reschedule callers (the OCR
+// pipeline, the Dawson reschedule route) pass nothing and are unaffected.
+//
 // What one call does:
 //   1. Snapshots the referral's current appointment into 'Original
 //      Appointment Date' / 'Original Appointment Time' (overwrite-every-time),
@@ -161,11 +175,18 @@ export async function rescheduleReferral({
   referralId,
   preferredDate,
   appointmentTime,
+  review,
 }: {
   referralId: string
   preferredDate: string | null | undefined
   /** A valid slot, or null/undefined/'' to let the allocator choose. */
   appointmentTime?: string | null
+  /**
+   * Optional. When set (the Needs Action "Approve" path passes 'Approved'),
+   * Referral Review is written in the same PATCH as the slot. Omit for a
+   * reschedule — the referral is already Approved and this must not touch it.
+   */
+  review?: string
 }): Promise<RescheduleResult> {
   if (!preferredDate) {
     return { ok: false, reason: 'missing-date', message: 'Preferred date is required.' }
@@ -342,6 +363,13 @@ export async function rescheduleReferral({
   if (shouldSnapshot) {
     fields['Original Appointment Date'] = currentApptDate
     fields['Original Appointment Time'] = currentApptTime
+  }
+
+  // First-booking Approve only — see the `review` param. Never set on a
+  // reschedule (shouldSnapshot true), which leaves an already-Approved
+  // referral's review untouched.
+  if (review && !shouldSnapshot) {
+    fields['Referral Review'] = review
   }
 
   const res = await fetch(
