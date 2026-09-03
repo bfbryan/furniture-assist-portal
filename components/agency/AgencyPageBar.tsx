@@ -11,18 +11,32 @@
 // Flat #1B2B4B — the same value as the sidebar, no gradient, so the two don't
 // seam where they meet. The 4px teal rule underneath is the old hero's.
 //
-// Sticky at top:0 on desktop (globals.css, >=1280) on every page EXCEPT the
-// referral detail page: there its own sub-header carries Reschedule / Cancel /
-// the status pill and is the more valuable thing to keep in view, so this bar
-// gets .fa-pagebar--plain and returns to normal flow, leaving the sub-header as
-// the single sticky element. Below 1280 this bar is never sticky — the shell's
-// navy top bar is the one sticky header on a phone.
+// STICKY ON EVERY ROUTE (globals.css). This bar carries identity and Sign out,
+// so it must not scroll away partway down any page — that once cost the user
+// their only sign-out path on a long referral record. It matches the Dawson
+// shell, which made the same change earlier.
+//   - Desktop (>=1280): sticky at top: 0, z-index 50.
+//   - Below 1280: sticky at top: 64px, directly under the shell's mobile top
+//     bar (z-index 30, below that bar's 40). The disabled New Referral button
+//     and the avatar slot both hide there — the mobile top bar carries the
+//     visible avatar and sign-out.
 //
-// Below 1280: the disabled New Referral button is hidden (globals.css) and the
-// avatar slot is hidden — the mobile top bar carries the visible avatar.
+// The referral detail page has its own sub-header (Reschedule / Cancel / the
+// status pill). On desktop it sticks at top: AGENCY_PAGE_BAR_HEIGHT, directly
+// below this bar; below 1280 it is position: static and scrolls with the page.
 
 import { usePathname } from 'next/navigation'
 import AgencyAvatarMenu from './AgencyAvatarMenu'
+
+// The bar's rendered desktop height in px. Mirrors `min-height: 60px` on
+// .fa-pagebar in globals.css (box-sizing: border-box, so the 4px top/bottom
+// borders are inside it; the flex content is shorter, so min-height governs).
+// The referral detail sub-header imports this for its sticky `top` offset so
+// the two heights can't drift — same arrangement as DAWSON_PAGE_BAR_HEIGHT.
+// A CSS media query can't read a JS constant, so the below-1280 offset
+// (top: 64px, under the mobile top bar) stays in globals.css; it isn't needed
+// here because the sub-header is static at that width.
+export const AGENCY_PAGE_BAR_HEIGHT = 60
 
 const TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
@@ -41,12 +55,6 @@ function titleFor(pathname: string): string {
   return ''
 }
 
-// The referral detail page (/referrals/[id]) is the one page with its own
-// sticky sub-header, so the page bar yields the top:0 slot to it there.
-function isReferralDetail(pathname: string): boolean {
-  return pathname.startsWith('/referrals/') && !TITLES[pathname]
-}
-
 export default function AgencyPageBar({
   userName,
   agencyName,
@@ -58,7 +66,7 @@ export default function AgencyPageBar({
   const title = titleFor(pathname)
 
   return (
-    <div className={`fa-pagebar${isReferralDetail(pathname) ? ' fa-pagebar--plain' : ''}`}>
+    <div className="fa-pagebar">
       <span
         className="fa-pagebar-title"
         style={{ color: 'white', fontSize: '14.5px', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
