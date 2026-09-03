@@ -41,6 +41,7 @@ import {
   type ConfirmModalState,
   type RescheduleModalState,
 } from '@/components/agency/ReferralActionModals'
+import { AGENCY_PAGE_BAR_HEIGHT } from '@/components/agency/AgencyPageBar'
 
 type DisbursedLine = { name: string; qty: string | number }
 
@@ -1130,9 +1131,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           page does it, so "what state is this in and what can I do about it"
           is answered before anything else on the page.
 
-          Sticky at 1280 and up only — see .fa-detail-header in globals.css.
-          Below that the shell's own navy top bar is the sticky one, and this
-          header scrolls with the page.
+          Sticky at 1280 and up only — see .fa-detail-header in globals.css. It
+          sticks directly below the page bar: `top` is set inline here from
+          AGENCY_PAGE_BAR_HEIGHT so the two can't drift, and the bar's higher
+          z-index keeps it painting over this where they meet. Below 1280 this
+          header is position: static and scrolls with the page; the shell's
+          mobile top bar and the page bar hold the top there.
 
           The flex layout lives in globals.css, not here, so the media query can
           reshape it. Desktop is one row — name at the left, actions + pill
@@ -1144,7 +1148,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           The three children are siblings for that reason: the pill can't stay
           inside the actions group or it couldn't take its own row.
       ------------------------------------------------------------------- */}
-      <header className="fa-detail-header" style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '18px 32px' }}>
+      <header className="fa-detail-header" style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '18px 32px', top: AGENCY_PAGE_BAR_HEIGHT }}>
         <div className="fa-detail-header-left" style={{ display: 'flex', alignItems: 'center', gap: '16px', minWidth: 0 }}>
           <button
             type="button"

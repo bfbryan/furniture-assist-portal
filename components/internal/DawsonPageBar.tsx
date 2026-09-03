@@ -25,8 +25,9 @@
 // than colliding with it, and the bar's z-index sits above theirs.
 //
 // On the detail routes the bar names the *section* (plural, matching the nav)
-// while the sub-header names the record. The agency side's
-// .fa-pagebar--plain variant is unrelated and untouched.
+// while the sub-header names the record. Both portals now work this way: the
+// agency bar (AgencyPageBar / .fa-pagebar) is sticky on every route too, with
+// its referral-detail sub-header offset below it by AGENCY_PAGE_BAR_HEIGHT.
 
 import { usePathname } from 'next/navigation'
 import DawsonAvatarMenu from './DawsonAvatarMenu'

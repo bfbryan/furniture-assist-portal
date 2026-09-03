@@ -77,21 +77,22 @@ h1, h2, h3, h4, h5, h6 {
    value, no gradient, so the two don't seam where they meet — with the old
    hero's 4px teal rule underneath.
 
-   Sticky at top: 0 on desktop (>=1280), z-index above page content and above
-   the referral detail sub-header (.fa-detail-header, z-index 40). The 4px teal
-   bottom rule is a border on this element, so it sticks with the bar. It stays
-   BELOW the fixed sidebar (z-index 100) and does not overlap it: the bar lives
-   inside <main>, which carries margin-left: 240px, so it starts at the
-   sidebar's right edge.
+   STICKY ON EVERY ROUTE. The bar carries identity and Sign out, so it must not
+   scroll out of reach on any page. Matches the Dawson shell.
+     - Desktop (>=1280): top: 0, z-index 50 — above page content and above the
+       referral detail sub-header (.fa-detail-header, z-index 40), which sticks
+       directly below it at top: AGENCY_PAGE_BAR_HEIGHT.
+     - Below 1280 (media query): top: 64px, under the shell's mobile top bar
+       (z-index 30, below that bar's 40).
+   The 4px teal bottom rule is a border on this element, so it sticks with the
+   bar. It stays BELOW the fixed sidebar (z-index 100) and does not overlap it:
+   the bar lives inside <main>, which carries margin-left: 240px, so it starts
+   at the sidebar's right edge.
 
-   Two exceptions where it returns to normal flow:
-     - Below 1280 (media query): the shell's own navy top bar is the single
-       sticky header on a phone; two stacked sticky bars would eat the screen.
-     - .fa-pagebar--plain (the referral detail page): that page has its own
-       sticky sub-header carrying Reschedule / Cancel / the status pill, which
-       is the more valuable of the two there — stacking both would take ~130px
-       off the top. So on that page this bar scrolls and the sub-header sticks
-       at top: 0 alone.
+   min-height: 60px is the bar's rendered desktop height (border-box, so the
+   two 4px borders are inside it; the flex content is shorter). It's mirrored
+   by AGENCY_PAGE_BAR_HEIGHT in AgencyPageBar.tsx, which the detail sub-header
+   reads for its `top` offset — keep the two in sync.
 
    flex-wrap lets the right-hand group (New Referral + avatar) drop to a second
    line on a narrow phone rather than push the title off-screen. Below 1280 the
@@ -113,12 +114,6 @@ h1, h2, h3, h4, h5, h6 {
   position: sticky;
   top: 0;
   z-index: 50;
-}
-
-/* Referral detail page — let the bar scroll so its sub-header can be the one
-   sticky element. See the note above. */
-.fa-pagebar--plain {
-  position: static;
 }
 
 .fa-pagebar-title {
@@ -441,23 +436,20 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* Sticky page header on the agency referral detail page, matching the internal
-   detail page. Sticky ONLY at 1280 and up: below that the portal shell already
-   has its own sticky navy top bar at top: 0, and a second sticky element there
-   would ride over it.
+   detail page. Sticky ONLY at 1280 and up (below that it is position: static —
+   see the media query).
 
-   This rule was already here and is structurally sound — verified in a
-   compiled-CSS browser harness that it sticks at >=1280. Nothing in the agency
-   shell's ancestor chain (.fa-portal, .fa-shell-main, the page's min-h-screen
-   wrapper, html, body) sets overflow, transform, filter or contain, so there is
-   no silent-sticky-failure to fix. What made it *look* broken: the page bar
-   above it (.fa-pagebar) was in normal flow, so it scrolled away and took the
-   visible "header area" with it; and below 1280 this element is deliberately
-   position: static. The page bar is sticky now on every other page; on THIS
-   page it stays in flow (.fa-pagebar--plain) so this sub-header is the single
-   sticky element and sits at top: 0. */
+   The `top` offset is set INLINE on the <header>, from AGENCY_PAGE_BAR_HEIGHT
+   (AgencyPageBar.tsx), so this sub-header sticks directly below the page bar
+   rather than colliding with it. The page bar is sticky on every route now,
+   this one included; z-index 40 here sits below the bar's 50 so the bar paints
+   over this where their edges meet.
+
+   Nothing in the agency shell's ancestor chain (.fa-portal, .fa-shell-main,
+   the page's min-h-screen wrapper, html, body) sets overflow, transform,
+   filter or contain, so the sticky is not silently broken. */
 .fa-detail-header {
   position: sticky;
-  top: 0;
   z-index: 40;
   display: flex;
   align-items: center;
@@ -664,8 +656,11 @@ h1, h2, h3, h4, h5, h6 {
 
   /* Explicit vertical stack instead of relying on flex-wrap, so the row order
      is deterministic:  [Back + name]  /  status pill  /  action buttons.
-     The shell's navy top bar is the only sticky header on a phone, so this one
-     goes static. */
+     position: static here — the shell's mobile top bar and the page bar
+     (sticky at top: 64px) already hold the top; a third stacked sticky
+     element would eat the screen. Static also means the inline `top` offset
+     from AGENCY_PAGE_BAR_HEIGHT is simply ignored at this width, so there's
+     nothing to recompute for mobile. */
   .fa-detail-header {
     position: static;
     flex-direction: column;
@@ -718,28 +713,26 @@ h1, h2, h3, h4, h5, h6 {
     display: none;
   }
 
-  /* Page bar on a phone: tighter side padding; the disabled New Referral
-     button is dropped (it's dead weight in the top-right of every page, and
-     the rail nav item already carries the SOON signal); and the page bar's
-     own avatar slot hides — the mobile top bar above carries the visible one. */
+  /* Page bar on a phone:
+       - tighter side padding;
+       - the disabled New Referral button is dropped (dead weight top-right of
+         every page; the rail nav item already carries the SOON signal), and
+         the avatar slot hides — the mobile top bar above carries the visible
+         avatar and sign-out;
+       - sticky directly under the shell's top bar (h-16 = 64px) so a long page
+         doesn't scroll the title, or that top bar, out of reach. z-index below
+         the top bar's 40 so it can never ride over it. Every route, the
+         referral detail page included: its sub-header goes position: static at
+         this width (see above), so there's no third sticky element to stack. */
   .fa-pagebar {
     padding: 8px 20px;
+    position: sticky;
+    top: 64px;
+    z-index: 30;
   }
   .fa-pagebar-newref,
   .fa-pagebar-avatar-slot {
     display: none;
-  }
-
-  /* Stick the page bar directly under the shell's top bar (h-16 = 64px) so a
-     long page doesn't scroll the page title out of reach. z-index below the
-     top bar's 40 so it can never ride over it. NOT the referral detail page
-     (.fa-pagebar--plain): there the bar stays in flow, same as desktop —
-     stacking top bar + page bar + its own sub-header is too much on a phone,
-     and the sub-header is the one worth keeping. */
-  .fa-pagebar:not(.fa-pagebar--plain) {
-    position: sticky;
-    top: 64px;
-    z-index: 30;
   }
 
   /* Section title and its action button compressed into each other; let the
