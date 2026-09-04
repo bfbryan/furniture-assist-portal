@@ -35,8 +35,16 @@ import { addDaysISO, differenceInDaysISO, easternTodayISO } from '@/lib/dates'
  */
 export const EDIT_CUTOFF_DAYS_BEFORE = 5
 
-/** Portal-facing statuses during which a referral is still open to edits. */
-export const EDITABLE_STATUSES = ['Submitted', 'Scheduling', 'Scheduled'] as const
+// Portal-facing statuses (getPortalStatus output) during which the identity /
+// address / items / household fields stay editable.
+//
+// TWO LISTS, KEEP THEM IN STEP. This one governs Client Information and Items
+// Requested; NOTES_EDITABLE_APPOINTMENT_STATUS (raw Airtable statuses, further
+// down) governs Your Notes. They diverged once — 'Reschedule' was added to the
+// notes list and missed here, so a client's address locked while the agency
+// was asking us to move the appointment *because the address had changed*. If
+// you add a status, decide whether it belongs in both.
+export const EDITABLE_STATUSES = ['Submitted', 'Scheduling', 'Scheduled', 'Reschedule'] as const
 
 /**
  * The status an agency user sees, derived from the two Airtable fields.
@@ -112,8 +120,13 @@ export function agencyEditWindow({
     return { editable: false, reason: 'status', cutoffDate }
   }
 
-  // Nothing scheduled yet — no appointment to count back from.
-  if (!cutoffDate) return { editable: true, cutoffDate: null }
+  // No Monday cutoff when there's no settled appointment date to count back
+  // from: a referral not yet scheduled (cutoffDate null), or one with a
+  // reschedule request pending — that row sits in Dawson's queue, not on a
+  // warehouse pick list, until he confirms a new date.
+  if (!cutoffDate || portalStatus === 'Reschedule') {
+    return { editable: true, cutoffDate: null }
+  }
 
   // Editable through the end of the cutoff day itself.
   const daysLeft = differenceInDaysISO(todayISO, cutoffDate)

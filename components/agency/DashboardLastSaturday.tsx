@@ -14,9 +14,9 @@
 // The card carries a muted grey accent (#9AA6B2, the Team "Inactive" grey):
 // this is a past, done-with Saturday, not something to act on urgently.
 
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { RescheduleModal, type AvailableDate, type RescheduleModalState } from './ReferralActionModals'
+import { RescheduleModal, type RescheduleModalState } from './ReferralActionModals'
 
 export type LastSatRow = {
   id: string
@@ -89,28 +89,17 @@ export default function DashboardLastSaturday({ rows, dateLabel, heading }: {
 }) {
   const router = useRouter()
   const [reschedule, setReschedule] = useState<RescheduleModalState>({ open: false, id: '', name: '' })
-  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  // Saturdays for the modal — same call + params as ReferralTable. Fetched
-  // lazily the first time the modal opens.
-  useEffect(() => {
-    if (!reschedule.open || availableDates.length) return
-    fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(d => setAvailableDates(Array.isArray(d) ? d : []))
-      .catch(() => {})
-  }, [reschedule.open, availableDates.length])
-
-  const submit = async (preferredDate: string | null, flexible: boolean, preferredTime: string | null) => {
+  const submit = async (preferredDate: string, preferredTime: string | null) => {
     setLoading(true)
     setError(null)
     try {
       const res = await fetch(`/api/referrals/${reschedule.id}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferredDate, preferredTime, flexible }),
+        body: JSON.stringify({ preferredDate, preferredTime }),
       })
       if (!res.ok) {
         const b = await res.json().catch(() => ({}))
@@ -198,7 +187,6 @@ export default function DashboardLastSaturday({ rows, dateLabel, heading }: {
 
       <RescheduleModal
         modal={reschedule}
-        availableDates={availableDates}
         onConfirm={submit}
         onClose={() => { setError(null); setReschedule({ open: false, id: '', name: '' }) }}
         loading={loading}

@@ -1,13 +1,12 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 // Cancel / withdraw / reschedule dialogs, shared with the referral detail
 // page so the agency portal has one copy of each. Unchanged.
 import {
   ConfirmModal,
   RescheduleModal,
-  type AvailableDate,
   type ConfirmModalState,
   type RescheduleModalState,
 } from './ReferralActionModals'
@@ -224,16 +223,7 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
   const [rescheduleModal, setRescheduleModal] = useState<RescheduleModalState>({ open: false, id: '', name: '' })
   const [loading, setLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
   const [openMenu, setOpenMenu] = useState<string | null>(null)
-
-  // Saturdays for the reschedule modal. 2-week lead (leadDays=14).
-  useEffect(() => {
-    fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(data => setAvailableDates(Array.isArray(data) ? data : []))
-      .catch(() => {})
-  }, [])
 
   // Cancel / Withdraw — unchanged: modal stays open and shows the error unless
   // the write actually landed.
@@ -256,28 +246,20 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
     }
   }
 
-  const handleRescheduleConfirm = async (
-    preferredDate: string | null,
-    flexible: boolean,
-    preferredTime: string | null,
-  ) => {
+  const handleRescheduleConfirm = async (preferredDate: string, preferredTime: string | null) => {
     setLoading(true)
     setActionError(null)
     try {
       const res = await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferredDate, preferredTime, flexible }),
+        body: JSON.stringify({ preferredDate, preferredTime }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
         setActionError(body.error || 'That did not go through. Please try again.')
         return
       }
-      fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
-        .then(r => r.json())
-        .then(data => setAvailableDates(Array.isArray(data) ? data : []))
-        .catch(() => {})
       setRescheduleModal({ open: false, id: '', name: '' })
       router.refresh()
     } catch {
@@ -376,7 +358,6 @@ export default function ReferralTable({ isAdmin = false }: { isAdmin?: boolean }
       />
       <RescheduleModal
         modal={rescheduleModal}
-        availableDates={availableDates}
         onConfirm={handleRescheduleConfirm}
         onClose={() => { setActionError(null); setRescheduleModal({ open: false, id: '', name: '' }) }}
         loading={loading}

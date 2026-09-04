@@ -13,7 +13,7 @@
 
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { addDaysISO, easternTodayISO, formatDateOnly } from '@/lib/dates'
 import { matchesSearch } from '@/lib/search'
@@ -24,7 +24,6 @@ import { agencyReferralActions } from '@/lib/referrals/agency-actions'
 import { useStaffFilter } from '@/components/agency/ActiveReferralsFilter'
 import {
   RescheduleModal,
-  type AvailableDate,
   type RescheduleModalState,
 } from '@/components/agency/ReferralActionModals'
 import {
@@ -241,34 +240,22 @@ export default function HistoryClient({ isAdmin }: { isAdmin: boolean }) {
   // picked back up. Same modal and endpoint the Active list and the detail
   // page use.
   const [rescheduleModal, setRescheduleModal] = useState<RescheduleModalState>({ open: false, id: '', name: '' })
-  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
   const [loading, setLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-
-  useEffect(() => {
-    fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
-      .then(res => res.json())
-      .then(data => setAvailableDates(Array.isArray(data) ? data : []))
-      .catch(() => {})
-  }, [])
 
   const openReschedule = (id: string, name: string) => {
     setActionError(null)
     setRescheduleModal({ open: true, id, name })
   }
 
-  const handleRescheduleConfirm = async (
-    preferredDate: string | null,
-    flexible: boolean,
-    preferredTime: string | null,
-  ) => {
+  const handleRescheduleConfirm = async (preferredDate: string, preferredTime: string | null) => {
     setLoading(true)
     setActionError(null)
     try {
       const res = await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferredDate, preferredTime, flexible }),
+        body: JSON.stringify({ preferredDate, preferredTime }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -371,7 +358,6 @@ export default function HistoryClient({ isAdmin }: { isAdmin: boolean }) {
     <>
       <RescheduleModal
         modal={rescheduleModal}
-        availableDates={availableDates}
         onConfirm={handleRescheduleConfirm}
         onClose={() => { setActionError(null); setRescheduleModal({ open: false, id: '', name: '' }) }}
         loading={loading}
