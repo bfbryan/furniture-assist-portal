@@ -171,9 +171,14 @@ export default function SaturdayCapacityGrid({
 }: Props) {
   const binary = capacityDisplay === 'binary'
   const today = easternTodayISO()
-  const windowStart = fromDate ?? today
   // Lead is measured from TODAY, not from the window start.
   const firstBookable = addDaysISO(today, Math.max(0, leadDays))
+  // Binary (agency) mode starts AT the first bookable Saturday: a date an
+  // agency cannot pick is not shown at all — not struck, not greyed. Counts
+  // (Dawson) mode still starts at today, so he sees and can book pre-lead
+  // Saturdays, greyed. A Blackout inside the two-week line therefore never
+  // reaches the agency grid; Blackouts beyond it still render struck.
+  const windowStart = fromDate ?? (binary ? firstBookable : today)
   // Over-fetch by four weeks so interleaved blackouts can't starve the window.
   const windowEnd = addDaysISO(windowStart, (weeks + 4) * 7)
 
@@ -253,7 +258,9 @@ export default function SaturdayCapacityGrid({
   // (the date cell's own font is set in the dateCell() style helper below)
   // One track for the date, then six equal ones: the five bookable hours + a
   // Total rollup. minmax(0, 1fr) — see the grid comment below for why not 1fr.
-  const gridCols = `${dateColW} repeat(6, minmax(0, 1fr))`
+  // Six data columns in counts mode (five hours + Total), five in binary — the
+  // day rollup is dropped there, "Open" after five Opens says nothing.
+  const gridCols = `${dateColW} repeat(${binary ? 5 : 6}, minmax(0, 1fr))`
 
   if (loading) {
     return <div style={shell}><div style={muted}>Loading Saturdays…</div></div>
@@ -320,7 +327,7 @@ export default function SaturdayCapacityGrid({
       <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: cellGap }}>
         {/* Header */}
         <div />
-        {[...TIME_ORDER, binary ? 'Day' : 'Total'].map((t) => (
+        {(binary ? TIME_ORDER : [...TIME_ORDER, 'Total']).map((t) => (
           <div
             key={`h-${t}`}
             style={{
@@ -360,37 +367,11 @@ export default function SaturdayCapacityGrid({
             )
           }
 
+          // Counts (Dawson) mode greys pre-lead Saturdays; binary mode never
+          // shows them (windowStart is firstBookable there), so this is always
+          // false in binary and no "inside the lead" row is rendered.
           const preLead = row.date < firstBookable
           const dayFull = row.totalFilled >= row.totalCapacity
-
-          // Agency (binary) grid: a Saturday inside the two-week lead is not a
-          // choice, so it reads as a struck row, not five greyed cells. The
-          // counts grid keeps its greyed-cell treatment (Dawson can book
-          // inside the lead when he has to).
-          if (preLead && binary) {
-            return (
-              <div
-                key={row.id}
-                style={{
-                  gridColumn: '1 / -1',
-                  display: 'grid', gridTemplateColumns: `${dateColW} 1fr`, gap: cellGap,
-                  background: BLACKOUT.band, borderRadius: '8px',
-                }}
-              >
-                <div style={{ ...dateCell(dense), color: BLACKOUT.text, textDecoration: 'line-through' }}>
-                  {fmtDate(row.date)}
-                </div>
-                <div
-                  style={{
-                    display: 'flex', alignItems: 'center',
-                    padding: cellPad, fontSize: subSize, color: BLACKOUT.text,
-                  }}
-                >
-                  Less than two weeks away
-                </div>
-              </div>
-            )
-          }
 
           return (
             <div key={row.id} style={{ display: 'contents' }}>
@@ -428,7 +409,12 @@ export default function SaturdayCapacityGrid({
                     }}
                   >
                     <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: binary ? headSize : numSize }}>
-                      {binary ? (full ? 'Full' : 'Open') : `${cell.booked}/${cell.cap}`}
+                      {/* Binary: the label carries the state, not just the fill —
+                          every cell says "Open" so the teal fill alone is easy
+                          to miss and fails on colour. */}
+                      {binary
+                        ? (isSelected ? 'Selected' : full ? 'Full' : 'Open')
+                        : `${cell.booked}/${cell.cap}`}
                     </span>
                     {/* Chip line — always present when soft counts are shown, so
                         every row is the same height. soft === 0 renders an
@@ -474,23 +460,25 @@ export default function SaturdayCapacityGrid({
                 )
               })}
 
-              {/* Day rollup — plain text, not a bordered cell like the five
-                  hours. counts: booked/capacity, red+bold at/over cap. binary:
-                  the day's Open / Full only (no number). */}
-              <div
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  padding: cellPad, textAlign: 'center', lineHeight: 1.25,
-                  color: dayFull ? CELL.full.fg : '#1B2B4B',
-                }}
-              >
-                <span style={{
-                  fontFamily: 'var(--font-montserrat)',
-                  fontWeight: dayFull ? 800 : 600, fontSize: binary ? headSize : numSize,
-                }}>
-                  {binary ? (dayFull ? 'Full' : 'Open') : `${row.totalFilled}/${row.totalCapacity}`}
-                </span>
-              </div>
+              {/* Total — counts mode only. Plain text (not a bordered cell like
+                  the five hours), booked/capacity, red+bold at/over cap. Binary
+                  mode drops the column entirely. */}
+              {!binary && (
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    padding: cellPad, textAlign: 'center', lineHeight: 1.25,
+                    color: dayFull ? CELL.full.fg : '#1B2B4B',
+                  }}
+                >
+                  <span style={{
+                    fontFamily: 'var(--font-montserrat)',
+                    fontWeight: dayFull ? 800 : 600, fontSize: numSize,
+                  }}>
+                    {row.totalFilled}/{row.totalCapacity}
+                  </span>
+                </div>
+              )}
             </div>
           )
         })}

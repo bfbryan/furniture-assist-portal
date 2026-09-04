@@ -15,32 +15,9 @@ export default async function NewReferralPage() {
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
 
-      {/* The navy top bar this page used to hand-roll now lives in
-          AgencyPortalShell, so there is one copy of it and it carries the nav. */}
-
-      {/* Hero */}
-      <div className="bg-[#1B2B4B] border-b-4 border-[#2A7F6F] px-8 py-9">
-        <div className="max-w-6xl mx-auto flex flex-wrap items-center justify-between gap-6">
-          <div>
-            <span className="text-xs font-bold tracking-widest uppercase text-[#3AA08D] mb-2 block">
-              Agency Portal
-            </span>
-            <h1 className="font-extrabold text-2xl text-white tracking-tight mb-1">
-              Submit a Client Referral
-            </h1>
-            <p className="text-sm text-white/50 font-light">
-              {agency.name} &nbsp;·&nbsp; {agencyUser.name}
-            </p>
-          </div>
-          <a href="/dashboard"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: 'rgba(255,255,255,0.65)', fontSize: '13px', fontWeight: 700, textDecoration: 'none' }}>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-              <polyline points="15 18 9 12 15 6"/>
-            </svg>
-            Back to Portal
-          </a>
-        </div>
-      </div>
+      {/* No hero: AgencyPortalShell's page bar already carries "New Referral"
+          and the nav, and the old navy block put ~200px between it and the
+          first field. */}
 
       {/* Content */}
       {/* Column tracks live in globals.css (.fa-new-referral-grid) so they can stack below 1280px. */}
@@ -82,10 +59,10 @@ export default async function NewReferralPage() {
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
               {[
-                { num: 1, title: 'Referral Received', desc: 'Your referral is submitted and added to the review queue.' },
-                { num: 2, title: 'Under Review', desc: 'Our team reviews within two weeks — we are an all-volunteer organization.' },
-                { num: 3, title: 'Appointment Scheduled', desc: 'Once approved, your client is contacted to schedule their pickup.' },
-                { num: 4, title: 'Pickup Complete', desc: 'Your client receives their furniture. You\'ll be notified when done.' },
+                { num: 1, title: 'Submitted', desc: 'Your request goes to our scheduler.' },
+                { num: 2, title: 'Confirmed', desc: "Usually within a few days, we'll confirm your slot or offer the nearest alternative." },
+                { num: 3, title: 'Appointment slip', desc: 'Emailed to you to print and give your client.' },
+                { num: 4, title: 'Pickup', desc: "You'll be notified once it's complete." },
               ].map((step, i, arr) => (
                 <div key={i} style={{ display: 'flex', gap: '12px', paddingBottom: i < arr.length - 1 ? '16px' : 0 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
