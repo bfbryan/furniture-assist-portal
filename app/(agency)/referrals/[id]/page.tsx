@@ -37,7 +37,6 @@ import { requestedSlot } from '@/lib/referrals/requested-slot'
 import {
   ConfirmModal,
   RescheduleModal,
-  type AvailableDate,
   type ConfirmModalState,
   type RescheduleModalState,
 } from '@/components/agency/ReferralActionModals'
@@ -267,16 +266,12 @@ const STATUS_COLORS: Record<string, { badgeBg: string; badgeText: string }> = {
 
 // ---------------------------------------------------------------- UI atoms
 
-// `fullWidth` makes a row span both columns of .fa-inforow-pairs. Only Address
-// uses it — it is the one row whose value runs to two lines. Below 1280px the
-// pairs grid collapses to a single column and the flag stops mattering.
-function InfoRow({ label, value, fullWidth }: {
+function InfoRow({ label, value }: {
   label: string
   value: React.ReactNode
-  fullWidth?: boolean
 }) {
   return (
-    <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1', gridColumn: fullWidth ? '1 / -1' : undefined }}>
+    <div style={{ display: 'flex', gap: '16px', padding: '10px 0', borderBottom: '1px solid #F7F5F1' }}>
       {/* Label width lives in globals.css (.fa-inforow-label) so it can narrow below 1280px. */}
       <div className="fa-inforow-label" style={{ flexShrink: 0, fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em', paddingTop: '1px' }}>
         {label}
@@ -503,13 +498,15 @@ function ClientInfoCard({ referral, locked, showLockedBadge, onSaved }: {
           <InfoRow label="Date of Birth" value={formatDob(referral.dob)} />
           <InfoRow label="Phone" value={referral.phone} />
           <InfoRow label="Language" value={referral.language} />
-          <InfoRow label="Address" fullWidth value={
+          {/* Address (two lines) sits in the left column; County fills the
+              otherwise-empty right cell opposite it, adding no height. */}
+          <InfoRow label="Address" value={
             referral.address ? (
               <>{referral.address}{referral.address2 ? `, ${referral.address2}` : ''}<br />
-              {referral.city}, {referral.state} {referral.zip}
-              {referral.county ? ` · ${referral.county} County` : ''}</>
+              {referral.city}, {referral.state} {referral.zip}</>
             ) : null
           } />
+          <InfoRow label="County" value={referral.county} />
           <InfoRow label="Household Size" value={referral.hhSize} />
           <InfoRow label="Children" value={referral.children} />
         </div>
@@ -900,7 +897,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // A cancel / withdraw / reschedule that did not go through. Cleared when a
   // modal opens; while it is set the modal stays open and shows it.
   const [actionError, setActionError] = useState<string | null>(null)
-  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
 
   useEffect(() => {
     params.then(({ id }) => {
@@ -921,17 +917,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         // actually arrived.
         .catch(() => { setError('Could not load this referral. Check your connection and try again.'); setLoading(false) })
     })
-    // Saturdays for the reschedule picker. leadDays=14 matches ReferralTable —
-    // agencies need more notice than Dawson does.
-    //
-    // Must be the AGENCY endpoint. /api/dawson/schedule/available is behind
-    // the staff allowlist and answers an agency session with 403, which is
-    // what left this picker empty. The agency route also enforces the 50-per-
-    // Saturday limit, which the Dawson one deliberately does not.
-    fetch('/api/agency/schedule/available?weeks=8&leadDays=14', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(data => setAvailableDates(Array.isArray(data) ? data : []))
-      .catch(() => {})
   }, [params])
 
   function refetch() {
@@ -965,18 +950,14 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     }
   }
 
-  async function handleRescheduleConfirm(
-    preferredDate: string | null,
-    flexible: boolean,
-    preferredTime: string | null,
-  ) {
+  async function handleRescheduleConfirm(preferredDate: string, preferredTime: string | null) {
     setActionLoading(true)
     setActionError(null)
     try {
       const res = await fetch(`/api/referrals/${rescheduleModal.id}/reschedule`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preferredDate, preferredTime, flexible }),
+        body: JSON.stringify({ preferredDate, preferredTime }),
       })
       if (!res.ok) {
         const body = await res.json().catch(() => ({}))
@@ -1115,7 +1096,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       />
       <RescheduleModal
         modal={rescheduleModal}
-        availableDates={availableDates}
         onConfirm={handleRescheduleConfirm}
         onClose={() => { setActionError(null); setRescheduleModal({ open: false, id: '', name: '' }) }}
         loading={actionLoading}
@@ -1200,11 +1180,17 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         {/* Why the Edit buttons are gone. Spans both columns — the lock applies
             to the whole record, including Your Notes in the right rail — and
             reads as a page-level note: gold left accent + tint kept, padding
-            and type stepped down from the old boxed warning. */}
-        {locked && editWindow.reason === 'past-cutoff' && (
+            and type stepped down from the old boxed warning.
+            Shown for EVERY locked state: 'past-cutoff' (a Scheduled referral
+            past the Monday deadline) and 'status' (Completed / Cancelled /
+            Withdrawn / Rejected). A locked card with no reason reads as a bug. */}
+        {locked && (
           <div style={{ gridColumn: '1 / -1', background: 'rgba(201,168,76,0.10)', borderLeft: '3px solid #C9A84C', borderRadius: '8px', padding: '7px 14px', fontSize: '11.5px', color: '#7A6A28', lineHeight: 1.5 }}>
-            Editing closed on {formatDate(editWindow.cutoffDate)}, the Monday before this appointment.
-            Contact Furniture Assist if something needs to change.
+            {editWindow.reason === 'past-cutoff' ? (
+              <>Editing closed on {formatDate(editWindow.cutoffDate)}, the Monday before this appointment. Contact Furniture Assist if something needs to change.</>
+            ) : (
+              <>This referral is closed and can no longer be edited. Contact Furniture Assist if something needs to change.</>
+            )}
           </div>
         )}
 

@@ -11,19 +11,25 @@
 //
 // These are deliberately NOT the modals in components/internal/modals/. Those
 // let Dawson pick an exact time slot and book it, because he owns the
-// schedule. An agency asks: it proposes a Saturday (or says it is flexible)
-// and Furniture Assist confirms by email. Same two buttons, different
-// authority, so the agency keeps its own wording and its own shape.
+// schedule. An agency asks: it proposes a Saturday and Furniture Assist
+// confirms by email. Same two buttons, different authority, so the agency
+// keeps its own wording and its own shape.
 //
-// Used by:
-//   - components/agency/ReferralTable.tsx        (row actions)
-//   - app/(agency)/referrals/[id]/page.tsx       (detail page action bar)
+// The reschedule picker is the shared SaturdayCapacityGrid in its agency
+// (binary Open/Full) config — the same one the New Referral form uses. There
+// is no "I'm flexible": auto-assignment takes next-available, which is the
+// earliest, which is 9am and its cap of five — a client who can't get a ride
+// before 10am gets booked at 9am and doesn't show. The escape hatch is a
+// mailto, a human path.
+//
+// Used by ReferralTable, the referral detail page, HistoryClient and
+// DashboardLastSaturday.
 
 import { useEffect, useState } from 'react'
-import { TIME_ORDER } from '@/lib/schedule/capacity'
 import { addDaysISO, formatDateOnly } from '@/lib/dates'
 import { formatSlot } from '@/lib/referrals/slot-display'
 import { NO_SHOW_RESCHEDULE_WINDOW_DAYS } from '@/lib/referrals/no-show-window'
+import SaturdayCapacityGrid, { type SlotSelection } from '@/components/internal/SaturdayCapacityGrid'
 
 // The facts the reader verifies before confirming — client name, appointment
 // date, time — are bold navy against the muted body text.
@@ -36,11 +42,6 @@ function slotPhrase(date?: string | null, time?: string | null): string | null {
   return formatSlot(date, time ?? null, iso =>
     formatDateOnly(iso, { month: 'short', day: 'numeric', year: 'numeric' }),
   )
-}
-
-export type AvailableDate = {
-  date: string           // 'YYYY-MM-DD'
-  slotsRemaining: number
 }
 
 // ---------- CANCEL / WITHDRAW MODAL ----------
@@ -118,7 +119,7 @@ export function ConfirmModal({ modal, onConfirm, onClose, loading, error }: {
   )
 }
 
-// ---------- RESCHEDULE MODAL (Flexible + Saturday picker) ----------
+// ---------- RESCHEDULE MODAL (binary Saturday grid) ----------
 export type RescheduleModalState = {
   open: boolean
   id: string
@@ -131,23 +132,20 @@ export type RescheduleModalState = {
   missed?: boolean
 }
 
-export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loading, submitError }: {
+export function RescheduleModal({ modal, onConfirm, onClose, loading, submitError }: {
   modal: RescheduleModalState
-  availableDates: AvailableDate[]
-  onConfirm: (preferredDate: string | null, flexible: boolean, preferredTime: string | null) => void
+  onConfirm: (preferredDate: string, preferredTime: string | null) => void
   onClose: () => void
   loading: boolean
   /** Set when the request came back non-OK. Shown in the same slot as the
       local validation error, and the modal stays open. */
   submitError?: string | null
 }) {
-  const [preferredDate, setPreferredDate] = useState('')
-  const [preferredTime, setPreferredTime] = useState('')
-  const [flexible, setFlexible] = useState(false)
+  const [sel, setSel] = useState<SlotSelection | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
-    if (modal.open) { setPreferredDate(''); setPreferredTime(''); setFlexible(false); setError(null) }
+    if (modal.open) { setSel(null); setError(null) }
   }, [modal.open])
 
   // Close on Esc — same as InviteStaffModal.
@@ -173,21 +171,15 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
 
   const handleConfirm = () => {
     setError(null)
-    if (!flexible && !preferredDate) {
-      setError('Pick a Saturday or check Flexible.'); return
-    }
-    onConfirm(
-      flexible ? null : preferredDate,
-      flexible,
-      flexible || !preferredTime ? null : preferredTime,
-    )
+    if (!sel) { setError('Pick a Saturday below.'); return }
+    onConfirm(sel.date, sel.time)
   }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
       style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '500px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
+      <div style={{ background: 'white', borderRadius: '16px', padding: '32px', maxWidth: '600px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
         <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
           Reschedule Appointment
         </h3>
@@ -205,75 +197,38 @@ export function RescheduleModal({ modal, availableDates, onConfirm, onClose, loa
           )}
         </p>
         {contextLine && (
-          <p style={{ fontSize: '13px', color: '#1B2B4B', margin: '0 0 20px' }}>
+          <p style={{ fontSize: '13px', color: '#1B2B4B', margin: '0 0 18px' }}>
             {modal.missed
               ? <>Reschedule available until <strong style={SUBJECT}>{deadline}</strong>.</>
               : <>Currently: <strong style={SUBJECT}>{slot}</strong></>}
           </p>
         )}
 
-        <label style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block' }}>
-          Preferred Saturday
-        </label>
-        <select
-          value={preferredDate}
-          onChange={e => setPreferredDate(e.target.value)}
-          disabled={flexible}
-          style={{ width: '100%', padding: '9px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '14px', color: '#2C3A4A', background: 'white', outline: 'none', opacity: flexible ? 0.5 : 1, cursor: flexible ? 'not-allowed' : 'pointer', marginBottom: '12px' }}
-        >
-          <option value="">Select a Saturday...</option>
-          {availableDates.map(d => {
-            const dateObj = new Date(d.date + 'T00:00:00')
-            const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-            return (
-              <option key={d.date} value={d.date}>
-                {label}
-              </option>
-            )
-          })}
-        </select>
+        <SaturdayCapacityGrid
+          mode="select"
+          capacityDisplay="binary"
+          enforceCap
+          leadDays={14}
+          weeks={4}
+          showSoft={false}
+          endpoint="/api/agency/schedule"
+          value={sel}
+          onChange={setSel}
+        />
 
-        {/* Preferred time — optional, and deliberately a plain select rather
-            than the internal modal's row of five capacity pills. Dawson picks
-            from live per-slot counts because he owns the schedule; an agency is
-            only stating a preference, and five pills across a phone screen is
-            about 60px each. Same control as the Saturday picker above it. */}
-        <label style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block' }}>
-          Preferred Time (optional)
-        </label>
-        <select
-          value={preferredTime}
-          onChange={e => setPreferredTime(e.target.value)}
-          disabled={flexible}
-          style={{ width: '100%', padding: '9px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '14px', color: '#2C3A4A', background: 'white', outline: 'none', opacity: flexible ? 0.5 : 1, cursor: flexible ? 'not-allowed' : 'pointer', marginBottom: '12px' }}
-        >
-          <option value="">No preference</option>
-          {TIME_ORDER.map(t => (
-            <option key={t} value={t}>{t}</option>
-          ))}
-        </select>
-
-        <label style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer', padding: '9px 14px', borderRadius: '7px', border: `1px solid ${flexible ? '#2A7F6F' : '#EDE9E1'}`, background: flexible ? '#EAF4F2' : 'white', marginBottom: '20px' }}>
-          <input type="checkbox" checked={flexible} onChange={e => { setFlexible(e.target.checked); if (e.target.checked) { setPreferredDate(''); setPreferredTime('') } }} style={{ display: 'none' }} />
-          <div style={{ width: '18px', height: '18px', borderRadius: '4px', border: `2px solid ${flexible ? '#2A7F6F' : '#EDE9E1'}`, background: flexible ? '#2A7F6F' : 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-            {flexible && (
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
-                <polyline points="20 6 9 17 4 12"/>
-              </svg>
-            )}
-          </div>
-          <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: flexible ? 600 : 400 }}>
-            I&apos;m flexible — Furniture Assist will pick a Saturday that works and email you the details.
-          </span>
-        </label>
+        <p style={{ fontSize: '12.5px', color: '#7A8899', marginTop: '12px', lineHeight: 1.6 }}>
+          Can&rsquo;t find a date that works? Email us at{' '}
+          <a href="mailto:agencies@furnitureassist.com" style={{ color: '#2A7F6F', fontWeight: 700 }}>agencies@furnitureassist.com</a>{' '}
+          and we&rsquo;ll find one with you.
+        </p>
 
         {(error || submitError) && (
-          <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#C0392B' }}>
+          <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '10px 14px', margin: '16px 0', fontSize: '13px', color: '#C0392B' }}>
             {error || submitError}
           </div>
         )}
 
-        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+        <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', marginTop: (error || submitError) ? 0 : '20px' }}>
           <button onClick={onClose} style={{ padding: '10px 20px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
             Back
           </button>
