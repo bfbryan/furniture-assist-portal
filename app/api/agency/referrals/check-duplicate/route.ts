@@ -52,6 +52,23 @@ const HEADERS = { Authorization: `Bearer ${API_KEY}` }
 
 const ACTIVE_STATUSES = new Set(['Scheduled', 'Pending Schedule'])
 
+// Everything a convert path prefills into the form so the agency edits only
+// what changed. SAME-AGENCY ONLY — built only for outcomes whose driving
+// referral is `.mine`, never for scope:'cross'. Demographics come off the
+// Clients row, the per-visit fields off that referral.
+export type ConvertPrefill = {
+  address: string
+  address2: string
+  city: string
+  state: string
+  zip: string
+  phone: string
+  language: string
+  hhSize: string
+  children: string
+  items: string[]
+}
+
 export type CheckDuplicateResult =
   // Paths 1, 2, 4, 5, 8 — new client, or history needing no agency-facing
   // notice (served elsewhere with no conflict / aged-out no-show / prior
@@ -61,16 +78,18 @@ export type CheckDuplicateResult =
   // Path 7 — do-not-serve. The submit route also 403s; this lets the form say
   // so without a failed request. Never states the reason.
   | { outcome: 'dns' }
-  // Path 6 (active appointment now) and the cross-agency form of path 9.
-  // `scope: 'cross'` carries NOTHING else.
-  | { outcome: 'blocked-active'; scope: 'same'; referralId: string; date: string | null; time: string | null }
+  // Path 6 (active appointment now), same agency. Carries a prefill because
+  // "Request a new date" reschedules a referral whose details are on file.
+  | { outcome: 'blocked-active'; scope: 'same'; referralId: string; date: string | null; time: string | null; prefill: ConvertPrefill }
+  // Path 6 / cross-agency path 9. `scope: 'cross'` carries NOTHING else —
+  // no id, no date, no prefill.
   | { outcome: 'blocked-active'; scope: 'cross' }
-  // Path 3 — no-show within the window, same agency. The form offers to update
-  // the existing referral into a reschedule request.
-  | { outcome: 'convert-noshow'; referralId: string }
+  // Path 3 — no-show within the window, same agency. The form updates the
+  // existing referral into a reschedule request.
+  | { outcome: 'convert-noshow'; referralId: string; prefill: ConvertPrefill }
   // Path 9 — a reschedule request from this agency is already pending. The form
-  // offers to change that one to the new date instead of adding a second.
-  | { outcome: 'convert-inflight'; referralId: string }
+  // updates that one to the new date instead of adding a second.
+  | { outcome: 'convert-inflight'; referralId: string; prefill: ConvertPrefill }
 
 type ReferralRow = {
   id: string
@@ -78,11 +97,33 @@ type ReferralRow = {
   date: string | null
   time: string | null
   mine: boolean
+  hhSize: string
+  children: string
+  items: string[]
 }
 
 function unwrap(v: unknown): string {
   if (Array.isArray(v)) return typeof v[0] === 'string' ? v[0] : ''
   return typeof v === 'string' ? v : ''
+}
+
+function asStr(v: unknown): string {
+  return typeof v === 'string' ? v : v == null ? '' : String(v)
+}
+
+function buildPrefill(clientFields: Record<string, unknown>, row: ReferralRow): ConvertPrefill {
+  return {
+    address: asStr(clientFields['Address']),
+    address2: asStr(clientFields['Address 2']),
+    city: asStr(clientFields['City']),
+    state: asStr(clientFields['State']),
+    zip: asStr(clientFields['Zip']),
+    phone: asStr(clientFields['Phone']),
+    language: asStr(clientFields['Preferred Language']),
+    hhSize: row.hhSize,
+    children: row.children,
+    items: row.items,
+  }
 }
 
 async function fetchJson(url: string) {
@@ -106,7 +147,10 @@ async function loadClientReferrals(
       `&fields%5B%5D=${encodeURIComponent('Appointment Status')}` +
       `&fields%5B%5D=${encodeURIComponent('Appointment Date')}` +
       `&fields%5B%5D=${encodeURIComponent('Appointment Time')}` +
-      `&fields%5B%5D=${encodeURIComponent('Referring Agency ID')}`
+      `&fields%5B%5D=${encodeURIComponent('Referring Agency ID')}` +
+      `&fields%5B%5D=${encodeURIComponent('# in HH')}` +
+      `&fields%5B%5D=${encodeURIComponent('# Children')}` +
+      `&fields%5B%5D=${encodeURIComponent('Items Requested')}`
     const data = await fetchJson(url)
     for (const r of data.records ?? []) {
       const agencyId = unwrap(r.fields['Referring Agency ID'])
@@ -118,26 +162,32 @@ async function loadClientReferrals(
         // A row with no agency id (no staff link) fails toward "not mine" —
         // never toward disclosing same-agency detail.
         mine: !!agencyId && !!callerAgencyId && agencyId === callerAgencyId,
+        hhSize: r.fields['# in HH'] != null ? String(r.fields['# in HH']) : '',
+        children: r.fields['# Children'] != null ? String(r.fields['# Children']) : '',
+        items: Array.isArray(r.fields['Items Requested']) ? (r.fields['Items Requested'] as string[]) : [],
       })
     }
   }
   return rows
 }
 
-function classify(rows: ReferralRow[]): CheckDuplicateResult {
+function classify(rows: ReferralRow[], clientFields: Record<string, unknown>): CheckDuplicateResult {
   // Most restrictive wins: an active appointment blocks outright, then an
   // in-flight reschedule, then a reschedulable no-show, then nothing.
   const active = rows.find((r) => ACTIVE_STATUSES.has(r.status))
   if (active) {
     return active.mine
-      ? { outcome: 'blocked-active', scope: 'same', referralId: active.id, date: active.date, time: active.time }
+      ? {
+          outcome: 'blocked-active', scope: 'same', referralId: active.id,
+          date: active.date, time: active.time, prefill: buildPrefill(clientFields, active),
+        }
       : { outcome: 'blocked-active', scope: 'cross' }
   }
 
   const reschedule = rows.find((r) => r.status === 'Reschedule')
   if (reschedule) {
     return reschedule.mine
-      ? { outcome: 'convert-inflight', referralId: reschedule.id }
+      ? { outcome: 'convert-inflight', referralId: reschedule.id, prefill: buildPrefill(clientFields, reschedule) }
       : { outcome: 'blocked-active', scope: 'cross' }
   }
 
@@ -145,7 +195,7 @@ function classify(rows: ReferralRow[]): CheckDuplicateResult {
     (r) => r.status === 'No Show' && r.mine && withinNoShowRescheduleWindow(r.date),
   )
   if (noShow) {
-    return { outcome: 'convert-noshow', referralId: noShow.id }
+    return { outcome: 'convert-noshow', referralId: noShow.id, prefill: buildPrefill(clientFields, noShow) }
   }
 
   return { outcome: 'proceed' }
@@ -181,7 +231,7 @@ export async function POST(req: Request) {
         const referralIds: string[] = clientRec.fields?.['Client Referrals'] ?? []
         result = referralIds.length === 0
           ? { outcome: 'proceed' }
-          : classify(await loadClientReferrals(referralIds, callerAgencyId))
+          : classify(await loadClientReferrals(referralIds, callerAgencyId), clientRec.fields ?? {})
       }
     }
   } catch (e) {
