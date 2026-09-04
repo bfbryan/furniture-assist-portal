@@ -29,15 +29,41 @@
 //   4. Links `Referring Staff Link` to the submitting Agency User; the agency
 //      is derived from that link.
 //
-// No scheduling. An agency submission lands unbooked — Referral Review
-// 'Pending', Appointment Status 'Pending Schedule' — in the Dawson "Needs
-// action" / "New referrals" card, which is where the slot gets chosen.
+// The referral lands as a REQUEST, not a booking — Referral Review 'Pending',
+// Appointment Status 'Pending Schedule'. If the form sent a preferred slot
+// (`preferredDate` / `preferredTime`), it is written as Preferred Date / Time
+// with Scheduling Flexibility 'Specific Date' — what the agency asked for. The
+// slot is confirmed (or swapped) by Dawson from the "Needs action" / "New
+// referrals" card. No Saturday Schedule lookup or cap enforcement here: the
+// grid enforces the 50/day cap client-side, and a stale request is visible to
+// Dawson against the live rail before he books, not silent.
+//
+// CONVERT BRANCH: with `rescheduleReferralId` in the body, this does not create
+// anything — it turns that existing referral into a reschedule REQUEST (agency
+// New Referral form, paths 3 / 6-same / 9) and writes any edited client
+// details in the same call. See the branch for why it does not route through
+// PATCH /api/referrals/[id].
 
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { getAgencyUserByClerkId } from '@/lib/airtable'
-import { assertClientMayBeReferred, DoNotServeError } from '@/lib/clients/do-not-serve'
+import { getAgencyUserByClerkId, updateClient } from '@/lib/airtable'
+import { REC_ID_RE } from '@/lib/airtable/client'
+import {
+  assertClientMayBeReferred,
+  assertReferralClientMayBeRescheduled,
+  doNotServeUnverifiedMessage,
+  DoNotServeError,
+} from '@/lib/clients/do-not-serve'
 import { findClientByIdentity, createClient, findClientMatches } from '@/lib/referrals/match'
+import { buildRescheduleRequestFields } from '@/lib/referrals/reschedule-request'
+import { isSaturday } from '@/lib/referrals/reschedule'
+import { VALID_TIMES } from '@/lib/schedule/capacity'
+import {
+  withinNoShowRescheduleWindow,
+  isAwaitingOutcome,
+  NO_SHOW_RESCHEDULE_WINDOW_DAYS,
+} from '@/lib/referrals/no-show-window'
+import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -77,10 +103,43 @@ export async function POST(req: Request) {
   if (!agencyUser) return NextResponse.json({ error: 'No agency linked' }, { status: 403 })
 
   const body = await req.json().catch(() => ({}))
+
+  // ------------------------------------------------------------------
+  // CONVERT BRANCH — turn an existing referral into a reschedule REQUEST.
+  //
+  // The agency New Referral form routes here (with rescheduleReferralId) for a
+  // no-show it can pick back up (path 3), an active appointment the agency
+  // wants a new date for (path 6, same agency), or a reschedule already in
+  // flight (path 9). It flips the referral to Appointment Status 'Reschedule'
+  // with the new Preferred Date/Time and writes any edited client details in
+  // the same call. Creates nothing; returns early.
+  //
+  // Deliberately NOT routed through PATCH /api/referrals/[id]: that endpoint
+  // runs agencyEditWindow(), and EDITABLE_STATUSES has no 'Reschedule', so it
+  // would 409 a referral already in that state — the paused lock investigation.
+  // Handling the write here keeps that bug contained to its own branch. The
+  // reschedule request IS the authorization to update the details, so there is
+  // no separate edit-window gate to apply.
+  // ------------------------------------------------------------------
+  if (body.rescheduleReferralId != null && body.rescheduleReferralId !== '') {
+    return convertToRescheduleRequest(body.rescheduleReferralId, body)
+  }
+
   const {
     firstName, lastName, address, address2, city, state, zip,
     phone, county, hhSize, children, dob, language, items, notes,
+    preferredDate, preferredTime,
   } = body as Record<string, string | string[] | undefined>
+
+  const wantsSlot = typeof preferredDate === 'string' && preferredDate.trim() !== ''
+  const pd = wantsSlot ? (preferredDate as string).trim() : ''
+  if (wantsSlot && !isSaturday(pd)) {
+    return NextResponse.json({ error: 'Preferred date must be a Saturday.' }, { status: 400 })
+  }
+  const pt = typeof preferredTime === 'string' ? preferredTime.trim() : ''
+  if (pt && !VALID_TIMES.has(pt)) {
+    return NextResponse.json({ error: `Invalid appointment time: ${pt}` }, { status: 400 })
+  }
 
   const fn = typeof firstName === 'string' ? firstName.trim() : ''
   const ln = typeof lastName === 'string' ? lastName.trim() : ''
@@ -165,6 +224,13 @@ export async function POST(req: Request) {
     'Possible Duplicate': isDuplicate,
   }
   if (typeof notes === 'string' && notes.trim()) fields['External Notes'] = notes.trim()
+  // The slot the agency asked for. Stays a preference — Dawson books it (or
+  // swaps it) from Needs Action. Time is optional.
+  if (wantsSlot) {
+    fields['Scheduling Flexibility'] = 'Specific Date'
+    fields['Preferred Date'] = pd
+    if (pt) fields['Preferred Time'] = pt
+  }
 
   const res = await fetch(`https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Client Referrals')}`, {
     method: 'POST',
@@ -172,7 +238,10 @@ export async function POST(req: Request) {
     body: JSON.stringify({ fields, typecast: true }),
   })
   if (!res.ok) {
-    return NextResponse.json({ error: await res.text() }, { status: 500 })
+    return NextResponse.json(
+      { error: (await res.text()) || 'Airtable rejected the referral.' },
+      { status: 500 },
+    )
   }
 
   return NextResponse.json({ success: true, duplicate: isDuplicate })
@@ -182,4 +251,127 @@ export async function POST(req: Request) {
 function str(v: string | string[] | undefined): string {
   if (Array.isArray(v)) return (v[0] ?? '').trim()
   return typeof v === 'string' ? v.trim() : ''
+}
+
+// Client-detail fields the convert branch may update, keyed to the Clients
+// table (address / phone live there — they reach Client Referrals as lookups).
+const CONVERT_CLIENT_FIELD_MAP: Record<string, string> = {
+  address: 'Address',
+  address2: 'Address 2',
+  city: 'City',
+  state: 'State',
+  zip: 'Zip',
+  phone: 'Phone',
+  language: 'Preferred Language',
+}
+
+async function convertToRescheduleRequest(
+  rawId: unknown,
+  body: Record<string, unknown>,
+): Promise<NextResponse> {
+  // Malformed id is a 400, not a 500. A caller (Pass B's form, or a retry)
+  // sending a stray space would otherwise reach getReferralById with a broken
+  // URL, which throws — and an unhandled throw here is a bare 500 with no body.
+  const referralId = typeof rawId === 'string' ? rawId.trim() : ''
+  if (!REC_ID_RE.test(referralId)) {
+    return NextResponse.json({ error: 'Invalid referral id.' }, { status: 400 })
+  }
+
+  // Every path out of here returns JSON. The outer catch turns any unexpected
+  // throw — a thrown requireAgencyReferralAccess, a network blip in
+  // updateClient — into a diagnosable 500 body instead of an empty one.
+  try {
+    const access = await requireAgencyReferralAccess(referralId)
+    if (access.denied) return access.denied
+    const { referral } = access
+
+    // Non-convertible states, mirroring POST /api/referrals/[id]/reschedule.
+    const review = referral.referralReview
+    const status = referral.appointmentStatus
+    if (review === 'Rejected' || review === 'Withdrawn' || status === 'Completed' || status === 'Cancelled') {
+      return NextResponse.json({ error: 'This referral can no longer be changed.' }, { status: 409 })
+    }
+    if (status === 'No Show' && !withinNoShowRescheduleWindow(referral.appointmentDate)) {
+      return NextResponse.json(
+        { error: `This appointment was missed more than ${NO_SHOW_RESCHEDULE_WINDOW_DAYS} days ago. Please submit a new referral instead.` },
+        { status: 409 },
+      )
+    }
+    if (isAwaitingOutcome(status, referral.appointmentDate)) {
+      return NextResponse.json(
+        { error: "This appointment's date has passed and the outcome hasn't been recorded yet. Contact Furniture Assist if it needs to change." },
+        { status: 409 },
+      )
+    }
+
+    // Do-not-serve — same reporting as the create paths.
+    try {
+      await assertReferralClientMayBeRescheduled({
+        clientId: referral.clientId,
+        firstName: referral.firstName,
+        lastName: referral.lastName,
+        dob: referral.dob,
+      })
+    } catch (e: unknown) {
+      if (e instanceof DoNotServeError) {
+        return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
+      }
+      return NextResponse.json(
+        { error: doNotServeUnverifiedMessage('the reschedule request was not submitted', e instanceof Error ? e.message : String(e)) },
+        { status: 502 },
+      )
+    }
+
+    const pd = typeof body.preferredDate === 'string' ? body.preferredDate.trim() : ''
+    if (!pd || !isSaturday(pd)) {
+      return NextResponse.json({ error: 'A preferred Saturday is required.' }, { status: 400 })
+    }
+    const pt = typeof body.preferredTime === 'string' ? body.preferredTime.trim() : ''
+    if (pt && !VALID_TIMES.has(pt)) {
+      return NextResponse.json({ error: `Invalid appointment time: ${pt}` }, { status: 400 })
+    }
+
+    // Referral row: the shared reschedule-request bag + any edited per-visit
+    // fields. Only keys the caller actually sent are touched.
+    const refFields: Record<string, unknown> = {
+      ...buildRescheduleRequestFields({ preferredDate: pd, preferredTime: pt }),
+    }
+    if ('hhSize' in body) refFields['# in HH'] = toIntOrNull(body.hhSize)
+    if ('children' in body) refFields['# Children'] = toIntOrNull(body.children)
+    if ('items' in body) {
+      const raw = body.items
+      refFields['Items Requested'] = Array.isArray(raw) ? raw : typeof raw === 'string' && raw ? [raw] : []
+    }
+    if (typeof body.notes === 'string') {
+      refFields['External Notes'] = body.notes.trim() || null
+    }
+
+    // Client row: address / phone / etc.
+    const clientFields: Record<string, unknown> = {}
+    for (const [key, field] of Object.entries(CONVERT_CLIENT_FIELD_MAP)) {
+      if (typeof body[key] === 'string') clientFields[field] = (body[key] as string).trim()
+    }
+
+    if (Object.keys(clientFields).length > 0 && referral.clientId) {
+      await updateClient(referral.clientId, clientFields)
+    }
+    const res = await fetch(
+      `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Client Referrals')}/${referralId}`,
+      { method: 'PATCH', headers: HEADERS, body: JSON.stringify({ fields: refFields, typecast: true }) },
+    )
+    if (!res.ok) {
+      return NextResponse.json(
+        { error: (await res.text()) || 'Airtable rejected the reschedule request.' },
+        { status: 500 },
+      )
+    }
+
+    return NextResponse.json({ success: true, converted: true, referralId })
+  } catch (e: unknown) {
+    console.error('convert-to-reschedule-request failed:', e)
+    return NextResponse.json(
+      { error: `The reschedule request could not be completed: ${e instanceof Error ? e.message : String(e)}` },
+      { status: 500 },
+    )
+  }
 }
