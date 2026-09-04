@@ -37,6 +37,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
 import { VALID_TIMES } from '@/lib/schedule/capacity'
+import { buildRescheduleRequestFields } from '@/lib/referrals/reschedule-request'
 import {
   NO_SHOW_RESCHEDULE_WINDOW_DAYS,
   withinNoShowRescheduleWindow,
@@ -160,27 +161,15 @@ export async function POST(
     )
   }
 
-  const fields: Record<string, any> = {
-    'Scheduling Flexibility': isFlexible ? 'Flexible' : 'Specific Date',
-    // This alone parks the record in the Needs Action "Reschedule requested"
-    // card — that card filters on Appointment Status = 'Reschedule' directly.
-    // Referral Review is deliberately not touched: the referral stays 'Approved'.
-    'Appointment Status': 'Reschedule',
-    // Age of the request, for the Needs Action card. Stamped here and in the
-    // OCR no-usable-date branch (lib/scanning/ocr.ts) — the only two writers of
-    // status 'Reschedule' — so the age is right whichever origin it came from.
-    'Reschedule Requested At': new Date().toISOString(),
-  }
-
-  if (isFlexible) {
-    fields['Preferred Date'] = null
-    fields['Preferred Time'] = null
-  } else {
-    fields['Preferred Date'] = preferredDate
-    // Cleared rather than left alone when no time is given, so a stale
-    // preference from an earlier request cannot be read as this one's.
-    fields['Preferred Time'] = hasTime ? preferredTime : null
-  }
+  // Field bag is shared with the agency New Referral form's convert branch
+  // (POST /api/referrals/submit) so the two writers of a reschedule request
+  // cannot drift. `hasTime` above already validated preferredTime; the helper
+  // re-derives it the same way.
+  const fields = buildRescheduleRequestFields({
+    preferredDate,
+    preferredTime,
+    flexible: isFlexible,
+  })
 
   const res = await fetch(
     `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/Client%20Referrals/${id}`,

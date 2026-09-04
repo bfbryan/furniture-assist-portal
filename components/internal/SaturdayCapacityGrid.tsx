@@ -63,6 +63,24 @@ type Props = {
   /** Compact rows for the rail / modal. */
   dense?: boolean
 
+  /**
+   * 'counts' (default, Dawson) — every cell shows `booked/cap`.
+   * 'binary' (agency) — every cell shows only Open / Full. Exposing the
+   * numbers invites optimising against the schedule; an agency needs to know
+   * whether a slot is available, not how close it is to the cap. A pre-lead
+   * Saturday renders as a struck "Less than two weeks away" row here rather
+   * than five greyed cells.
+   */
+  capacityDisplay?: 'counts' | 'binary'
+
+  /**
+   * Grid data endpoint. Default '/api/dawson/schedule' (Dawson-gated). The
+   * agency callers pass '/api/agency/schedule' — same wire shape, agency auth,
+   * no soft counts. `?from`/`?to` are always sent; `?soft`/`?exclude` only
+   * when showSoft / excludeReferralId are set, which the agency route ignores.
+   */
+  endpoint?: string
+
   /** Escape hatch: render these rows instead of fetching. No horizon note. */
   initialData?: SaturdayGridRow[]
 
@@ -146,9 +164,12 @@ export default function SaturdayCapacityGrid({
   enforceCap = false,
   showSoft = true,
   dense = false,
+  capacityDisplay = 'counts',
+  endpoint = '/api/dawson/schedule',
   initialData,
   refreshToken,
 }: Props) {
+  const binary = capacityDisplay === 'binary'
   const today = easternTodayISO()
   const windowStart = fromDate ?? today
   // Lead is measured from TODAY, not from the window start.
@@ -179,7 +200,7 @@ export default function SaturdayCapacityGrid({
     if (showSoft) qs.set('soft', '1')
     if (excludeReferralId) qs.set('exclude', excludeReferralId)
 
-    fetch(`/api/dawson/schedule?${qs.toString()}`, { cache: 'no-store' })
+    fetch(`${endpoint}?${qs.toString()}`, { cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
       .then((body: SaturdayGridResponse) => {
         if (cancelled) return
@@ -193,7 +214,7 @@ export default function SaturdayCapacityGrid({
     return () => {
       cancelled = true
     }
-  }, [initialData, windowStart, windowEnd, showSoft, excludeReferralId, retry, refreshToken])
+  }, [initialData, endpoint, windowStart, windowEnd, showSoft, excludeReferralId, retry, refreshToken])
 
   const { visible, bookableShown } = useMemo(() => {
     if (!data) return { visible: [] as SaturdayGridRow[], bookableShown: 0 }
@@ -299,7 +320,7 @@ export default function SaturdayCapacityGrid({
       <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: cellGap }}>
         {/* Header */}
         <div />
-        {[...TIME_ORDER, 'Total'].map((t) => (
+        {[...TIME_ORDER, binary ? 'Day' : 'Total'].map((t) => (
           <div
             key={`h-${t}`}
             style={{
@@ -342,6 +363,35 @@ export default function SaturdayCapacityGrid({
           const preLead = row.date < firstBookable
           const dayFull = row.totalFilled >= row.totalCapacity
 
+          // Agency (binary) grid: a Saturday inside the two-week lead is not a
+          // choice, so it reads as a struck row, not five greyed cells. The
+          // counts grid keeps its greyed-cell treatment (Dawson can book
+          // inside the lead when he has to).
+          if (preLead && binary) {
+            return (
+              <div
+                key={row.id}
+                style={{
+                  gridColumn: '1 / -1',
+                  display: 'grid', gridTemplateColumns: `${dateColW} 1fr`, gap: cellGap,
+                  background: BLACKOUT.band, borderRadius: '8px',
+                }}
+              >
+                <div style={{ ...dateCell(dense), color: BLACKOUT.text, textDecoration: 'line-through' }}>
+                  {fmtDate(row.date)}
+                </div>
+                <div
+                  style={{
+                    display: 'flex', alignItems: 'center',
+                    padding: cellPad, fontSize: subSize, color: BLACKOUT.text,
+                  }}
+                >
+                  Less than two weeks away
+                </div>
+              </div>
+            )
+          }
+
           return (
             <div key={row.id} style={{ display: 'contents' }}>
               <div style={{ ...dateCell(dense), color: preLead ? '#B8C1CC' : '#1B2B4B' }}>
@@ -377,8 +427,8 @@ export default function SaturdayCapacityGrid({
                       textAlign: 'center', font: 'inherit', lineHeight: 1.25,
                     }}
                   >
-                    <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: numSize }}>
-                      {cell.booked}/{cell.cap}
+                    <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: binary ? headSize : numSize }}>
+                      {binary ? (full ? 'Full' : 'Open') : `${cell.booked}/${cell.cap}`}
                     </span>
                     {/* Chip line — always present when soft counts are shown, so
                         every row is the same height. soft === 0 renders an
@@ -424,10 +474,9 @@ export default function SaturdayCapacityGrid({
                 )
               })}
 
-              {/* Total — a rollup, not a bookable slot, so it's plain text in
-                  its column, not a bordered cell like the five hours (the box
-                  made it read as the same kind of thing). Red, bold, when the
-                  day is at or over capacity. */}
+              {/* Day rollup — plain text, not a bordered cell like the five
+                  hours. counts: booked/capacity, red+bold at/over cap. binary:
+                  the day's Open / Full only (no number). */}
               <div
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -437,9 +486,9 @@ export default function SaturdayCapacityGrid({
               >
                 <span style={{
                   fontFamily: 'var(--font-montserrat)',
-                  fontWeight: dayFull ? 800 : 600, fontSize: numSize,
+                  fontWeight: dayFull ? 800 : 600, fontSize: binary ? headSize : numSize,
                 }}>
-                  {row.totalFilled}/{row.totalCapacity}
+                  {binary ? (dayFull ? 'Full' : 'Open') : `${row.totalFilled}/${row.totalCapacity}`}
                 </span>
               </div>
             </div>
@@ -450,11 +499,14 @@ export default function SaturdayCapacityGrid({
       {/* Legend — just the chip. The booked count is exactly booked: a pending
           request shows as the +N chip and is NOT in it. Said outright because a
           bare "4/14" otherwise invites the assumption that the 4 already
-          includes a request. The 1/5 shape needs no gloss. */}
-      <div style={{ ...muted, marginTop: '10px', fontSize: '11px', lineHeight: 1.7 }}>
-        <span style={{ ...SOFT_CHIP, fontSize: '10px', marginTop: 0, marginRight: '4px' }}>+1</span>
-        {' = requests not yet accepted, and not counted in the booked number.'}
-      </div>
+          includes a request. The 1/5 shape needs no gloss. Suppressed in
+          binary mode, which shows neither counts nor the chip. */}
+      {!binary && (
+        <div style={{ ...muted, marginTop: '10px', fontSize: '11px', lineHeight: 1.7 }}>
+          <span style={{ ...SOFT_CHIP, fontSize: '10px', marginTop: 0, marginRight: '4px' }}>+1</span>
+          {' = requests not yet accepted, and not counted in the booked number.'}
+        </div>
+      )}
 
       {ranShort && (
         <div style={{ ...muted, marginTop: '10px' }}>
