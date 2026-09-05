@@ -64,6 +64,7 @@ import {
   NO_SHOW_RESCHEDULE_WINDOW_DAYS,
 } from '@/lib/referrals/no-show-window'
 import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
+import { AGENCY_SUBMISSION_ENABLED } from '@/lib/flags'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -89,6 +90,19 @@ function toIntOrNull(v: unknown): number | null {
 export async function POST(req: Request) {
   const { userId, orgId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Phase 1 gate — agency submission is closed in production until launch.
+  // Covers BOTH branches below (a normal create and the rescheduleReferralId
+  // convert), since both are the agency New Referral form. The reschedule
+  // REQUEST endpoint POST /api/referrals/[id]/reschedule is separate and stays
+  // open. The page at /referrals/new redirects for the same reason. Flip
+  // AGENCY_SUBMISSION_ENABLED in lib/flags.ts to open both.
+  if (!AGENCY_SUBMISSION_ENABLED) {
+    return NextResponse.json(
+      { error: 'Online referral submission is not available yet.' },
+      { status: 403 },
+    )
+  }
 
   // Inactive agency org — a hard block, same as before.
   if (orgId) {

@@ -1,11 +1,18 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById } from '@/lib/airtable'
+import { AGENCY_SUBMISSION_ENABLED } from '@/lib/flags'
 import NewReferralForm from '@/components/agency/NewReferralForm'
 
 export default async function NewReferralPage() {
   const { userId } = await auth()
   if (!userId) redirect('/sign-in')
+
+  // Phase 1 gate — agency submission is closed in production until launch. The
+  // form is unlinked (the nav item is a disabled "coming soon" stub), so this
+  // only catches a bookmark or a typed URL. POST /api/referrals/submit carries
+  // the same gate as a 403 so the route can't be driven directly either.
+  if (!AGENCY_SUBMISSION_ENABLED) redirect('/dashboard')
 
   const agencyUser = await getAgencyUserByClerkId(userId)
   if (!agencyUser) redirect('/dashboard')
