@@ -19,13 +19,20 @@ import { NextResponse } from 'next/server'
  * sidebar. He is still listed in DAWSON_PORTAL_USER_IDS below, through this
  * constant, so there is one copy of the ID and the two can never disagree.
  */
-export const PORTAL_ADMIN_USER_ID = 'user_3BmTnGTVcPCuCJTpP8uKrQm4KXj'
+export const PORTAL_ADMIN_USER_ID = 'user_3IucFy8xqxAyoXPfacFHgGPyuV4'
 
+// PRODUCTION Clerk instance user ids. The test instance issues different ids
+// for the same people, so a copy of this list from before the key swap will
+// lock everyone out. Granting or revoking internal-portal access is a code
+// change here plus a deploy — there is no runtime toggle.
+//
+// Chase was removed here (Sep 2026), not silently dropped: his test-instance
+// id was in this list and no production id replaces it. He has no internal
+// portal access for now.
 export const DAWSON_PORTAL_USER_IDS = [
   PORTAL_ADMIN_USER_ID,               // Ben
-  'user_3BodwTW4I7Vamt4t7wD3qeA7boM', // Ray
-  'user_3BtKn01OMXSmi7eSsWvzvnEroCg', // Dawson
-  'user_3H6FGzH6riZZ3W4JCFe5UXBAEc1', // Chase
+  'user_3IucSNiWwOpgwqcIeRjwI6S0zmt', // Ray
+  'user_3IucUmjXoBKLYxhQOLmmuMIrslk', // Dawson
 ] as const
 
 export type DawsonUserId = typeof DAWSON_PORTAL_USER_IDS[number]
