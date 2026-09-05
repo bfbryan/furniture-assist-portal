@@ -1,8 +1,10 @@
 // app/(agency)/dashboard/page.tsx
 // Agency Dashboard — home page for the agency portal.
 //
-//   Left  (actionable):  two count cards (This Saturday, Awaiting approval)
-//                        + the Last Saturday outcome card.
+//   Left  (actionable):  the This Saturday count card on its own row, then the
+//                        two gold "waiting on Furniture Assist" counts paired
+//                        beneath it (Awaiting approval, Reschedules awaiting a
+//                        new date), then the Last Saturday outcome card.
 //   Right (reference):    an Announcement card + "What to tell your client".
 //
 // Quick Actions is gone — every item in it was one click away in the rail.
@@ -120,6 +122,15 @@ export default async function DashboardPage() {
 
   const pendingCount = scopedReferrals.filter(r => r.referralReview === 'Pending').length
 
+  // Reschedule requests the agency has sent and is waiting on a new Saturday
+  // for. Keys on Appointment Status alone — the same predicate the Active
+  // list's "Reschedule requested" group uses (components/agency/ReferralTable),
+  // so this count and that group can't disagree. Scoped for free: it filters
+  // the same role-scoped `scopedReferrals` a staff user only ever sees their own.
+  const rescheduleCount = scopedReferrals.filter(
+    r => r.appointmentStatus === 'Reschedule',
+  ).length
+
   const lastSatRows: LastSatRow[] = scopedReferrals
     .filter(r =>
       effectiveAppointmentDate(r) === lastSaturdayISO &&
@@ -148,12 +159,12 @@ export default async function DashboardPage() {
   // The counts already differ by role (query-level scoping above); the labels
   // say so, so a Staff user doesn't read their own number as the office total.
   const mine = isAdmin ? '' : 'your '
-  const thisSatLine =
-    thisSatCount === 0
-      ? isAdmin
-        ? 'no appointments this Saturday'
-        : 'you have no appointments this Saturday'
-      : `${mine}appointment${thisSatCount === 1 ? '' : 's'} this Saturday, ${nextSatShort}`
+  // A plain noun phrase, not a sentence: the big numeral above it does the
+  // counting, so at zero this reads "0 appointments this Saturday, Sep 12".
+  // A self-contained label ("no appointments this Saturday") would put the
+  // word "no" under the numeral "0" and state zero twice. Same shape as the
+  // two gold cards' lines below.
+  const thisSatLine = `${mine}appointment${thisSatCount === 1 ? '' : 's'} this Saturday, ${nextSatShort}`
 
   return (
     <div className="min-h-screen bg-[#F7F5F1]">
@@ -164,15 +175,31 @@ export default async function DashboardPage() {
       >
         {/* ============ LEFT — actionable ============ */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0 }}>
-          {/* Count cards — side by side when they fit, stacked otherwise (auto-fit). */}
-          <div className="fa-dash-counts" style={{ display: 'grid', gap: '16px' }}>
+          {/* Count cards — two rows. "This Saturday" is a confirmed, time-bound
+              fact; the two gold cards both mean "waiting to hear back from
+              Furniture Assist", so they're paired on the second row while the
+              teal card sits apart above them. The teal card spans the full
+              left-column width (a direct grid child, no column template); the
+              gold pair (.fa-dash-counts, auto-fit) fills that same width as two
+              cards and drops to 1-up below ~432px. So the teal card, the gold
+              pair, and the Last Saturday card below all keep one left and right
+              edge. */}
+          <div style={{ display: 'grid', gap: '16px' }}>
             <CountCard accent="teal" count={thisSatCount} line={thisSatLine} href="/referrals/active" />
-            <CountCard
-              accent="gold"
-              count={pendingCount}
-              line={`${mine}referrals awaiting Furniture Assist approval`}
-              href="/referrals/active"
-            />
+            <div className="fa-dash-counts" style={{ display: 'grid', gap: '16px' }}>
+              <CountCard
+                accent="gold"
+                count={pendingCount}
+                line={`${mine}referrals awaiting Furniture Assist approval`}
+                href="/referrals/active"
+              />
+              <CountCard
+                accent="gold"
+                count={rescheduleCount}
+                line={`${mine}reschedule request${rescheduleCount === 1 ? '' : 's'} awaiting a new date`}
+                href="/referrals/active"
+              />
+            </div>
           </div>
 
           <DashboardLastSaturday
