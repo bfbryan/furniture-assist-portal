@@ -40,10 +40,12 @@ type ScopedReferral = {
   id: string
   clientName: string
   appointmentDate: string | null
+  appointmentTime: string | null
   appointmentStatus: string
   referralReview: string
   clientReceiptUrl: string | null
   originalAppointmentDate: string | null
+  originalAppointmentTime: string | null
   address: string | null
   address2: string | null
   city: string | null
@@ -146,6 +148,8 @@ export default async function DashboardPage() {
       canReschedule:
         r.appointmentStatus === 'No Show' &&
         withinNoShowRescheduleWindow(r.appointmentDate, todayISO),
+      apptDate: r.appointmentDate ?? r.originalAppointmentDate,
+      apptTime: r.appointmentTime ?? r.originalAppointmentTime,
       note:
         r.appointmentStatus === 'Scheduled'
           ? 'Furniture Assist has not recorded this appointment yet.'

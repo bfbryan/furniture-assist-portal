@@ -30,6 +30,11 @@ export type LastSatRow = {
   receiptUrl: string | null
   /** Missed AND still inside the no-show reschedule window (computed server-side). */
   canReschedule: boolean
+  /** The missed slot's date/time — passed to the reschedule modal so it shows
+      "Missed appointment: {date}" and the window deadline. Only the No Show
+      rows that can reschedule need it. */
+  apptDate: string | null
+  apptTime: string | null
   /** Muted line under the address — only the 'Scheduled' rows carry one. */
   note?: string
 }
@@ -167,7 +172,7 @@ export default function DashboardLastSaturday({ rows, dateLabel, heading }: {
                   <span style={{ fontSize: '12px', color: '#7A8899', lineHeight: 1.3 }}>Receipt available Tuesday</span>
                 )}
                 {r.outcome === 'No Show' && r.canReschedule && (
-                  <OutlineBtn tone="amber" onClick={() => { setError(null); setReschedule({ open: true, id: r.id, name: r.clientName }) }}>
+                  <OutlineBtn tone="amber" onClick={() => { setError(null); setReschedule({ open: true, id: r.id, name: r.clientName, missed: true, date: r.apptDate, time: r.apptTime }) }}>
                     Reschedule
                   </OutlineBtn>
                 )}

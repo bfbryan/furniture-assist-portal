@@ -124,11 +124,15 @@ export type RescheduleModalState = {
   open: boolean
   id: string
   name: string
-  /** The appointment being moved, shown above the picker for context. */
+  /** The appointment being moved (Scheduled) or the one that was missed
+      (no-show), shown above the picker. A no-show keeps its Saturday link, so
+      this is populated the same way — every caller that can open on a missed
+      referral must pass it, plus `missed`. */
   date?: string | null
   time?: string | null
-  /** No-show reschedule: there's nothing to move, so the line reads
-      "Missed:" not "Currently:". */
+  /** No-show rebook. Flips the context line to "Missed appointment:" (+ the
+      window-deadline line) and the intro to the "nothing is booked" wording —
+      there is no appointment standing, so the Scheduled copy would be wrong. */
   missed?: boolean
 }
 
@@ -162,12 +166,17 @@ export function RescheduleModal({ modal, onConfirm, onClose, loading, submitErro
 
   const shortDate = (iso: string) =>
     formatDateOnly(iso, { month: 'short', day: 'numeric', year: 'numeric' })
+  // Both cases show a bold "{label}: {date} at {time}" line — "Currently:" for
+  // a Scheduled referral, "Missed appointment:" for a no-show (it isn't
+  // current, and a missed referral keeps its Saturday link so the date is on
+  // `modal.date` just the same). The missed case adds a second, muted line for
+  // the 25-day window deadline — the one fact that decides act-today vs act-
+  // next-week. It renders only when a caller passes `missed` AND a date; the
+  // Active-list caller never opens on a missed referral.
   const slot = slotPhrase(modal.date, modal.time)
-  // Same cutoff the detail page shows: appointmentDate + the window constant.
   const deadline = modal.missed && modal.date
     ? shortDate(addDaysISO(modal.date, NO_SHOW_RESCHEDULE_WINDOW_DAYS))
     : null
-  const contextLine = modal.missed ? deadline : slot
 
   const handleConfirm = () => {
     setError(null)
@@ -183,24 +192,21 @@ export function RescheduleModal({ modal, onConfirm, onClose, loading, submitErro
         <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
           Reschedule Appointment
         </h3>
-        <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: contextLine ? '10px' : '20px' }}>
-          {modal.missed ? (
-            <>
-              Request a new date for <strong style={SUBJECT}>{modal.name}</strong>
-              {slotPhrase(modal.date, null) && <>, who missed their appointment on <strong style={SUBJECT}>{slotPhrase(modal.date, null)}</strong></>}.
-              {' '}Furniture Assist will confirm by email.
-            </>
-          ) : (
-            <>
-              Request a new date for <strong style={SUBJECT}>{modal.name}</strong>. Furniture Assist will confirm the change by email — the current appointment stands until then.
-            </>
-          )}
+        <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: (slot || deadline) ? '10px' : '20px' }}>
+          Request a new date for <strong style={SUBJECT}>{modal.name}</strong>.{' '}
+          {modal.missed
+            ? <>Furniture Assist will confirm the new appointment by email — nothing is booked for this client until then.</>
+            : <>Furniture Assist will confirm the change by email — the current appointment stands until then.</>}
         </p>
-        {contextLine && (
-          <p style={{ fontSize: '13px', color: '#1B2B4B', margin: '0 0 18px' }}>
-            {modal.missed
-              ? <>Reschedule available until <strong style={SUBJECT}>{deadline}</strong>.</>
-              : <>Currently: <strong style={SUBJECT}>{slot}</strong></>}
+        {slot && (
+          <p style={{ fontSize: '13px', color: '#1B2B4B', margin: `0 0 ${deadline ? '4px' : '18px'}` }}>
+            {modal.missed ? 'Missed appointment: ' : 'Currently: '}
+            <strong style={SUBJECT}>{slot}</strong>
+          </p>
+        )}
+        {deadline && (
+          <p style={{ fontSize: '12px', color: '#7A8899', margin: '0 0 18px' }}>
+            Reschedule available until <strong style={{ color: '#1B2B4B' }}>{deadline}</strong>.
           </p>
         )}
 

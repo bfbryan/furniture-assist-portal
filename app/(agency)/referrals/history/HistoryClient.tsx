@@ -39,7 +39,9 @@ export type Referral = {
   clientName: string
   referralDate: string
   appointmentDate: string | null
+  appointmentTime: string | null
   originalAppointmentDate: string | null
+  originalAppointmentTime: string | null
   referralReview: string
   appointmentStatus: string
   clientReceiptUrl: string | null
@@ -243,9 +245,19 @@ export default function HistoryClient({ isAdmin }: { isAdmin: boolean }) {
   const [loading, setLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  const openReschedule = (id: string, name: string) => {
+  // Only ever called on a missed row (the o === 'missed' branch below). A
+  // no-show keeps its Saturday link, so appointmentDate/Time carry the missed
+  // slot; fall back to the Original snapshot for the rare row where it doesn't.
+  const openReschedule = (r: Referral) => {
     setActionError(null)
-    setRescheduleModal({ open: true, id, name })
+    setRescheduleModal({
+      open: true,
+      id: r.id,
+      name: r.clientName,
+      missed: true,
+      date: r.appointmentDate ?? r.originalAppointmentDate,
+      time: r.appointmentTime ?? r.originalAppointmentTime,
+    })
   }
 
   const handleRescheduleConfirm = async (preferredDate: string, preferredTime: string | null) => {
@@ -341,7 +353,7 @@ export default function HistoryClient({ isAdmin }: { isAdmin: boolean }) {
       const within = withinNoShowRescheduleWindow(r.appointmentDate)
       const { isReschedulable } = agencyReferralActions('Missed Appointment', within)
       return isReschedulable
-        ? [{ label: 'Reschedule', color: '#C9A84C', icon: RESCHEDULE_ICON, onClick: () => openReschedule(r.id, r.clientName) }]
+        ? [{ label: 'Reschedule', color: '#C9A84C', icon: RESCHEDULE_ICON, onClick: () => openReschedule(r) }]
         : []
     }
     return []
