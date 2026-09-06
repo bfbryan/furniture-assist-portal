@@ -46,7 +46,7 @@ import {
   getAutomationSettings,
   logAgencyEmailSend,
 } from "@/lib/airtable/reminders";
-import { fillTemplate } from "@/lib/notifications/template";
+import { fillTemplateReport } from "@/lib/notifications/template";
 
 const FROM_ADDRESS =
   process.env.REMINDER_FROM_ADDRESS || "onboarding@resend.dev";
@@ -90,7 +90,32 @@ export async function sendPortalAccountEmail(params: {
 
     const template = automation.fields.Template || "";
     const subject = (automation.fields["Subject Line"] || automationName).trim();
-    const html = fillTemplate(template, tokens);
+    const { html, unresolved } = fillTemplateReport(template, tokens);
+
+    // Guardrail for a mistake this codebase has shipped silently four times:
+    // code and an Airtable template that each look right on their own but
+    // disagree on a name, so the send succeeds with a hole in it.
+    //   - a staff invite greeted "Dear ," — route passed `firstName`, template
+    //     wanted `First Name`
+    //   - a Send Day multi-select would have stalled three crons with no error
+    //   - getAllReferrals filtered on a field that empties, hiding twenty
+    //     cancelled referrals
+    //   - the agency admin invite link rendered as about:blank — route passed
+    //     `token`, template wanted `magicLink`
+    // Every one rendered as "" and reported success. The four templates this
+    // function sends all expect every placeholder to be filled (no
+    // ChangeUrl/ChangeLabel-style pass-ahead tokens, unlike the crons), so any
+    // unresolved key here is a real route/template drift. Log it — loudly, but
+    // still send: a partly-filled account email beats a blocked invite, and the
+    // failure mode is cosmetic, not a bounce.
+    if (unresolved.length > 0) {
+      console.error(
+        `${automationName}: template placeholder(s) rendered empty — no value passed for ${unresolved
+          .map((k) => `"${k}"`)
+          .join(", ")}. Email sent anyway. The route and the Airtable template ` +
+          `disagree on a token name; align them.`
+      );
+    }
 
     const { data, error } = await getResend().emails.send({
       from: FROM_ADDRESS,
@@ -118,12 +143,21 @@ export async function sendPortalAccountEmail(params: {
     // a lost paper trail, not a lost email — and letting it throw to the outer
     // catch reported a delivered invite as { sent: false }, which invites
     // someone to resend and burn a second sign-in link.
+    //
+    // Status stays "Sent" — the email went out. When placeholders were
+    // unresolved, the note goes in Bounce Reason: it's the only free-text field
+    // on Email Log, and a "Sent" row that carries one is unusual enough to draw
+    // the eye without a schema change. A dedicated "Render Warnings" field would
+    // be cleaner — flagged for Ben, my call to use Bounce Reason meanwhile.
     await logAgencyEmailSend({
       automationRecordId: automation.id,
       agencyRecordId,
       recipientEmail: to,
       resendMessageId: data?.id,
       status: "Sent",
+      bounceReason: unresolved.length
+        ? `Sent, but ${unresolved.length} template placeholder(s) rendered empty: ${unresolved.join(", ")}`
+        : undefined,
     }).catch((logErr) =>
       console.error(`${automationName}: sent, but the Email Log row could not be written:`, logErr)
     );
