@@ -4,7 +4,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { TIME_CAPS, TIME_ORDER, describeDayLoad, type TimeSlot } from '@/lib/schedule/capacity'
+import { TIME_CAPS, type TimeSlot } from '@/lib/schedule/capacity'
 import { matchesSearch } from '@/lib/search'
 import { FIELD_BORDER } from '@/lib/ui/field-border'
 import { maskMdyInput, parseMdyToISO } from '@/lib/dates'
@@ -31,7 +31,6 @@ const ITEMS = [
 
 // Per-slot capacities come from lib/schedule/capacity.ts.
 const SLOT_CAP = TIME_CAPS
-const TIME_SLOTS = TIME_ORDER
 
 
 
@@ -326,8 +325,11 @@ export default function DawsonAddReferralPage() {
 
 
 
+  // availableDates now feeds only the over-50 override note in the echo; the
+  // grid fetches its own data. No loading flag — the note just doesn't render
+  // until the fetch lands, which is fine for a line that only appears on a
+  // full slot.
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
-  const [availabilityLoading, setAvailabilityLoading] = useState(true)
 
   // Date of birth is TYPED, mm/dd/yyyy, not picked. See handleDobChange below.
   const [dobText, setDobText] = useState('')
@@ -456,14 +458,12 @@ export default function DawsonAddReferralPage() {
   // different file (lib/schedule/flexible.ts) and is untouched: that one is for
   // a date chosen FOR somebody, not one Dawson picked.
 const loadAvailability = () => {
-  setAvailabilityLoading(true)
   fetch('/api/dawson/schedule/available?weeks=8&leadDays=1')
     .then(r => r.json())
     .then(data => {
       setAvailableDates(Array.isArray(data) ? data : [])
-      setAvailabilityLoading(false)
     })
-    .catch(() => setAvailabilityLoading(false))
+    .catch(() => {})
 }
 
 
@@ -876,6 +876,9 @@ useEffect(() => {
     // "None of these are the same person" -- proceed as a genuinely new client.
     setBannerDismissed(true)
     setMatchResolution(null)
+    // If he'd entered reschedule mode off one of these matches, "not the same
+    // person" contradicts it — drop back to the full form.
+    setRescheduleMode(null)
   }
 
   // "Change" on the collapsed confirmation strip -- reopens the full
@@ -1045,123 +1048,6 @@ useEffect(() => {
 
 
 
-  // Reschedule-only view: shown once staff pick "reschedule their
-  // no-show" in the duplicate-check modal. Nothing else about the
-  // existing Client Referrals record changes -- items, household,
-  // agency, notes all stay exactly as they were -- so the only thing
-  // left to collect is the new date/time. Reuses the same
-  // availableDates/preferredDate/appointmentTime state as the full form.
-  if (rescheduleMode) {
-    const rSelectedDate = availableDates.find(d => d.date === form.preferredDate)
-    const rIsOverride =
-      form.appointmentTime !== null &&
-      rSelectedDate !== undefined &&
-      bookedForSlot(rSelectedDate, form.appointmentTime) >= SLOT_CAP[form.appointmentTime]
-
-    return (
-      <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-        <div style={{ maxWidth: '600px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
-            <div style={SECTION}>Reschedule No-Show</div>
-            <p style={{ fontSize: '13.5px', color: '#2C3A4A', lineHeight: 1.6, marginBottom: '24px' }}>
-              Rescheduling {rescheduleMode.clientName}'s missed appointment. This reuses their existing
-              referral — no new record is created, and everything else on file (items, household, notes,
-              agency) stays as it was. Just pick the new date and time.
-            </p>
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={LABEL}>New Saturday *</label>
-              <select
-                style={{ ...INPUT, cursor: 'pointer' }}
-                value={form.preferredDate}
-                onChange={e => {
-                  set('preferredDate', e.target.value)
-                  set('appointmentTime', null)
-                }}
-                disabled={availabilityLoading}
-              >
-                <option value="">
-                  {availabilityLoading ? 'Loading dates...' : 'Select a Saturday...'}
-                </option>
-                {availableDates.map(d => {
-                  const dateObj = new Date(d.date + 'T00:00:00')
-                  const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-                  return (
-                    <option key={d.date} value={d.date}>
-                      {label} — {d.totalBooked !== undefined
-                        ? describeDayLoad(d.totalBooked, d.dayCapacity)
-                        : `${d.slotsRemaining} slot${d.slotsRemaining === 1 ? '' : 's'}`}
-                    </option>
-                  )
-                })}
-              </select>
-            </div>
-
-            {form.preferredDate && (
-              <div style={{ marginBottom: '20px' }}>
-                <label style={LABEL}>Time (optional — leave blank to auto-schedule)</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
-                  {TIME_SLOTS.map(slot => {
-                    const booked = bookedForSlot(rSelectedDate, slot)
-                    const cap = SLOT_CAP[slot]
-                    const full = booked >= cap
-                    const selected = form.appointmentTime === slot
-                    return (
-                      <button
-                        key={slot}
-                        type="button"
-                        onClick={() => set('appointmentTime', selected ? null : slot)}
-                        style={{
-                          padding: '10px 6px', borderRadius: '8px',
-                          border: selected ? '2px solid #2A7F6F' : full ? '1px solid #F0C4BE' : '1px solid #EDE9E1',
-                          background: selected ? '#2A7F6F' : full ? '#FDEDEC' : 'white',
-                          color: selected ? 'white' : full ? '#C0392B' : '#2C3A4A',
-                          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
-                          fontFamily: 'var(--font-montserrat)',
-                        }}
-                      >
-                        <span style={{ fontSize: '13px', fontWeight: 800, lineHeight: 1 }}>{slot}</span>
-                        <span style={{ fontSize: '11px', fontWeight: 600, opacity: selected ? 0.85 : 1, lineHeight: 1 }}>
-                          {booked}/{cap}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-                {rIsOverride && form.appointmentTime && (
-                  <div style={{ fontSize: '12px', color: '#8A6A00', marginTop: '10px' }}>
-                    Override — {form.appointmentTime} is at capacity ({bookedForSlot(rSelectedDate, form.appointmentTime)}/{SLOT_CAP[form.appointmentTime]} booked)
-                  </div>
-                )}
-              </div>
-            )}
-
-            {error && (
-              <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: '#C0392B' }}>
-                {error}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => setRescheduleMode(null)}
-                style={{ flex: 1, padding: '13px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13.5px', cursor: 'pointer' }}
-              >
-                Back
-              </button>
-              <button
-                onClick={handleRescheduleConfirm}
-                disabled={loading}
-                style={{ flex: 2, padding: '13px', borderRadius: '8px', border: 'none', background: loading ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13.5px', cursor: loading ? 'not-allowed' : 'pointer' }}
-              >
-                {loading ? 'Rescheduling...' : 'Confirm Reschedule'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
 
 
@@ -1176,6 +1062,13 @@ useEffect(() => {
           the two-column split gave, which is what was cramping them. */}
       <div style={{ maxWidth: '840px', margin: '0 auto', padding: '32px' }}>
         <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
+
+          {/* Reschedule-a-no-show is a mode of THIS page, not a separate view:
+              the duplicate card, its compare table and the appointment history
+              stay on screen — that's the context he's deciding from. Every
+              editable section hides; only the banner, the Appointment grid
+              (for the new slot) and Submit remain. */}
+          {!rescheduleMode && (<>
 
           <p style={{ fontSize: '12.5px', color: '#7A8899', marginBottom: '4px' }}>All fields required unless noted.</p>
 
@@ -1452,6 +1345,8 @@ useEffect(() => {
             </div>
           </div>
 
+          </>)}
+
           {/* Inline duplicate-client banner -- not a popup. Appears here,
               right after the identity fields that trigger it and right
               before Address, so it's in view both immediately (comparing
@@ -1502,6 +1397,8 @@ useEffect(() => {
           )}
 
 
+
+          {!rescheduleMode && (<>
 
           {/* Address */}
           <div style={{ ...SECTION, marginTop: '24px' }}>Address</div>
@@ -1578,6 +1475,16 @@ useEffect(() => {
             ))}
           </div>
 
+          </>)}
+
+          {rescheduleMode && (
+            <p style={{ fontSize: '13.5px', color: '#2C3A4A', lineHeight: 1.6, marginTop: '8px', marginBottom: '20px' }}>
+              Rescheduling <strong>{rescheduleMode.clientName}</strong>&rsquo;s missed appointment. This reuses
+              their existing referral — no new record is created, and everything else on file (items,
+              household, notes, agency) stays as it was. Just pick the new date and time.
+            </p>
+          )}
+
 
 
           {/* Appointment — the capacity grid IS the picker, inline here where
@@ -1604,6 +1511,8 @@ useEffect(() => {
 
 
 
+          {!rescheduleMode && (<>
+
           {/* Notes */}
           <div style={{ ...SECTION, marginTop: '8px' }}>Notes <span style={{ fontWeight: 600, color: '#9AA6B2', letterSpacing: 0 }}>(optional)</span></div>
           <textarea
@@ -1612,6 +1521,8 @@ useEffect(() => {
             onChange={e => set('notes', e.target.value)}
             placeholder="Any special circumstances or additional information..."
           />
+
+          </>)}
 
 
 
@@ -1649,11 +1560,29 @@ useEffect(() => {
             </div>
           )}
 
+          {/* Back out of reschedule mode — the typed form and the banner are
+              untouched, so the full form reappears exactly as it was. */}
+          {rescheduleMode && (
+            <button
+              type="button"
+              onClick={() => setRescheduleMode(null)}
+              style={{ background: 'transparent', border: 'none', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 600, fontSize: '12.5px', cursor: 'pointer', padding: '4px 0', marginBottom: '10px' }}
+            >
+              &larr; Back &mdash; this isn&rsquo;t a reschedule
+            </button>
+          )}
 
-
-          <button onClick={handleSubmit} disabled={loading || checkingDuplicate}
-            style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: (loading || checkingDuplicate) ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', cursor: (loading || checkingDuplicate) ? 'not-allowed' : 'pointer', letterSpacing: '0.02em' }}>
-            {checkingDuplicate ? 'Checking for existing client...' : loading ? 'Submitting...' : 'Submit Referral'}
+          {/* One Submit button — label and handler swap on rescheduleMode. Two
+              submit buttons on one page is a hazard, and with every editable
+              section hidden the mode is already unmistakable. */}
+          <button
+            onClick={rescheduleMode ? handleRescheduleConfirm : handleSubmit}
+            disabled={loading || checkingDuplicate}
+            style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: (loading || checkingDuplicate) ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', cursor: (loading || checkingDuplicate) ? 'not-allowed' : 'pointer', letterSpacing: '0.02em' }}
+          >
+            {rescheduleMode
+              ? (loading ? 'Rescheduling…' : 'Confirm Reschedule')
+              : (checkingDuplicate ? 'Checking for existing client...' : loading ? 'Submitting...' : 'Submit Referral')}
           </button>
 
         </div>
