@@ -129,7 +129,9 @@ export type FormSnapshot = {
 
 const STATUS_COLOR: Record<string, string> = {
   Completed: '#2A7F6F',
-  'No Show': '#C0392B',
+  // Gold, not red: "No Show · 8d ago" is a factual status, not an alert, and
+  // the Dawson Referrals list already renders this state in FA gold (#C9A84C).
+  'No Show': '#C9A84C',
   Cancelled: '#7A8899',
   Scheduled: '#1B2B4B',
   'Pending Schedule': '#C9A84C',
@@ -147,7 +149,7 @@ function statusColor(status: string): string {
 // recommended path when it's offered.
 const ACTION_BTN: React.CSSProperties = {
   padding: '11px', borderRadius: '8px', background: 'white',
-  border: '1px solid #EDE9E1', color: '#2C3A4A', textAlign: 'center',
+  border: '1px solid #EDE9E1', color: '#2C3A4A', textAlign: 'center', lineHeight: 1.35,
   fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
 }
 const ACTION_BTN_OVERRIDE: React.CSSProperties = {
@@ -396,13 +398,20 @@ function MatchCard({
         </div>
       ))}
 
-      {/* Three outcomes, equal weight — none is solid-filled, so nothing on
-          the card shouts. The one consequential path (book over an existing
-          appointment) gets a gold outline to mark it as the deliberate
-          override, not to make it loud. "Reschedule the existing appointment",
-          when offered, is the recommended path and gets a teal outline.
-          Cancel = "this is a duplicate, drop it" (clears the form on this
-          page). "Not the same person" — see the CAUTION below re: DNS.
+      {/* One action per card that isn't an exit, none solid-filled so nothing
+          shouts, then the two exits side by side:
+            - reschedule (No-Show inside 25 days): "Reschedule the existing
+              appointment" only. No competing new-booking — inside the window
+              it IS the same request, and beyond it the match falls into the
+              history case which offers the new booking instead. Offering both
+              here would re-make a decision the window already made, on the one
+              screen meant to STOP duplicate records.
+            - active: "Book a second appointment" — the deliberate override,
+              gold outline to mark it, not to make it loud.
+            - history: "Book an appointment" — a normal choice, neutral.
+            - DNS: no booking path at all.
+          Cancel + "Not the same person" (or, on an exact name+DOB match,
+          "Different person…") share a row — both exits, same treatment.
 
           DNS CAUTION — the record-id assert reads the LINKED client, so
           dismissing a genuine DNS match here forks a fresh unflagged Clients
@@ -411,32 +420,26 @@ function MatchCard({
           share a name have different DOBs and pass it, the same person
           dismissed here does not. Keep both checks. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
-        {doNotServe ? (
-          <>
-            <button onClick={onCancel} style={ACTION_BTN}>Cancel this referral</button>
-            <button onClick={() => onNotSamePerson(match)} style={ACTION_BTN}>{notSameLabel}</button>
-          </>
-        ) : (
-          <>
-            {primary === 'reschedule' && (
-              <button onClick={() => onResolve('reschedule', match)} style={ACTION_BTN_RESCHEDULE}>
-                Reschedule the existing appointment
-              </button>
-            )}
-            <button
-              onClick={() => onResolve('book-new', match)}
-              style={primary === 'history' ? ACTION_BTN : ACTION_BTN_OVERRIDE}
-            >
-              {primary === 'active'
-                ? 'Book a second appointment'
-                : primary === 'reschedule'
-                  ? 'Book a new appointment instead'
-                  : 'Book an appointment'}
-            </button>
-            <button onClick={onCancel} style={ACTION_BTN}>Cancel this referral</button>
-            <button onClick={() => onNotSamePerson(match)} style={ACTION_BTN}>{notSameLabel}</button>
-          </>
+        {!doNotServe && primary === 'reschedule' && (
+          <button onClick={() => onResolve('reschedule', match)} style={ACTION_BTN_RESCHEDULE}>
+            Reschedule the existing appointment
+          </button>
         )}
+        {!doNotServe && primary === 'active' && (
+          <button onClick={() => onResolve('book-new', match)} style={ACTION_BTN_OVERRIDE}>
+            Book a second appointment
+          </button>
+        )}
+        {!doNotServe && primary === 'history' && (
+          <button onClick={() => onResolve('book-new', match)} style={ACTION_BTN}>
+            Book an appointment
+          </button>
+        )}
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <button onClick={onCancel} style={ACTION_BTN}>Cancel this referral</button>
+          <button onClick={() => onNotSamePerson(match)} style={ACTION_BTN}>{notSameLabel}</button>
+        </div>
       </div>
     </div>
   )
