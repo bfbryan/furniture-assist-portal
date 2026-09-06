@@ -157,10 +157,9 @@ export async function POST(
   // This used to send `tokenData.url` — the ready-made URL Clerk returns
   // beside the token. That URL points at the Clerk instance rather than at us,
   // so an invited staff member landed on a Clerk-hosted sign-in page instead
-  // of the portal: Ben's report. The agency admin welcome has always done it
-  // the other way (raw token, portal URL wrapped around it in the Airtable
-  // template) and has always landed people in the right place, so this brings
-  // the staff path into line with the one that works.
+  // of the portal: Ben's report. portalSignInLink() wraps the portal's own
+  // origin around the raw token instead. The agency admin welcome route feeds
+  // the same {{magicLink}} template contract and uses this same helper.
   //
   // NOT rebuilt from NEXT_PUBLIC_APP_URL — that is the older bug, and it
   // produced links beginning "undefined/". See lib/auth/portal-sign-in-link.ts

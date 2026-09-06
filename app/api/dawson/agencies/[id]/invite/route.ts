@@ -27,6 +27,7 @@ import { auth, clerkClient } from '@clerk/nextjs/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { updateAgencyUserPortalInvite } from '@/lib/airtable'
 import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
+import { portalSignInLink } from '@/lib/auth/portal-sign-in-link'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -178,8 +179,12 @@ export async function POST(
     }
   }
 
-  // 4. Fresh magic sign-in token. The welcome template hard-codes the portal
-  // sign-in URL around a raw token, so the raw token is what the email needs.
+  // 4. Fresh magic sign-in token. The "Agency Welcome to Portal - Claimed"
+  // template takes a `magicLink` placeholder — a COMPLETE sign-in URL used
+  // directly as the href on both CTA buttons — the same contract the staff
+  // invite template uses. It has no {{token}} placeholder and wraps no URL
+  // around a raw token, so the raw token must be turned into a link here with
+  // portalSignInLink(); passing the bare token leaves both buttons href="".
   const tokenRes = await fetch('https://api.clerk.com/v1/sign_in_tokens', {
     method: 'POST',
     headers: {
@@ -199,6 +204,10 @@ export async function POST(
   if (!signInToken) {
     return NextResponse.json({ error: 'Failed to generate the sign-in link' }, { status: 500 })
   }
+  // Wrap the portal's own sign-in URL around the raw token — never Clerk's
+  // ready-made tokenData.url, which points at the Clerk instance. Same helper,
+  // same reason, as the two staff invite routes. See lib/auth/portal-sign-in-link.ts.
+  const magicLink = portalSignInLink(signInToken)
 
   // Who clicked Invite — stamped on the admin row as Invited By.
   let invitedByName = 'Furniture Assist'
@@ -235,7 +244,7 @@ export async function POST(
     tokens: {
       'Admin First Name': adminFirstName,
       'Agency Name': agencyName,
-      token: signInToken,
+      magicLink,
     },
     agencyRecordId: agencyId,
   })

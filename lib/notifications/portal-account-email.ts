@@ -12,7 +12,7 @@
 // {{=gives["step"]["key"]}} placeholders; fillTemplate understands that
 // dialect, keyed on the inner name. The keys each template expects:
 //
-//   "Agency Welcome to Portal - Claimed":     Admin First Name, Agency Name, token
+//   "Agency Welcome to Portal - Claimed":      Admin First Name, Agency Name, magicLink
 //   "Agency Staff Welcome to Portal - Invite": First Name, Agency Name, magicLink
 //   "Agency Inactive Notice":                  contactFirstName, agencyName
 //   "Agency Reinstate Notice":                 contactFirstName, agencyName
@@ -24,13 +24,13 @@
 // a blank greeting; corrected to match the template's "First Name" / "Agency
 // Name" placeholders.
 //
-// Both are built from a RAW Clerk sign-in token, and both end up pointing at
-// the portal. They just differ in WHERE the portal URL is written down:
-//
-//   "token"     the welcome template hard-codes
-//               https://portal.furnitureassist.com/sign-in?__clerk_ticket={{token}}
-//               around it, in Airtable.
-//   "magicLink" a complete URL, assembled in code by portalSignInLink().
+// Both welcome emails carry a "magicLink" token: a COMPLETE portal sign-in URL,
+// assembled in code by portalSignInLink() from a raw Clerk sign-in token, and
+// dropped straight into the CTA buttons' href. Neither template contains a
+// {{token}} placeholder or wraps a URL around a bare token — a caller that
+// passes "token" instead of "magicLink" ships both buttons with href="",
+// because fillTemplate turns the unknown key into "" and the send still
+// succeeds. The admin route did exactly that until this was fixed.
 //
 // "magicLink" used to be Clerk's ready-made tokenData.url, which pointed at
 // the Clerk instance rather than at us and landed invited staff on a
