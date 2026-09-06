@@ -40,11 +40,48 @@ export function toTokenValue(value: unknown): string {
   return String(value);
 }
 
-/** Replace every {{Token}} in the template with the matching value. Unknown tokens become "". */
-export function fillTemplate(
+export type TemplateFill = {
+  html: string;
+  /**
+   * Placeholder keys the template referenced but `tokens` had no value for —
+   * deduped, in first-seen order. Each rendered as "" in `html`. Empty on a
+   * clean fill.
+   */
+  unresolved: string[];
+};
+
+/**
+ * Fill a template and report which placeholders had no token.
+ *
+ * Unknown placeholders still render as "" (unchanged behaviour — some live
+ * templates carry deliberately-unfilled tokens, e.g. the reminder/notice crons
+ * pass ChangeUrl/ChangeLabel ahead of the template edit that will use them).
+ * `unresolved` is for the OTHER case: a caller that knows every placeholder in
+ * its own template is meant to be filled, and wants to notice when the row and
+ * the template have drifted apart. See sendPortalAccountEmail — this class of
+ * mismatch has shipped silently four times (a staff invite greeting "Dear ,";
+ * a Send Day multi-select that would have stalled three crons; getAllReferrals
+ * filtering on a field that empties; the admin invite link rendering
+ * about:blank). Each looked right and failed only in use.
+ */
+export function fillTemplateReport(
   template: string,
   tokens: Record<string, string>
-): string {
+): TemplateFill {
+  const seen = new Set<string>();
+  const unresolved: string[] = [];
+  const sub = (key: string): string => {
+    const value = tokens[key];
+    if (value === undefined) {
+      if (!seen.has(key)) {
+        seen.add(key);
+        unresolved.push(key);
+      }
+      return "";
+    }
+    return escapeHtml(value);
+  };
+
   // The portal-account templates (agency welcome, staff invite, inactive,
   // reinstate) were written for Zapier and still carry its placeholder
   // dialect: {{=gives["<zap step id>"]["<key>"]}}, sometimes with single
@@ -54,14 +91,21 @@ export function fillTemplate(
   // never sees the leftovers.
   const zapierFilled = template.replace(
     /{{=gives\[['"][^'"\]]*['"]\]\[['"]([^'"\]]+)['"]\]}}/g,
-    (_match, key: string) => {
-      const value = tokens[key];
-      return value !== undefined ? escapeHtml(value) : "";
-    }
+    (_match, key: string) => sub(key)
   );
 
-  return zapierFilled.replace(/{{\s*(\w+)\s*}}/g, (_match, key: string) => {
-    const value = tokens[key];
-    return value !== undefined ? escapeHtml(value) : "";
-  });
+  const html = zapierFilled.replace(
+    /{{\s*(\w+)\s*}}/g,
+    (_match, key: string) => sub(key)
+  );
+
+  return { html, unresolved };
+}
+
+/** Replace every {{Token}} in the template with the matching value. Unknown tokens become "". */
+export function fillTemplate(
+  template: string,
+  tokens: Record<string, string>
+): string {
+  return fillTemplateReport(template, tokens).html;
 }
