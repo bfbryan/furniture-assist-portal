@@ -886,6 +886,23 @@ useEffect(() => {
     setMatchResolution(null)
   }
 
+  // Blank the whole form, ready for the next referral on this same page.
+  // Used by "Add Another" after a submit AND by "Cancel this referral" in the
+  // duplicate banner ("this is a duplicate, I shouldn't be entering it").
+  const resetForm = () => {
+    clearAgency()
+    setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '', preferredDate: '', appointmentTime: null })
+    // dobText lives outside `form`, so clearing form.dob does not clear the box.
+    setDobText('')
+    setDobBlurred(false)
+    setRescheduleMode(null)
+    setMatchResolution(null)
+    setCheckedKey(null)
+    setDuplicateMatches([])
+    setBannerDismissed(false)
+    loadAvailability()
+  }
+
   const handleRescheduleConfirm = async () => {
     setError(null)
     if (!form.preferredDate) {
@@ -1012,20 +1029,7 @@ useEffect(() => {
               : `Referral for ${form.firstName} ${form.lastName} has been submitted successfully.`}
           </p>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            <button onClick={() => {
-  setSubmitted(false)
-  clearAgency()
-  setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '', preferredDate: '', appointmentTime: null })
-  // dobText lives outside `form`, so clearing form.dob does not clear the box.
-  setDobText('')
-  setDobBlurred(false)
-  setRescheduleMode(null)
-  setMatchResolution(null)
-  setCheckedKey(null)
-  setDuplicateMatches([])
-  setBannerDismissed(false)
-  loadAvailability()
-}}
+            <button onClick={() => { setSubmitted(false); resetForm() }}
               style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
               Add Another
             </button>
@@ -1458,12 +1462,14 @@ useEffect(() => {
               matches={duplicateMatches}
               currentAgencyName={newAgencyMode ? newAgency.name : (selectedAgency?.name || '')}
               form={{
+                firstName: form.firstName, lastName: form.lastName,
                 dob: form.dob, phone: form.phone,
                 address: form.address, address2: form.address2,
                 city: form.city, state: form.state, zip: form.zip,
               }}
               resolved={matchResolution}
               onResolve={handleDuplicateResolve}
+              onCancel={resetForm}
               onDismiss={handleDuplicateDismiss}
               onReopen={handleReopenBanner}
             />

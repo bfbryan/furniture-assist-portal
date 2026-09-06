@@ -45,11 +45,16 @@
 //     instead of linking to this one). Items Requested, Household size,
 //     Children, and Internal Notes are deliberately left blank -- this is
 //     a new appointment, not a copy of the old one.
-//   - onDismiss()                    -> "Not the same person" (per card) once
-//     the last card is cleared, or "None of these are the same person" (the
-//     bottom button, shown only for 2+ cards). Proceeds as a genuinely new
-//     Client. The old no-op onDecline ("same person, do not book") is gone —
-//     it did nothing but hide the banner, which is non-blocking anyway.
+//   - onCancel()                     -> "Cancel this referral" — the likeliest
+//     answer to a real duplicate. Resets the form on this page to blank,
+//     ready for the next one. An exit, not a primary action, and weighted the
+//     same as the other two.
+//   - onDismiss()                    -> "Not the same person" / "Different
+//     person with the same name and date of birth" (per card; the second
+//     wording when first+last+DOB all match exactly) once the last card is
+//     cleared, or "None of these are the same person" (the bottom button,
+//     shown only for 2+ cards). Proceeds as a genuinely new Client. The old
+//     no-op onDecline ("same person, do not book") is gone.
 
 'use client'
 
@@ -108,6 +113,11 @@ function isDoNotServe(status: string | null | undefined): boolean {
 // "you're entering" compare. Everything's optional in practice -- most of
 // this fires before Address/City/State/Zip are even reached.
 export type FormSnapshot = {
+  // firstName / lastName aren't shown in the compare table (name is what
+  // triggered the match) — they're here so the card can tell an EXACT
+  // name+DOB match from a fuzzy one and word the "no" accordingly.
+  firstName: string
+  lastName: string
   dob: string
   phone: string
   address: string
@@ -127,6 +137,24 @@ const STATUS_COLOR: Record<string, string> = {
 
 function statusColor(status: string): string {
   return STATUS_COLOR[status] || '#7A8899'
+}
+
+// Card actions — all the same size and geometry, all outline (no solid fill),
+// so no single button dominates. ACTION_BTN is the neutral default (Cancel,
+// "Not the same person", and a plain "Book an appointment" on a history-only
+// match). OVERRIDE marks the one consequential path — booking over an existing
+// appointment — with a gold outline, not volume. RESCHEDULE marks the
+// recommended path when it's offered.
+const ACTION_BTN: React.CSSProperties = {
+  padding: '11px', borderRadius: '8px', background: 'white',
+  border: '1px solid #EDE9E1', color: '#2C3A4A', textAlign: 'center',
+  fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
+}
+const ACTION_BTN_OVERRIDE: React.CSSProperties = {
+  ...ACTION_BTN, border: '1px solid #C9A84C', color: '#8A6A00',
+}
+const ACTION_BTN_RESCHEDULE: React.CSSProperties = {
+  ...ACTION_BTN, border: '1px solid #2A7F6F', color: '#2A7F6F',
 }
 
 function normalizeAgencyName(s: string): string {
@@ -201,7 +229,11 @@ function CompareBlock({ match, form }: { match: ClientMatch; form: FormSnapshot 
       <CompareRow
         label="Address"
         onFile={fullAddress(match.client)}
-        typed={fullAddress(form)}
+        // Not "NJ" from a still-empty form: the state field is pre-filled, so
+        // fullAddress(form) is never truly blank. Only compare once a street
+        // address has actually been typed — before that, show it as not yet
+        // entered rather than flagging the whole line as a difference.
+        typed={form.address.trim() ? fullAddress(form) : ''}
       />
     </div>
   )
@@ -212,12 +244,16 @@ function MatchCard({
   currentAgencyName,
   form,
   onResolve,
+  onCancel,
   onNotSamePerson,
 }: {
   match: ClientMatch
   currentAgencyName: string
   form: FormSnapshot
   onResolve: (action: 'reschedule' | 'book-new', match: ClientMatch) => void
+  /** "This is a duplicate, I shouldn't be entering it" — resets the form on
+      this page to blank, ready for the next referral. */
+  onCancel: () => void
   /** The single "no" on every card: this candidate isn't who's being entered.
       Drops this card; when the last card goes, the banner proceeds as a new
       client. See the CAUTION on the DNS branch below. */
@@ -249,6 +285,20 @@ function MatchCard({
       : 'history'
 
   const historyCount = match.scenarios.filter(s => s.type !== 'active').length
+
+  // "Exact" = first + last + DOB all equal, case- and punctuation-insensitive
+  // (normalizeForCompare, same normalization the compare rows use). Two
+  // different people can still share all three, so the option stays — a
+  // genuine second person must have a way through — but the label says the
+  // specific thing being claimed so it reads as the rare case it is.
+  const exactNameDobMatch =
+    !!form.firstName.trim() && !!form.lastName.trim() && !!form.dob.trim() &&
+    normalizeForCompare(form.firstName) === normalizeForCompare(match.client.firstName) &&
+    normalizeForCompare(form.lastName) === normalizeForCompare(match.client.lastName) &&
+    normalizeForCompare(form.dob) === normalizeForCompare(match.client.dob)
+  const notSameLabel = exactNameDobMatch
+    ? 'Different person with the same name and date of birth'
+    : 'Not the same person'
 
   // All grey. The eyebrow is a category label, not an alarm — the one fact
   // ("already booked" / "no-show" / "on file before") is carried once, by the
@@ -338,7 +388,7 @@ function MatchCard({
               background: `${statusColor(h.appointmentStatus)}1A`, color: statusColor(h.appointmentStatus),
             }}
           >
-            {h.appointmentStatus || 'Unknown'} · {formatAgo(h.appointmentDate)}
+            {[h.appointmentStatus || 'Unknown', formatAgo(h.appointmentDate)].filter(Boolean).join(' · ')}
           </span>
           <span style={{ color: '#7A8899', textAlign: 'right', maxWidth: '160px' }}>
             {h.referringAgency || '—'}
@@ -346,68 +396,46 @@ function MatchCard({
         </div>
       ))}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
-        {/* DNS: no booking path exists — the submit route refuses this client
-            whichever way in. So the only action is "not the same person".
-            CAUTION — this is not cosmetic. On A/B/C it means "different person,
-            carry on as new"; on D it means the same, and the consequence is a
-            fresh Clients row with NO DNS flag. The submit route's record-id
-            assert (assertClientMayBeReferred) reads that new record and so
-            can't catch it — which is why both submit routes ALSO run
-            findDoNotServeClientByIdentity (name + DOB) as a second check. Two
-            people who genuinely share a name have different DOBs and pass it;
-            the same person dismissed here does not. Keep both checks. */}
-        {doNotServe ? (
-          <button
-            onClick={() => onNotSamePerson(match)}
-            style={{
-              padding: '11px', borderRadius: '8px', border: '1px solid #EDE9E1',
-              background: 'white', color: '#2C3A4A',
-              fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-            }}
-          >
-            Not the same person
-          </button>
-        ) : (
-        <>
-        {primary === 'reschedule' && (
-          <button
-            onClick={() => onResolve('reschedule', match)}
-            style={{
-              padding: '11px', borderRadius: '8px', border: 'none', background: '#2A7F6F',
-              color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-            }}
-          >
-            Reschedule the existing appointment
-          </button>
-        )}
+      {/* Three outcomes, equal weight — none is solid-filled, so nothing on
+          the card shouts. The one consequential path (book over an existing
+          appointment) gets a gold outline to mark it as the deliberate
+          override, not to make it loud. "Reschedule the existing appointment",
+          when offered, is the recommended path and gets a teal outline.
+          Cancel = "this is a duplicate, drop it" (clears the form on this
+          page). "Not the same person" — see the CAUTION below re: DNS.
 
-        <button
-          onClick={() => onResolve('book-new', match)}
-          style={{
-            padding: '11px', borderRadius: '8px',
-            border: primary === 'reschedule' ? '1px solid #EDE9E1' : 'none',
-            background: primary === 'reschedule' ? 'white' : '#2A7F6F',
-            color: primary === 'reschedule' ? '#2C3A4A' : 'white',
-            fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-          }}
-        >
-          {primary === 'active'
-            ? 'Book a second appointment'
-            : primary === 'reschedule'
-              ? 'Book a new appointment instead'
-              : 'Book an appointment'}
-        </button>
-        <button
-          onClick={() => onNotSamePerson(match)}
-          style={{
-            padding: '9px', borderRadius: '8px', border: 'none', background: 'transparent',
-            color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 600, fontSize: '12.5px', cursor: 'pointer',
-          }}
-        >
-          Not the same person
-        </button>
-        </>
+          DNS CAUTION — the record-id assert reads the LINKED client, so
+          dismissing a genuine DNS match here forks a fresh unflagged Clients
+          row it can't catch. That is why both submit routes ALSO run
+          findDoNotServeClientByIdentity (name + DOB): two people who really
+          share a name have different DOBs and pass it, the same person
+          dismissed here does not. Keep both checks. */}
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
+        {doNotServe ? (
+          <>
+            <button onClick={onCancel} style={ACTION_BTN}>Cancel this referral</button>
+            <button onClick={() => onNotSamePerson(match)} style={ACTION_BTN}>{notSameLabel}</button>
+          </>
+        ) : (
+          <>
+            {primary === 'reschedule' && (
+              <button onClick={() => onResolve('reschedule', match)} style={ACTION_BTN_RESCHEDULE}>
+                Reschedule the existing appointment
+              </button>
+            )}
+            <button
+              onClick={() => onResolve('book-new', match)}
+              style={primary === 'history' ? ACTION_BTN : ACTION_BTN_OVERRIDE}
+            >
+              {primary === 'active'
+                ? 'Book a second appointment'
+                : primary === 'reschedule'
+                  ? 'Book a new appointment instead'
+                  : 'Book an appointment'}
+            </button>
+            <button onClick={onCancel} style={ACTION_BTN}>Cancel this referral</button>
+            <button onClick={() => onNotSamePerson(match)} style={ACTION_BTN}>{notSameLabel}</button>
+          </>
         )}
       </div>
     </div>
@@ -444,6 +472,7 @@ export default function DuplicateClientBanner({
   form,
   resolved,
   onResolve,
+  onCancel,
   onDismiss,
   onReopen,
 }: {
@@ -454,6 +483,8 @@ export default function DuplicateClientBanner({
   // the full card list down to a one-line confirmation strip instead.
   resolved: { clientId: string; clientName: string } | null
   onResolve: (action: 'reschedule' | 'book-new', match: ClientMatch) => void
+  /** "Cancel this referral" — reset the form on this page to blank. */
+  onCancel: () => void
   /** "None of these are the same person" — proceed as a genuinely new client. */
   onDismiss: () => void
   onReopen: () => void
@@ -495,6 +526,7 @@ export default function DuplicateClientBanner({
           currentAgencyName={currentAgencyName}
           form={form}
           onResolve={onResolve}
+          onCancel={onCancel}
           onNotSamePerson={notSamePerson}
         />
       ))}
