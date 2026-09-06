@@ -1163,16 +1163,15 @@ useEffect(() => {
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      {/* Two columns: form left, capacity grid in a sticky rail right. The grid
-          is the ONLY date picker on the page, and the rail keeps it in view
-          while the (long) form scrolls. Below ~1440px the shell's fixed 240px
-          sidebar leaves too little for both columns, so .fa-add-referral-grid
-          stacks and the rail moves to the TOP (order: -1) rather than the
-          bottom — it can't be off-screen when it's the only way to pick a
-          date. Tracks + the stack rule live in globals.css. */}
-      <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '32px' }}>
-        <div className="fa-add-referral-grid">
-        <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px', minWidth: 0 }}>
+      {/* One centred column. The process is linear — he fills top to bottom and
+          the appointment is the last decision — so the capacity grid lives
+          inline in the Appointment section, where the Saturday dropdown was,
+          not in a rail. 840px: the identity row (DOB / phone / language) lays
+          out as three ~245px tracks, two-field rows split ~370px each, and the
+          inline grid gets its full ~560px of legible width — wider fields than
+          the two-column split gave, which is what was cramping them. */}
+      <div style={{ maxWidth: '840px', margin: '0 auto', padding: '32px' }}>
+        <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
 
           <p style={{ fontSize: '12.5px', color: '#7A8899', marginBottom: '4px' }}>All fields required unless noted.</p>
 
@@ -1575,12 +1574,44 @@ useEffect(() => {
 
 
 
-          {/* Appointment — just the echo now. The picker is the grid in the
-              rail; this confirms the selection next to Submit. */}
+          {/* Appointment — the capacity grid IS the picker, inline here where
+              the Saturday dropdown used to be (the appointment is the last
+              step of a linear form). Four bookable Saturdays; blackouts inside
+              the span render struck and don't count toward the four — the
+              shared selectBookableWindow walk, same as the agency form. */}
           <div style={{ ...SECTION, marginTop: '8px' }}>Appointment</div>
+          <div style={{ marginBottom: '10px' }}>
+            <SaturdayCapacityGrid
+              mode="select"
+              capacityDisplay="counts"
+              weeks={4}
+              leadDays={1}
+              value={gridValue}
+              onChange={handleGridPick}
+            />
+          </div>
+          <p style={{ fontSize: '12px', color: '#7A8899', marginBottom: '24px', lineHeight: 1.5 }}>
+            50 a day is a soft cap here — a full slot turns red but stays selectable as an override.
+          </p>
+
+
+
+          {/* Notes */}
+          <div style={{ ...SECTION, marginTop: '8px' }}>Notes <span style={{ fontWeight: 600, color: '#9AA6B2', letterSpacing: 0 }}>(optional)</span></div>
+          <textarea
+            style={{ ...INPUT, height: '90px', resize: 'vertical', marginBottom: '28px' }}
+            value={form.notes}
+            onChange={e => set('notes', e.target.value)}
+            placeholder="Any special circumstances or additional information..."
+          />
+
+
+
+          {/* Selection echo — confirms what the grid above set, right where the
+              decision is committed. */}
           <div
             style={{
-              marginBottom: '24px', padding: '14px 16px', borderRadius: '8px',
+              marginBottom: '20px', padding: '14px 16px', borderRadius: '8px',
               background: form.preferredDate ? '#EAF4F2' : '#F7F5F1',
               border: `1px solid ${form.preferredDate ? '#B9DDD5' : '#EDE9E1'}`,
             }}
@@ -1599,23 +1630,10 @@ useEffect(() => {
               </>
             ) : (
               <div style={{ fontSize: '13px', color: '#7A8899' }}>
-                Pick a Saturday and time in the schedule<span className="fa-add-referral-rail-hint"> to the right</span>.
+                Pick a Saturday and time in the schedule above.
               </div>
             )}
           </div>
-
-
-
-          {/* Notes */}
-          <div style={{ ...SECTION, marginTop: '8px' }}>Additional Notes</div>
-          <textarea
-            style={{ ...INPUT, height: '90px', resize: 'vertical', marginBottom: '28px' }}
-            value={form.notes}
-            onChange={e => set('notes', e.target.value)}
-            placeholder="Any special circumstances or additional information..."
-          />
-
-
 
           {error && (
             <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: '#C0392B' }}>
@@ -1629,30 +1647,6 @@ useEffect(() => {
             style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: (loading || checkingDuplicate) ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', cursor: (loading || checkingDuplicate) ? 'not-allowed' : 'pointer', letterSpacing: '0.02em' }}>
             {checkingDuplicate ? 'Checking for existing client...' : loading ? 'Submitting...' : 'Submit Referral'}
           </button>
-
-        </div>
-
-        {/* RIGHT — the capacity rail. Sticky on the two-column layout (the one
-            place it earns it: he's picking from it, not just consulting it),
-            static and above the form once stacked. */}
-        <div className="fa-add-referral-rail">
-          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #EDE9E1', padding: '16px' }}>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#7A8899', marginBottom: '10px' }}>
-              Pick a Saturday
-            </div>
-            <SaturdayCapacityGrid
-              mode="select"
-              capacityDisplay="counts"
-              weeks={8}
-              leadDays={1}
-              value={gridValue}
-              onChange={handleGridPick}
-            />
-            <p style={{ fontSize: '12px', color: '#7A8899', marginTop: '10px', lineHeight: 1.5 }}>
-              50 a day is a soft cap here — a full slot turns red but stays selectable as an override.
-            </p>
-          </div>
-        </div>
 
         </div>
       </div>

@@ -51,6 +51,8 @@ import { REC_ID_RE } from '@/lib/airtable/client'
 import {
   assertClientMayBeReferred,
   assertReferralClientMayBeRescheduled,
+  findDoNotServeClientByIdentity,
+  doNotServeMessage,
   doNotServeUnverifiedMessage,
   DoNotServeError,
 } from '@/lib/clients/do-not-serve'
@@ -197,9 +199,33 @@ export async function POST(req: Request) {
     )
   }
 
-  // ---- Do-not-serve: on the resolved record, by id. No override. ----
+  // ---- Do-not-serve. Two checks, both fail closed, no override. ----
+  //
+  //   1. assertClientMayBeReferred(clientId) — the resolved Client record, by
+  //      id. The real guard.
+  //   2. findDoNotServeClientByIdentity(name + DOB) — the identity backstop.
+  //      #1 reads the record we resolved, so it passes when a submitted edit
+  //      diverges enough that the submit forks off a fresh (unflagged) Client
+  //      from a flagged match. This second check requires first + last + DOB
+  //      to all agree with a flagged record — the Clients table's own identity
+  //      key — so two people who merely share a name (different DOB) do not
+  //      trip it. See the Dawson route for the fuller note.
+  //
+  // Both throw DoNotServeError on a hit (→ 403, same message) and anything
+  // else on a failed lookup (→ 502). The identity hit is logged distinctly.
   try {
     await assertClientMayBeReferred(clientId)
+    const flaggedByIdentity = await findDoNotServeClientByIdentity({
+      firstName: fn, lastName: ln, dob: dobFormatted,
+    })
+    if (flaggedByIdentity) {
+      console.warn(
+        `[do-not-serve] identity backstop blocked an agency referral: resolved client ` +
+        `${clientId} is not flagged, but flagged client ${flaggedByIdentity.id} ` +
+        `(${flaggedByIdentity.name}) matches first/last/DOB.`,
+      )
+      throw new DoNotServeError(doNotServeMessage(flaggedByIdentity.name), flaggedByIdentity.id)
+    }
   } catch (e: unknown) {
     if (e instanceof DoNotServeError) {
       return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })

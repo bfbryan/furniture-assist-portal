@@ -583,36 +583,6 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
-/* Dawson Add Referral: form left, capacity-grid rail right. Same 240px-sidebar
-   maths and the same 1440 breakpoint as Needs Action. The rail is the ONLY
-   date picker on the page, so when the columns collapse it must not fall to
-   the bottom of a long form — order: -1 puts it above the form, and it drops
-   its stickiness (a ~340px sticky block on a narrow view eats the screen). */
-.fa-add-referral-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 600px;
-  gap: 24px;
-  align-items: start;
-}
-.fa-add-referral-rail {
-  position: sticky;
-  top: 24px;
-}
-@media (max-width: 1439.98px) {
-  .fa-add-referral-grid {
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .fa-add-referral-rail {
-    position: static;
-    order: -1;
-    margin-bottom: 4px;
-  }
-  /* "to the right" is only true on the two-column layout. */
-  .fa-add-referral-rail-hint {
-    display: none;
-  }
-}
-
 /* ==========================================================================
    Below 1280px — stack
    ========================================================================== */

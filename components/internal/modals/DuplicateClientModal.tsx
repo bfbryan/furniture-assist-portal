@@ -350,15 +350,13 @@ function MatchCard({
         {/* DNS: no booking path exists — the submit route refuses this client
             whichever way in. So the only action is "not the same person".
             CAUTION — this is not cosmetic. On A/B/C it means "different person,
-            carry on as new"; on D it means the same, and the consequence is
-            that a fresh Clients row is created with NO DNS flag, and the submit
-            route's assertClientMayBeReferred() reads the LINKED client record,
-            so it will not catch that. That is correct when two people
-            genuinely share a name — but it is why the identity-based backstop
-            (findDoNotServeClientByIdentity in lib/clients/do-not-serve.ts) must
-            not be deleted on the assumption that the record-id assert covers
-            everything. It does not, and it is not currently wired into the
-            Dawson submit path at all. */}
+            carry on as new"; on D it means the same, and the consequence is a
+            fresh Clients row with NO DNS flag. The submit route's record-id
+            assert (assertClientMayBeReferred) reads that new record and so
+            can't catch it — which is why both submit routes ALSO run
+            findDoNotServeClientByIdentity (name + DOB) as a second check. Two
+            people who genuinely share a name have different DOBs and pass it;
+            the same person dismissed here does not. Keep both checks. */}
         {doNotServe ? (
           <button
             onClick={() => onNotSamePerson(match)}

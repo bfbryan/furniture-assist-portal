@@ -98,7 +98,12 @@ import { rescheduleReferral } from '@/lib/referrals/reschedule'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { pickFirstOpenSlot, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
 import { findNextFlexibleSlot, FLEXIBLE_LEAD_DAYS } from '@/lib/schedule/flexible'
-import { assertClientMayBeReferred, DoNotServeError } from '@/lib/clients/do-not-serve'
+import {
+  assertClientMayBeReferred,
+  findDoNotServeClientByIdentity,
+  doNotServeMessage,
+  DoNotServeError,
+} from '@/lib/clients/do-not-serve'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -509,20 +514,42 @@ export async function POST(req: Request) {
   // anyway, because "this branch can't be blocked" is the kind of thing that
   // stops being true quietly.
   //
-  // GAP, on purpose: this reads the LINKED/created Client record by id. If
-  // Dawson is shown a genuine DNS match in the duplicate banner and clicks
-  // "Not the same person", resolvedClientId is a brand-new Clients row written
-  // Status 'Active', so this passes. That is correct when two people really do
-  // share a name — but it means the record-id assert is NOT a complete DNS
-  // guard on this path. findDoNotServeClientByIdentity() in
-  // lib/clients/do-not-serve.ts is the identity backstop for exactly this
-  // shape of miss; it is currently wired only into the no-Client-link
-  // reschedule path, not here. Do not delete it on the assumption this assert
-  // covers everything — it does not.
+  // TWO checks, both fail closed:
+  //
+  //   1. assertClientMayBeReferred(resolvedClientId) — the LINKED/created
+  //      Client record, by id. The real guard everywhere a Client is resolved.
+  //
+  //   2. findDoNotServeClientByIdentity(name + DOB) — the identity backstop.
+  //      The record-id check reads the record we resolved, so it passes when a
+  //      genuine DNS match was shown in the duplicate banner and dismissed as
+  //      "not the same person": resolvedClientId is then a brand-new Clients
+  //      row written Status 'Active'. This second check catches that — it
+  //      requires first + last + DOB to all agree with a flagged record, which
+  //      is the Clients table's own identity key, so two different people who
+  //      merely share a name (different DOB) do NOT trip it. The case we want
+  //      to keep working keeps working; the routed-around flag gets caught.
+  //
+  // Both throw DoNotServeError on a hit (→ 403, same message — to the user
+  // it's one wall) and anything else on a failed lookup (→ 502 "could not
+  // verify"). The identity hit is logged distinctly: the record-id assert
+  // firing is routine (the linked client is flagged), while the identity
+  // backstop firing means the resolved record is NOT flagged but a
+  // same-identity flagged client exists — worth a greppable line.
   //
   // No override exists here by design. See lib/clients/do-not-serve.ts.
   try {
     await assertClientMayBeReferred(resolvedClientId)
+    const flaggedByIdentity = await findDoNotServeClientByIdentity({
+      firstName, lastName, dob: dobFormatted,
+    })
+    if (flaggedByIdentity) {
+      console.warn(
+        `[do-not-serve] identity backstop blocked a Dawson referral: resolved client ` +
+        `${resolvedClientId} is not flagged, but flagged client ${flaggedByIdentity.id} ` +
+        `(${flaggedByIdentity.name}) matches first/last/DOB.`,
+      )
+      throw new DoNotServeError(doNotServeMessage(flaggedByIdentity.name), flaggedByIdentity.id)
+    }
   } catch (e: unknown) {
     if (e instanceof DoNotServeError) {
       return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
