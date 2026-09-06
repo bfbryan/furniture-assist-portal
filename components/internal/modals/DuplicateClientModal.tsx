@@ -24,8 +24,10 @@
 //   3. 'history'     -- Completed / Cancelled / an older or
 //      different-agency No Show within 12 months.
 //
-// DNS (Clients.Status === 'DNS') replaces all of the above: red line, no
-// booking action, "Not the same person" only.
+// DNS (Clients.Status === 'DNS') replaces all of the above: red eyebrow + red
+// card border carry it (the line itself is plain), no booking action, Cancel
+// + "Different person…" only. The banner heading changes too when any match
+// is DNS — see anyDns.
 //
 // Nothing has been written to Airtable while this is showing --
 // check-duplicate is read-only -- so any resolution here is reversible
@@ -336,7 +338,7 @@ function MatchCard({
           the alarm: the compare table and the appointment history right below
           are what he actually reads. */}
       {doNotServe && (
-        <div style={{ fontSize: '12.5px', lineHeight: 1.55, color: '#C0392B', fontWeight: 700, marginBottom: '14px' }}>
+        <div style={{ fontSize: '13px', lineHeight: 1.55, color: '#2C3A4A', marginBottom: '14px' }}>
           This client is marked do not serve and can&rsquo;t be referred. If that&rsquo;s
           wrong, it needs to be changed on the client&rsquo;s record before a referral
           can go through.
@@ -413,12 +415,13 @@ function MatchCard({
           Cancel + "Not the same person" (or, on an exact name+DOB match,
           "Different person…") share a row — both exits, same treatment.
 
-          DNS CAUTION — the record-id assert reads the LINKED client, so
-          dismissing a genuine DNS match here forks a fresh unflagged Clients
-          row it can't catch. That is why both submit routes ALSO run
-          findDoNotServeClientByIdentity (name + DOB): two people who really
-          share a name have different DOBs and pass it, the same person
-          dismissed here does not. Keep both checks. */}
+          DNS CAUTION — dismissing a genuine DNS match here would fork a fresh
+          unflagged Clients row that the submit route's record-id assert can't
+          catch (it reads the record we just made). Both submit routes guard
+          against this by running findDoNotServeClientByIdentity (name + DOB)
+          BEFORE any Client is created: two people who really share a name have
+          different DOBs and pass it; the same person dismissed here does not.
+          Keep both checks, in that order. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
         {!doNotServe && primary === 'reschedule' && (
           <button onClick={() => onResolve('reschedule', match)} style={ACTION_BTN_RESCHEDULE}>
@@ -511,15 +514,22 @@ export default function DuplicateClientBanner({
   }
   if (shown.length === 0) return null
 
+  // A DNS match isn't "possible" — it's confirmed and blocked. When one is in
+  // view the heading and the intro line have to say that, not invite him to
+  // carry on filling the form.
+  const anyDns = shown.some(m => isDoNotServe(m.client.status))
+
   return (
     <div style={{ background: '#FAF8F4', border: '1px solid #EDE9E1', borderRadius: '10px', padding: '20px', marginBottom: '20px' }}>
       <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '15px', color: '#1B2B4B', marginBottom: '4px' }}>
-        Possible existing client
+        {anyDns ? 'This client is marked do not serve' : 'Possible existing client'}
       </div>
       <div style={{ fontSize: '13px', color: '#7A8899', lineHeight: 1.5, marginBottom: '16px' }}>
-        {shown.length === 1
-          ? 'We found a similar record already in the system. Review below, then keep filling out the form.'
-          : `We found ${shown.length} similar records already in the system. Review below, then keep filling out the form.`}
+        {anyDns
+          ? "They can't be referred. Check it's the right person below."
+          : shown.length === 1
+            ? 'We found a similar record already in the system. Review below, then keep filling out the form.'
+            : `We found ${shown.length} similar records already in the system. Review below, then keep filling out the form.`}
       </div>
 
       {shown.map(m => (
