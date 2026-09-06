@@ -411,9 +411,12 @@ export default function SaturdayCapacityGrid({
                     <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: binary ? headSize : numSize }}>
                       {/* Binary: the label carries the state, not just the fill —
                           every cell says "Open" so the teal fill alone is easy
-                          to miss and fails on colour. */}
+                          to miss and fails on colour. "Current" (the held slot,
+                          when excludeReferralId is set) is a word here for the
+                          same reason "Selected" is; counts mode keeps its number
+                          and marks "current" in the sub-label below instead. */}
                       {binary
-                        ? (isSelected ? 'Selected' : full ? 'Full' : 'Open')
+                        ? (isSelected ? 'Selected' : cell.current ? 'Current' : full ? 'Full' : 'Open')
                         : `${cell.booked}/${cell.cap}`}
                     </span>
                     {/* Chip line — always present when soft counts are shown, so
@@ -436,13 +439,14 @@ export default function SaturdayCapacityGrid({
                         </span>
                       </span>
                     )}
-                    {/* "current" label — reserved in every cell of a grid that
-                        has an excludeReferralId (the only grids where it can
-                        appear), same invisible-placeholder trick as the chip
-                        above. Without this the one held-slot cell is ~10px
-                        taller than its row — and this grid is the PickSlotModal,
-                        where he's choosing from it, not just reading it. */}
-                    {excludeReferralId && (
+                    {/* "current" sub-label — COUNTS mode only. Reserved in every
+                        cell of a grid that has an excludeReferralId (the only
+                        grids where it can appear), same invisible-placeholder
+                        trick as the chip above, so the one held-slot cell isn't
+                        ~10px taller than its row in the PickSlotModal. Binary
+                        mode carries "Current" in the main label instead, so it
+                        needs neither this line nor its placeholder. */}
+                    {excludeReferralId && !binary && (
                       <span
                         aria-hidden={!cell.current || undefined}
                         style={{

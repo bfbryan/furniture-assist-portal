@@ -777,7 +777,7 @@ function YourNotesCard({ referral, editable, onSaved }: {
         value={text}
         onChange={e => setText(e.target.value)}
         rows={6}
-        placeholder="Anything Furniture Assist should know about this client or delivery."
+        placeholder="Anything Furniture Assist should know about this client."
         style={{ ...inputStyle, resize: 'vertical', lineHeight: 1.6 }}
       />
       <SaveError message={error} />
