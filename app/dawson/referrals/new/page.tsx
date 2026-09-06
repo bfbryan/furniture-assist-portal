@@ -1576,11 +1576,16 @@ useEffect(() => {
 
           {/* Appointment — the capacity grid IS the picker, inline here where
               the Saturday dropdown used to be (the appointment is the last
-              step of a linear form). Four bookable Saturdays; blackouts inside
-              the span render struck and don't count toward the four — the
-              shared selectBookableWindow walk, same as the agency form. */}
+              step of a linear form). No box: every other section sits bare on
+              the form and the cells give it structure enough. Four bookable
+              Saturdays; blackouts inside the span render struck and don't
+              count toward the four — the shared selectBookableWindow walk,
+              same as the agency form. The grid carries its own "+1 = requests
+              not yet accepted" legend; the soft-cap behaviour is left to be
+              learnt on the first red-cell click, where the echo's override
+              line covers it. */}
           <div style={{ ...SECTION, marginTop: '8px' }}>Appointment</div>
-          <div style={{ marginBottom: '10px' }}>
+          <div style={{ marginBottom: '24px' }}>
             <SaturdayCapacityGrid
               mode="select"
               capacityDisplay="counts"
@@ -1590,9 +1595,6 @@ useEffect(() => {
               onChange={handleGridPick}
             />
           </div>
-          <p style={{ fontSize: '12px', color: '#7A8899', marginBottom: '24px', lineHeight: 1.5 }}>
-            50 a day is a soft cap here — a full slot turns red but stays selectable as an override.
-          </p>
 
 
 
