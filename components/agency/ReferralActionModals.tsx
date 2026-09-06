@@ -204,6 +204,11 @@ export function RescheduleModal({ modal, onConfirm, onClose, loading, submitErro
           </p>
         )}
 
+        {/* excludeReferralId nets this referral's held slot out of the grid it's
+            shown against and marks that cell "Current" — without it a client
+            being moved off a full hour sees their own slot as Full.
+            /api/agency/schedule checks the caller's agency owns the id; an
+            empty or past slot (a missed appointment) is a no-op. */}
         <SaturdayCapacityGrid
           mode="select"
           capacityDisplay="binary"
@@ -212,6 +217,7 @@ export function RescheduleModal({ modal, onConfirm, onClose, loading, submitErro
           weeks={4}
           showSoft={false}
           endpoint="/api/agency/schedule"
+          excludeReferralId={modal.id}
           value={sel}
           onChange={setSel}
         />
