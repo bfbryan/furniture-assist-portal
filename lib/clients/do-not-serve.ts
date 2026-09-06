@@ -89,21 +89,18 @@ export function isDoNotServeStatus(status: unknown): boolean {
 }
 
 /**
- * What Dawson or an agency user sees when the block fires.
- *
- * Because nobody can override it, this has to explain itself: whoever hits it
- * is facing a wall they cannot move, and a vague "submission failed" reads as
- * the portal being broken rather than as a deliberate decision. So it says
- * what the flag is, where it lives, that there is no way past it here, and
- * what would actually change the outcome.
+ * What Dawson or an agency user sees when the block fires — both surfaces get
+ * the same string, so it names no internal system (table, field, "Airtable"):
+ * an agency reads this too. It says the decision, and where the fix lives ("the
+ * client's record"), without a vague "submission failed" that would read as a
+ * broken portal. Matches the wording of the do-not-serve card in
+ * components/internal/modals/DuplicateClientModal.tsx.
  */
 export function doNotServeMessage(clientName?: string | null): string {
   const who = clientName && clientName.trim() ? clientName.trim() : 'This client'
   return (
-    `${who} is marked do-not-serve and cannot be referred. ` +
-    `That flag is the Status field on their record in the Clients table in Airtable, set to "${DO_NOT_SERVE_STATUS}". ` +
-    `It cannot be overridden from the portal by anyone. ` +
-    `If the flag is wrong, change it in Airtable first, then submit the referral again.`
+    `${who} is marked do not serve and can't be referred. ` +
+    `If that's wrong, it needs to be changed on the client's record before a referral can go through.`
   )
 }
 

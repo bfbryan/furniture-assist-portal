@@ -11,18 +11,23 @@
 // as those later fields get typed.
 //
 // Three visually distinct branches per match, picked by priority (see
-// `primary` in MatchCard below):
+// `primary` in MatchCard below). All three look the same — grey eyebrow, one
+// plain sentence, plain buttons — the difference is what the sentence says and
+// which actions are offered, not the colour:
 //   1. 'reschedule' -- a No Show within the reschedule window, same
-//      agency, nothing already active. Amber/actionable: booking this
-//      reschedules the existing record in place.
-//   2. 'active'      -- a Scheduled / Pending Schedule appointment
-//      already exists. Red/urgent, and takes priority over
-//      #1 (nothing to reschedule if they're already back on the books).
-//      Booking a new one anyway requires an explicit acknowledgment
-//      checkbox first -- a soft block, not a hard one.
+//      agency, nothing already active. Booking reschedules the existing
+//      record in place.
+//   2. 'active'      -- a Scheduled / Pending Schedule appointment already
+//      exists. Takes priority over #1. Booking anyway makes a second
+//      appointment; the friction is the button label ("Book a second
+//      appointment"), not a checkbox.
 //   3. 'history'     -- Completed / Cancelled / an older or
-//      different-agency No Show within 12 months. Plain informational
-//      styling, nothing urgent.
+//      different-agency No Show within 12 months.
+//
+// DNS (Clients.Status === 'DNS') replaces all of the above: red eyebrow + red
+// card border carry it (the line itself is plain), no booking action, Cancel
+// + "Different person…" only. The banner heading changes too when any match
+// is DNS — see anyDns.
 //
 // Nothing has been written to Airtable while this is showing --
 // check-duplicate is read-only -- so any resolution here is reversible
@@ -42,11 +47,16 @@
 //     instead of linking to this one). Items Requested, Household size,
 //     Children, and Internal Notes are deliberately left blank -- this is
 //     a new appointment, not a copy of the old one.
-//   - onDecline()                    -> "same person, do not book" --
-//     no-op today (just hides), kept as its own handler in case a
-//     backend hook (e.g. logging, emailing) gets added later.
-//   - onDismiss()                    -> "none of these are the same
-//     person" -- proceeds as a genuinely new Client.
+//   - onCancel()                     -> "Cancel this referral" — the likeliest
+//     answer to a real duplicate. Resets the form on this page to blank,
+//     ready for the next one. An exit, not a primary action, and weighted the
+//     same as the other two.
+//   - onDismiss()                    -> "Not the same person" / "Different
+//     person with the same name and date of birth" (per card; the second
+//     wording when first+last+DOB all match exactly) once the last card is
+//     cleared, or "None of these are the same person" (the bottom button,
+//     shown only for 2+ cards). Proceeds as a genuinely new Client. The old
+//     no-op onDecline ("same person, do not book") is gone.
 
 'use client'
 
@@ -105,6 +115,11 @@ function isDoNotServe(status: string | null | undefined): boolean {
 // "you're entering" compare. Everything's optional in practice -- most of
 // this fires before Address/City/State/Zip are even reached.
 export type FormSnapshot = {
+  // firstName / lastName aren't shown in the compare table (name is what
+  // triggered the match) — they're here so the card can tell an EXACT
+  // name+DOB match from a fuzzy one and word the "no" accordingly.
+  firstName: string
+  lastName: string
   dob: string
   phone: string
   address: string
@@ -116,7 +131,9 @@ export type FormSnapshot = {
 
 const STATUS_COLOR: Record<string, string> = {
   Completed: '#2A7F6F',
-  'No Show': '#C0392B',
+  // Gold, not red: "No Show · 8d ago" is a factual status, not an alert, and
+  // the Dawson Referrals list already renders this state in FA gold (#C9A84C).
+  'No Show': '#C9A84C',
   Cancelled: '#7A8899',
   Scheduled: '#1B2B4B',
   'Pending Schedule': '#C9A84C',
@@ -124,6 +141,24 @@ const STATUS_COLOR: Record<string, string> = {
 
 function statusColor(status: string): string {
   return STATUS_COLOR[status] || '#7A8899'
+}
+
+// Card actions — all the same size and geometry, all outline (no solid fill),
+// so no single button dominates. ACTION_BTN is the neutral default (Cancel,
+// "Not the same person", and a plain "Book an appointment" on a history-only
+// match). OVERRIDE marks the one consequential path — booking over an existing
+// appointment — with a gold outline, not volume. RESCHEDULE marks the
+// recommended path when it's offered.
+const ACTION_BTN: React.CSSProperties = {
+  padding: '11px', borderRadius: '8px', background: 'white',
+  border: '1px solid #EDE9E1', color: '#2C3A4A', textAlign: 'center', lineHeight: 1.35,
+  fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
+}
+const ACTION_BTN_OVERRIDE: React.CSSProperties = {
+  ...ACTION_BTN, border: '1px solid #C9A84C', color: '#8A6A00',
+}
+const ACTION_BTN_RESCHEDULE: React.CSSProperties = {
+  ...ACTION_BTN, border: '1px solid #2A7F6F', color: '#2A7F6F',
 }
 
 function normalizeAgencyName(s: string): string {
@@ -198,7 +233,11 @@ function CompareBlock({ match, form }: { match: ClientMatch; form: FormSnapshot 
       <CompareRow
         label="Address"
         onFile={fullAddress(match.client)}
-        typed={fullAddress(form)}
+        // Not "NJ" from a still-empty form: the state field is pre-filled, so
+        // fullAddress(form) is never truly blank. Only compare once a street
+        // address has actually been typed — before that, show it as not yet
+        // entered rather than flagging the whole line as a difference.
+        typed={form.address.trim() ? fullAddress(form) : ''}
       />
     </div>
   )
@@ -209,16 +248,21 @@ function MatchCard({
   currentAgencyName,
   form,
   onResolve,
-  onDecline,
+  onCancel,
+  onNotSamePerson,
 }: {
   match: ClientMatch
   currentAgencyName: string
   form: FormSnapshot
   onResolve: (action: 'reschedule' | 'book-new', match: ClientMatch) => void
-  onDecline: () => void
+  /** "This is a duplicate, I shouldn't be entering it" — resets the form on
+      this page to blank, ready for the next referral. */
+  onCancel: () => void
+  /** The single "no" on every card: this candidate isn't who's being entered.
+      Drops this card; when the last card goes, the banner proceeds as a new
+      client. See the CAUTION on the DNS branch below. */
+  onNotSamePerson: (match: ClientMatch) => void
 }) {
-  const [ackActive, setAckActive] = useState(false)
-
   const noShowScenario = match.scenarios.find(s => s.type === 'no-show')
   const activeScenario = match.scenarios.find(s => s.type === 'active')
   // Active always takes priority over the reschedule offer -- if they're
@@ -246,9 +290,28 @@ function MatchCard({
 
   const historyCount = match.scenarios.filter(s => s.type !== 'active').length
 
+  // "Exact" = first + last + DOB all equal, case- and punctuation-insensitive
+  // (normalizeForCompare, same normalization the compare rows use). Two
+  // different people can still share all three, so the option stays — a
+  // genuine second person must have a way through — but the label says the
+  // specific thing being claimed so it reads as the rare case it is.
+  const exactNameDobMatch =
+    !!form.firstName.trim() && !!form.lastName.trim() && !!form.dob.trim() &&
+    normalizeForCompare(form.firstName) === normalizeForCompare(match.client.firstName) &&
+    normalizeForCompare(form.lastName) === normalizeForCompare(match.client.lastName) &&
+    normalizeForCompare(form.dob) === normalizeForCompare(match.client.dob)
+  const notSameLabel = exactNameDobMatch
+    ? 'Different person with the same name and date of birth'
+    : 'Not the same person'
+
+  // All grey. The eyebrow is a category label, not an alarm — the one fact
+  // ("already booked" / "no-show" / "on file before") is carried once, by the
+  // plain line below it, not by stacking a red box + red eyebrow + red button.
+  // DNS keeps its own red treatment (handled separately) because it is the one
+  // case that is a hard stop.
   const EYEBROW: Record<typeof primary, { text: string; color: string }> = {
-    active: { text: 'ACTIVE APPOINTMENT', color: '#C0392B' },
-    reschedule: { text: 'RECENT NO-SHOW', color: '#8A6A00' },
+    active: { text: 'ACTIVE APPOINTMENT', color: '#7A8899' },
+    reschedule: { text: 'RECENT NO-SHOW', color: '#7A8899' },
     history: { text: 'POSSIBLE EXISTING CLIENT', color: '#7A8899' },
   }
 
@@ -271,69 +334,37 @@ function MatchCard({
         DOB {match.client.dob || '—'}{match.client.phone ? ` · ${match.client.phone}` : ''}
       </div>
 
-      {/* Shown INSTEAD of the scenario banners below, not alongside them. Once
-          a client is flagged, whether they also have a no-show or an active
-          appointment is not a decision Dawson has to make — none of those
-          paths are open to him. Spelling out where the flag lives, because
-          there is nothing he can click to get past it and an unexplained
-          disabled button reads as a bug. */}
+      {/* One plain line per case — normal weight, no fill. The information, not
+          the alarm: the compare table and the appointment history right below
+          are what he actually reads. */}
       {doNotServe && (
-        <div
-          style={{
-            background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px',
-            padding: '12px 14px', marginBottom: '14px', color: '#C0392B',
-          }}
-        >
-          <div style={{ fontSize: '13px', fontWeight: 800, marginBottom: '4px' }}>
-            This client is marked do-not-serve
-          </div>
-          <div style={{ fontSize: '12.5px', lineHeight: 1.55, fontWeight: 500 }}>
-            They cannot be referred, and this cannot be overridden from the portal.
-            The flag is the Status field on their record in the Clients table in
-            Airtable, set to &ldquo;DNS&rdquo;. If it is wrong, change it there first.
-            <br />
-            If this is a <strong>different person</strong> with the same name, choose
-            &ldquo;None of these are the same person&rdquo; below and carry on.
-          </div>
+        <div style={{ fontSize: '13px', lineHeight: 1.55, color: '#2C3A4A', marginBottom: '14px' }}>
+          This client is marked do not serve and can&rsquo;t be referred. If that&rsquo;s
+          wrong, it needs to be changed on the client&rsquo;s record before a referral
+          can go through.
         </div>
       )}
 
       {!doNotServe && primary === 'active' && (
-        <div
-          style={{
-            background: '#FDEDEC', border: '1px solid #F0C4BE', borderRadius: '8px',
-            padding: '12px 14px', marginBottom: '14px', fontSize: '12.5px', color: '#C0392B', fontWeight: 700,
-          }}
-        >
-          ⚠ Already has a {activeScenario!.referral.appointmentStatus} appointment
-          {displayDate(activeScenario!.referral) ? ` — ${formatDate(displayDate(activeScenario!.referral))}` : ''}. Booking another may create a duplicate.
+        <div style={{ fontSize: '13px', lineHeight: 1.55, color: '#2C3A4A', marginBottom: '14px' }}>
+          This client has {activeScenario!.referral.appointmentStatus === 'Pending Schedule'
+            ? 'an appointment awaiting a date'
+            : 'a scheduled appointment'}
+          {displayDate(activeScenario!.referral) ? ` on ${formatDate(displayDate(activeScenario!.referral))}` : ''}.
         </div>
       )}
 
       {!doNotServe && primary === 'reschedule' && (
-        <div
-          style={{
-            background: '#FEF9EC', border: '1px solid #C9A84C', borderRadius: '8px',
-            padding: '12px 14px', marginBottom: '14px', color: '#8A6A00',
-          }}
-        >
-          <div style={{ fontSize: '13px', fontWeight: 800, marginBottom: '4px' }}>
-            No-show on {formatDate(displayDate(noShowScenario!.referral))}
-            {noShowScenario!.referral.referringAgency ? ` via ${noShowScenario!.referral.referringAgency}` : ''}
-          </div>
-          <div style={{ fontSize: '12.5px', lineHeight: 1.5 }}>
-            Booking this appointment will reschedule the existing no-show instead of creating a new record — everything else on file (items, household, notes) stays as it was.
-          </div>
+        <div style={{ fontSize: '13px', lineHeight: 1.55, color: '#2C3A4A', marginBottom: '14px' }}>
+          No-show on {formatDate(displayDate(noShowScenario!.referral))}
+          {noShowScenario!.referral.referringAgency ? ` via ${noShowScenario!.referral.referringAgency}` : ''}. Booking
+          here reschedules that appointment rather than creating a new record — items,
+          household and notes stay as they are.
         </div>
       )}
 
       {!doNotServe && primary === 'history' && historyCount > 0 && (
-        <div
-          style={{
-            background: '#F7F5F1', border: '1px solid #EDE9E1', borderRadius: '8px',
-            padding: '10px 14px', marginBottom: '14px', fontSize: '12.5px', color: '#2C3A4A', fontWeight: 600,
-          }}
-        >
+        <div style={{ fontSize: '13px', lineHeight: 1.55, color: '#2C3A4A', marginBottom: '14px' }}>
           {historyCount} appointment{historyCount === 1 ? '' : 's'} on file in the last 12 months.
         </div>
       )}
@@ -361,7 +392,7 @@ function MatchCard({
               background: `${statusColor(h.appointmentStatus)}1A`, color: statusColor(h.appointmentStatus),
             }}
           >
-            {h.appointmentStatus || 'Unknown'} · {formatAgo(h.appointmentDate)}
+            {[h.appointmentStatus || 'Unknown', formatAgo(h.appointmentDate)].filter(Boolean).join(' · ')}
           </span>
           <span style={{ color: '#7A8899', textAlign: 'right', maxWidth: '160px' }}>
             {h.referringAgency || '—'}
@@ -369,86 +400,49 @@ function MatchCard({
         </div>
       ))}
 
+      {/* One action per card that isn't an exit, none solid-filled so nothing
+          shouts, then the two exits side by side:
+            - reschedule (No-Show inside 25 days): "Reschedule the existing
+              appointment" only. No competing new-booking — inside the window
+              it IS the same request, and beyond it the match falls into the
+              history case which offers the new booking instead. Offering both
+              here would re-make a decision the window already made, on the one
+              screen meant to STOP duplicate records.
+            - active: "Book a second appointment" — the deliberate override,
+              gold outline to mark it, not to make it loud.
+            - history: "Book an appointment" — a normal choice, neutral.
+            - DNS: no booking path at all.
+          Cancel + "Not the same person" (or, on an exact name+DOB match,
+          "Different person…") share a row — both exits, same treatment.
+
+          DNS CAUTION — dismissing a genuine DNS match here would fork a fresh
+          unflagged Clients row that the submit route's record-id assert can't
+          catch (it reads the record we just made). Both submit routes guard
+          against this by running findDoNotServeClientByIdentity (name + DOB)
+          BEFORE any Client is created: two people who really share a name have
+          different DOBs and pass it; the same person dismissed here does not.
+          Keep both checks, in that order. */}
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '16px' }}>
-        {/* A flagged client gets NO booking controls at all — not a disabled
-            button, not an acknowledgment checkbox. Both of those say "there is
-            a way through if you find it", and there is not: the submit route
-            refuses this client whichever button is pressed. The one action
-            still offered is the one that is genuinely available, which is to
-            say this is somebody else. That path is important rather than
-            cosmetic — a common surname means a flagged record can match a
-            person who has nothing to do with them, and dismissing here creates
-            a brand-new Client that carries no flag. */}
-        {doNotServe ? (
-          <button
-            onClick={onDecline}
-            style={{
-              padding: '11px', borderRadius: '8px', border: '1px solid #EDE9E1',
-              background: 'white', color: '#2C3A4A',
-              fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-            }}
-          >
-            Understood — do not book
+        {!doNotServe && primary === 'reschedule' && (
+          <button onClick={() => onResolve('reschedule', match)} style={ACTION_BTN_RESCHEDULE}>
+            Reschedule the existing appointment
           </button>
-        ) : (
-        <>
-        {primary === 'reschedule' && (
-          <button
-            onClick={() => onResolve('reschedule', match)}
-            style={{
-              padding: '11px', borderRadius: '8px', border: 'none', background: '#2A7F6F',
-              color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-            }}
-          >
-            Reschedule this appointment — no new record
+        )}
+        {!doNotServe && primary === 'active' && (
+          <button onClick={() => onResolve('book-new', match)} style={ACTION_BTN_OVERRIDE}>
+            Book a second appointment
+          </button>
+        )}
+        {!doNotServe && primary === 'history' && (
+          <button onClick={() => onResolve('book-new', match)} style={ACTION_BTN}>
+            Book an appointment
           </button>
         )}
 
-        {/* Active is a soft block -- booking anyway requires an explicit
-            acknowledgment first rather than a plain one-click button, so
-            it's not an easy accidental click past a warning that says
-            "this may create a duplicate." */}
-        {primary === 'active' && (
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', fontSize: '12px', color: '#2C3A4A', cursor: 'pointer', padding: '2px 2px 4px' }}>
-            <input
-              type="checkbox"
-              checked={ackActive}
-              onChange={e => setAckActive(e.target.checked)}
-              style={{ marginTop: '2px' }}
-            />
-            I understand this client already has an active appointment, and booking another may create a duplicate.
-          </label>
-        )}
-
-        <button
-          onClick={() => onResolve('book-new', match)}
-          disabled={primary === 'active' && !ackActive}
-          style={{
-            padding: '11px', borderRadius: '8px',
-            border: primary === 'history' ? 'none' : '1px solid #EDE9E1',
-            background: primary === 'active' ? (ackActive ? '#C0392B' : '#EDE9E1') : primary === 'reschedule' ? 'white' : '#2A7F6F',
-            color: primary === 'active' ? (ackActive ? 'white' : '#A9ADB4') : primary === 'reschedule' ? '#2C3A4A' : 'white',
-            fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px',
-            cursor: primary === 'active' && !ackActive ? 'not-allowed' : 'pointer',
-          }}
-        >
-          {primary === 'reschedule'
-            ? 'Same person — book a new appointment anyway'
-            : primary === 'active'
-              ? 'Same person — book anyway'
-              : 'Same person — book a new appointment'}
-        </button>
-        <button
-          onClick={onDecline}
-          style={{
-            padding: '9px', borderRadius: '8px', border: 'none', background: 'transparent',
-            color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 600, fontSize: '12.5px', cursor: 'pointer',
-          }}
-        >
-          Same person — do not book
-        </button>
-        </>
-        )}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px' }}>
+          <button onClick={onCancel} style={ACTION_BTN}>Cancel this referral</button>
+          <button onClick={() => onNotSamePerson(match)} style={ACTION_BTN}>{notSameLabel}</button>
+        </div>
       </div>
     </div>
   )
@@ -484,7 +478,7 @@ export default function DuplicateClientBanner({
   form,
   resolved,
   onResolve,
-  onDecline,
+  onCancel,
   onDismiss,
   onReopen,
 }: {
@@ -495,25 +489,47 @@ export default function DuplicateClientBanner({
   // the full card list down to a one-line confirmation strip instead.
   resolved: { clientId: string; clientName: string } | null
   onResolve: (action: 'reschedule' | 'book-new', match: ClientMatch) => void
-  onDecline: () => void
+  /** "Cancel this referral" — reset the form on this page to blank. */
+  onCancel: () => void
+  /** "None of these are the same person" — proceed as a genuinely new client. */
   onDismiss: () => void
   onReopen: () => void
 }) {
-  const shown = matches.slice(0, 5)
+  const all = matches.slice(0, 5)
+  // "Not the same person" on a card drops that card. When the last one goes,
+  // there is nothing left to disambiguate, so it becomes onDismiss (new
+  // client). The bottom "None of these" button is the same thing in one click,
+  // shown only when there are 2+ cards to clear.
+  const [dismissedIds, setDismissedIds] = useState<string[]>([])
+  const shown = all.filter(m => !dismissedIds.includes(m.client.id))
+
+  const notSamePerson = (m: ClientMatch) => {
+    const next = [...dismissedIds, m.client.id]
+    setDismissedIds(next)
+    if (all.every(x => next.includes(x.client.id))) onDismiss()
+  }
 
   if (resolved) {
     return <ResolvedStrip clientName={resolved.clientName} onReopen={onReopen} />
   }
+  if (shown.length === 0) return null
+
+  // A DNS match isn't "possible" — it's confirmed and blocked. When one is in
+  // view the heading and the intro line have to say that, not invite him to
+  // carry on filling the form.
+  const anyDns = shown.some(m => isDoNotServe(m.client.status))
 
   return (
     <div style={{ background: '#FAF8F4', border: '1px solid #EDE9E1', borderRadius: '10px', padding: '20px', marginBottom: '20px' }}>
       <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '15px', color: '#1B2B4B', marginBottom: '4px' }}>
-        Possible existing client
+        {anyDns ? 'This client is marked do not serve' : 'Possible existing client'}
       </div>
       <div style={{ fontSize: '13px', color: '#7A8899', lineHeight: 1.5, marginBottom: '16px' }}>
-        {shown.length === 1
-          ? 'We found a similar record already in the system. Review below, then keep filling out the form.'
-          : `We found ${shown.length} similar records already in the system. Review below, then keep filling out the form.`}
+        {anyDns
+          ? "They can't be referred. Check it's the right person below."
+          : shown.length === 1
+            ? 'We found a similar record already in the system. Review below, then keep filling out the form.'
+            : `We found ${shown.length} similar records already in the system. Review below, then keep filling out the form.`}
       </div>
 
       {shown.map(m => (
@@ -523,20 +539,23 @@ export default function DuplicateClientBanner({
           currentAgencyName={currentAgencyName}
           form={form}
           onResolve={onResolve}
-          onDecline={onDecline}
+          onCancel={onCancel}
+          onNotSamePerson={notSamePerson}
         />
       ))}
 
-      <button
-        onClick={onDismiss}
-        style={{
-          width: '100%', padding: '11px', borderRadius: '8px', border: '1px solid #EDE9E1',
-          background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)',
-          fontWeight: 700, fontSize: '13px', cursor: 'pointer',
-        }}
-      >
-        None of these — this is a new client
-      </button>
+      {shown.length > 1 && (
+        <button
+          onClick={onDismiss}
+          style={{
+            width: '100%', padding: '11px', borderRadius: '8px', border: '1px solid #EDE9E1',
+            background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)',
+            fontWeight: 700, fontSize: '13px', cursor: 'pointer',
+          }}
+        >
+          None of these are the same person
+        </button>
+      )}
     </div>
   )
 }

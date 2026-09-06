@@ -51,6 +51,8 @@ import { REC_ID_RE } from '@/lib/airtable/client'
 import {
   assertClientMayBeReferred,
   assertReferralClientMayBeRescheduled,
+  findDoNotServeClientByIdentity,
+  doNotServeMessage,
   doNotServeUnverifiedMessage,
   DoNotServeError,
 } from '@/lib/clients/do-not-serve'
@@ -166,6 +168,31 @@ export async function POST(req: Request) {
   }
   const dobFormatted = formatDOB(dobRaw)
 
+  // ---- Do-not-serve, IDENTITY check — FIRST, before any Client is resolved
+  //      or created. A dismissed DNS match must never leave an unflagged
+  //      Clients row behind, because the exact-key lookup would then reuse it
+  //      forever. Needs only name + DOB, all present here. Ordering note by the
+  //      record-id assert below.
+  try {
+    const flagged = await findDoNotServeClientByIdentity({ firstName: fn, lastName: ln, dob: dobFormatted })
+    if (flagged) {
+      console.warn(
+        `[do-not-serve] identity backstop blocked an agency referral before client creation: ` +
+        `first/last/DOB match flagged client ${flagged.id} (${flagged.name}).`,
+      )
+      throw new DoNotServeError(doNotServeMessage(flagged.name), flagged.id)
+    }
+  } catch (e: unknown) {
+    if (e instanceof DoNotServeError) {
+      return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
+    }
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json(
+      { error: `Could not verify this client's do-not-serve status, so the referral was not submitted: ${msg}` },
+      { status: 502 },
+    )
+  }
+
   // ---- Resolve the Client: exact-key match, else create. ----
   // findClientByIdentity throws (not returns null) on a failed lookup — if we
   // cannot tell whether this client already exists, we must not create a
@@ -197,7 +224,23 @@ export async function POST(req: Request) {
     )
   }
 
-  // ---- Do-not-serve: on the resolved record, by id. No override. ----
+  // ---- Do-not-serve, RECORD-ID assert — on the resolved/linked Client. ----
+  //
+  // ORDER, end to end — DO NOT REORDER. This exact reordering (assert then
+  // identity) once left an orphaned, unflagged Clients row for a client we'd
+  // decided not to serve, which the next submit then happily reused:
+  //   1. identity DNS check   — name + DOB, BEFORE any write (above). Blocks a
+  //                             typed identity that matches a flagged person,
+  //                             creating nothing.
+  //   2. resolve the Client   — exact-key find → link, else createClient.
+  //   3. record-id DNS assert  — here, on that record. Catches what step 1
+  //                             can't: the linked Client is itself flagged
+  //                             (matched by the Clients unique-id key, which
+  //                             normalizes differently from step 1).
+  //   4. build + create the referral (below).
+  //
+  // Both DNS checks fail closed: DoNotServeError → 403 (one message, one
+  // wall); any other throw → 502 "could not verify".
   try {
     await assertClientMayBeReferred(clientId)
   } catch (e: unknown) {

@@ -4,12 +4,13 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { TIME_CAPS, TIME_ORDER, describeDayLoad, type TimeSlot } from '@/lib/schedule/capacity'
+import { TIME_CAPS, type TimeSlot } from '@/lib/schedule/capacity'
 import { matchesSearch } from '@/lib/search'
 import { FIELD_BORDER } from '@/lib/ui/field-border'
 import { maskMdyInput, parseMdyToISO } from '@/lib/dates'
 import AddAgencyStaffModal, { type AddStaffResult } from '@/components/internal/modals/AddAgencyStaffModal'
 import DuplicateClientBanner, { type ClientMatch } from '@/components/internal/modals/DuplicateClientModal'
+import SaturdayCapacityGrid, { type SlotSelection } from '@/components/internal/SaturdayCapacityGrid'
 
 
 
@@ -30,7 +31,6 @@ const ITEMS = [
 
 // Per-slot capacities come from lib/schedule/capacity.ts.
 const SLOT_CAP = TIME_CAPS
-const TIME_SLOTS = TIME_ORDER
 
 
 
@@ -40,6 +40,16 @@ function formatPhone(raw: string): string {
   if (d.length >= 4) return `(${d.slice(0,3)}) ${d.slice(3)}`
   if (d.length > 0) return `(${d}`
   return ''
+}
+
+
+
+// 'YYYY-MM-DD' -> "Sat, Oct 10, 2026" for the appointment echo beside Submit.
+function echoDate(iso: string): string {
+  if (!iso) return ''
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+  })
 }
 
 
@@ -315,8 +325,11 @@ export default function DawsonAddReferralPage() {
 
 
 
+  // availableDates now feeds only the over-50 override note in the echo; the
+  // grid fetches its own data. No loading flag — the note just doesn't render
+  // until the fetch lands, which is fine for a line that only appears on a
+  // full slot.
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
-  const [availabilityLoading, setAvailabilityLoading] = useState(true)
 
   // Date of birth is TYPED, mm/dd/yyyy, not picked. See handleDobChange below.
   const [dobText, setDobText] = useState('')
@@ -445,14 +458,12 @@ export default function DawsonAddReferralPage() {
   // different file (lib/schedule/flexible.ts) and is untouched: that one is for
   // a date chosen FOR somebody, not one Dawson picked.
 const loadAvailability = () => {
-  setAvailabilityLoading(true)
   fetch('/api/dawson/schedule/available?weeks=8&leadDays=1')
     .then(r => r.json())
     .then(data => {
       setAvailableDates(Array.isArray(data) ? data : [])
-      setAvailabilityLoading(false)
     })
-    .catch(() => setAvailabilityLoading(false))
+    .catch(() => {})
 }
 
 
@@ -706,6 +717,20 @@ useEffect(() => {
     selectedDate !== undefined &&
     bookedForSlot(selectedDate, form.appointmentTime) >= SLOT_CAP[form.appointmentTime]
 
+  // The rail grid is the only date picker on the page. It always picks a
+  // date AND a time together (one click), so form.appointmentTime is never
+  // null once a date is set — the old "leave time blank to auto-schedule"
+  // path is gone with the flexible option. `availableDates` is still fetched,
+  // but only to compute the over-50 override note in the echo below.
+  const gridValue: SlotSelection | null =
+    form.preferredDate && form.appointmentTime
+      ? { date: form.preferredDate, time: form.appointmentTime }
+      : null
+  const handleGridPick = (sel: SlotSelection) => {
+    set('preferredDate', sel.date)
+    set('appointmentTime', sel.time)
+  }
+
 
 
   // Actually posts the referral. Called either directly (no duplicate
@@ -847,17 +872,13 @@ useEffect(() => {
     }))
   }
 
-  const handleDuplicateDecline = () => {
-    // "Same person — do not book." No-op today: just hides the banner and
-    // leaves the form as Dawson left it. Kept as its own handler (distinct
-    // from onDismiss) in case a backend hook gets added here later.
-    setBannerDismissed(true)
-  }
-
   const handleDuplicateDismiss = () => {
     // "None of these are the same person" -- proceed as a genuinely new client.
     setBannerDismissed(true)
     setMatchResolution(null)
+    // If he'd entered reschedule mode off one of these matches, "not the same
+    // person" contradicts it — drop back to the full form.
+    setRescheduleMode(null)
   }
 
   // "Change" on the collapsed confirmation strip -- reopens the full
@@ -866,6 +887,23 @@ useEffect(() => {
   // just edit those fields directly if he picks someone else.
   const handleReopenBanner = () => {
     setMatchResolution(null)
+  }
+
+  // Blank the whole form, ready for the next referral on this same page.
+  // Used by "Add Another" after a submit AND by "Cancel this referral" in the
+  // duplicate banner ("this is a duplicate, I shouldn't be entering it").
+  const resetForm = () => {
+    clearAgency()
+    setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '', preferredDate: '', appointmentTime: null })
+    // dobText lives outside `form`, so clearing form.dob does not clear the box.
+    setDobText('')
+    setDobBlurred(false)
+    setRescheduleMode(null)
+    setMatchResolution(null)
+    setCheckedKey(null)
+    setDuplicateMatches([])
+    setBannerDismissed(false)
+    loadAvailability()
   }
 
   const handleRescheduleConfirm = async () => {
@@ -921,6 +959,10 @@ useEffect(() => {
       hhSize: '# in Household',
       children: '# of Children',
       dob: 'Date of Birth',
+      // Required here to match the agency New Referral form — two forms
+      // writing one Client Referrals table shouldn't disagree on what's
+      // mandatory.
+      phone: 'Cell Phone',
     }
     // Named before the generic missing-fields message, because a date of birth
     // that has been typed but does not parse IS missing as far as form.dob is
@@ -990,20 +1032,7 @@ useEffect(() => {
               : `Referral for ${form.firstName} ${form.lastName} has been submitted successfully.`}
           </p>
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'center' }}>
-            <button onClick={() => {
-  setSubmitted(false)
-  clearAgency()
-  setForm({ firstName: '', lastName: '', address: '', address2: '', city: '', state: 'NJ', zip: '', phone: '', hhSize: '', children: '', dob: '', language: 'English', items: [], notes: '', preferredDate: '', appointmentTime: null })
-  // dobText lives outside `form`, so clearing form.dob does not clear the box.
-  setDobText('')
-  setDobBlurred(false)
-  setRescheduleMode(null)
-  setMatchResolution(null)
-  setCheckedKey(null)
-  setDuplicateMatches([])
-  setBannerDismissed(false)
-  loadAvailability()
-}}
+            <button onClick={() => { setSubmitted(false); resetForm() }}
               style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
               Add Another
             </button>
@@ -1019,141 +1048,38 @@ useEffect(() => {
 
 
 
-  // Reschedule-only view: shown once staff pick "reschedule their
-  // no-show" in the duplicate-check modal. Nothing else about the
-  // existing Client Referrals record changes -- items, household,
-  // agency, notes all stay exactly as they were -- so the only thing
-  // left to collect is the new date/time. Reuses the same
-  // availableDates/preferredDate/appointmentTime state as the full form.
-  if (rescheduleMode) {
-    const rSelectedDate = availableDates.find(d => d.date === form.preferredDate)
-    const rIsOverride =
-      form.appointmentTime !== null &&
-      rSelectedDate !== undefined &&
-      bookedForSlot(rSelectedDate, form.appointmentTime) >= SLOT_CAP[form.appointmentTime]
-
-    return (
-      <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-        <div style={{ maxWidth: '600px', margin: '0 auto', padding: '32px' }}>
-          <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
-            <div style={SECTION}>Reschedule No-Show</div>
-            <p style={{ fontSize: '13.5px', color: '#2C3A4A', lineHeight: 1.6, marginBottom: '24px' }}>
-              Rescheduling {rescheduleMode.clientName}'s missed appointment. This reuses their existing
-              referral — no new record is created, and everything else on file (items, household, notes,
-              agency) stays as it was. Just pick the new date and time.
-            </p>
-
-            <div style={{ marginBottom: '16px' }}>
-              <label style={LABEL}>New Saturday *</label>
-              <select
-                style={{ ...INPUT, cursor: 'pointer' }}
-                value={form.preferredDate}
-                onChange={e => {
-                  set('preferredDate', e.target.value)
-                  set('appointmentTime', null)
-                }}
-                disabled={availabilityLoading}
-              >
-                <option value="">
-                  {availabilityLoading ? 'Loading dates...' : 'Select a Saturday...'}
-                </option>
-                {availableDates.map(d => {
-                  const dateObj = new Date(d.date + 'T00:00:00')
-                  const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-                  return (
-                    <option key={d.date} value={d.date}>
-                      {label} — {d.totalBooked !== undefined
-                        ? describeDayLoad(d.totalBooked, d.dayCapacity)
-                        : `${d.slotsRemaining} slot${d.slotsRemaining === 1 ? '' : 's'}`}
-                    </option>
-                  )
-                })}
-              </select>
-            </div>
-
-            {form.preferredDate && (
-              <div style={{ marginBottom: '20px' }}>
-                <label style={LABEL}>Time (optional — leave blank to auto-schedule)</label>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5, 1fr)', gap: '8px' }}>
-                  {TIME_SLOTS.map(slot => {
-                    const booked = bookedForSlot(rSelectedDate, slot)
-                    const cap = SLOT_CAP[slot]
-                    const full = booked >= cap
-                    const selected = form.appointmentTime === slot
-                    return (
-                      <button
-                        key={slot}
-                        type="button"
-                        onClick={() => set('appointmentTime', selected ? null : slot)}
-                        style={{
-                          padding: '10px 6px', borderRadius: '8px',
-                          border: selected ? '2px solid #2A7F6F' : full ? '1px solid #F0C4BE' : '1px solid #EDE9E1',
-                          background: selected ? '#2A7F6F' : full ? '#FDEDEC' : 'white',
-                          color: selected ? 'white' : full ? '#C0392B' : '#2C3A4A',
-                          cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '3px',
-                          fontFamily: 'var(--font-montserrat)',
-                        }}
-                      >
-                        <span style={{ fontSize: '13px', fontWeight: 800, lineHeight: 1 }}>{slot}</span>
-                        <span style={{ fontSize: '11px', fontWeight: 600, opacity: selected ? 0.85 : 1, lineHeight: 1 }}>
-                          {booked}/{cap}
-                        </span>
-                      </button>
-                    )
-                  })}
-                </div>
-                {rIsOverride && form.appointmentTime && (
-                  <div style={{ fontSize: '12px', color: '#8A6A00', marginTop: '10px' }}>
-                    Override — {form.appointmentTime} is at capacity ({bookedForSlot(rSelectedDate, form.appointmentTime)}/{SLOT_CAP[form.appointmentTime]} booked)
-                  </div>
-                )}
-              </div>
-            )}
-
-            {error && (
-              <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: '#C0392B' }}>
-                {error}
-              </div>
-            )}
-
-            <div style={{ display: 'flex', gap: '10px' }}>
-              <button
-                onClick={() => setRescheduleMode(null)}
-                style={{ flex: 1, padding: '13px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13.5px', cursor: 'pointer' }}
-              >
-                Back
-              </button>
-              <button
-                onClick={handleRescheduleConfirm}
-                disabled={loading}
-                style={{ flex: 2, padding: '13px', borderRadius: '8px', border: 'none', background: loading ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13.5px', cursor: loading ? 'not-allowed' : 'pointer' }}
-              >
-                {loading ? 'Rescheduling...' : 'Confirm Reschedule'}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    )
-  }
 
 
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      <div style={{ maxWidth: '780px', margin: '0 auto', padding: '32px' }}>
+      {/* One centred column. The process is linear — he fills top to bottom and
+          the appointment is the last decision — so the capacity grid lives
+          inline in the Appointment section, where the Saturday dropdown was,
+          not in a rail. 840px: the identity row (DOB / phone / language) lays
+          out as three ~245px tracks, two-field rows split ~370px each, and the
+          inline grid gets its full ~560px of legible width — wider fields than
+          the two-column split gave, which is what was cramping them. */}
+      <div style={{ maxWidth: '840px', margin: '0 auto', padding: '32px' }}>
         <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
 
+          {/* Reschedule-a-no-show is a mode of THIS page, not a separate view:
+              the duplicate card, its compare table and the appointment history
+              stay on screen — that's the context he's deciding from. Every
+              editable section hides; only the banner, the Appointment grid
+              (for the new slot) and Submit remain. */}
+          {!rescheduleMode && (<>
 
+          <p style={{ fontSize: '12.5px', color: '#7A8899', marginBottom: '4px' }}>All fields required unless noted.</p>
 
           {/* Agency + Staff Selection */}
-          <div style={SECTION}>Agency & Staff</div>
+          <div style={SECTION}>Agency &amp; staff</div>
 
 
 
           {/* Agency combobox */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={LABEL}>Agency or Staff Member *</label>
+            <label style={LABEL}>Agency or Staff Member</label>
             <div ref={agencyComboRef} style={{ position: 'relative' }}>
               <input
                 style={INPUT}
@@ -1281,7 +1207,7 @@ useEffect(() => {
                   and a half-width name box beside an empty gap reads as a
                   field that failed to render. */}
               <div style={{ marginBottom: '12px' }}>
-                <label style={LABEL}>Agency Name *</label>
+                <label style={LABEL}>Agency Name</label>
                 <input style={INPUT} value={newAgency.name} onChange={e => setNewAgency({ ...newAgency, name: e.target.value })} placeholder="Agency name" />
               </div>
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -1289,17 +1215,17 @@ useEffect(() => {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px', marginBottom: '12px' }}>
                 <div>
-                  <label style={LABEL}>First Name *</label>
+                  <label style={LABEL}>First Name</label>
                   <input style={INPUT} value={newStaff.firstName} onChange={e => setNewStaff({ ...newStaff, firstName: e.target.value })} />
                 </div>
                 <div>
-                  <label style={LABEL}>Last Name *</label>
+                  <label style={LABEL}>Last Name</label>
                   <input style={INPUT} value={newStaff.lastName} onChange={e => setNewStaff({ ...newStaff, lastName: e.target.value })} />
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px' }}>
                 <div>
-                  <label style={LABEL}>Staff Email *</label>
+                  <label style={LABEL}>Staff Email</label>
                   <input style={INPUT} type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="staff@example.com" />
                 </div>
                 <div>
@@ -1315,7 +1241,7 @@ useEffect(() => {
           {/* Staff selection (only if existing agency is picked) */}
           {selectedAgency && !newAgencyMode && (
             <div style={{ marginBottom: '16px' }}>
-              <label style={LABEL}>Staff Member *</label>
+              <label style={LABEL}>Staff Member</label>
               <select
                 style={INPUT}
                 value={newStaffMode ? '__new__' : (selectedStaff?.id ?? '')}
@@ -1346,17 +1272,17 @@ useEffect(() => {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px', marginBottom: '12px' }}>
                 <div>
-                  <label style={LABEL}>First Name *</label>
+                  <label style={LABEL}>First Name</label>
                   <input style={INPUT} value={newStaff.firstName} onChange={e => setNewStaff({ ...newStaff, firstName: e.target.value })} />
                 </div>
                 <div>
-                  <label style={LABEL}>Last Name *</label>
+                  <label style={LABEL}>Last Name</label>
                   <input style={INPUT} value={newStaff.lastName} onChange={e => setNewStaff({ ...newStaff, lastName: e.target.value })} />
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px' }}>
                 <div>
-                  <label style={LABEL}>Staff Email *</label>
+                  <label style={LABEL}>Staff Email</label>
                   <input style={INPUT} type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="staff@example.com" />
                 </div>
                 <div>
@@ -1374,20 +1300,20 @@ useEffect(() => {
 
 
           {/* Client Info */}
-          <div style={SECTION}>Client Information</div>
+          <div style={SECTION}>Client</div>
           <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '16px', marginBottom: '16px' }}>
             <div>
-              <label style={LABEL}>First Name *</label>
+              <label style={LABEL}>First Name</label>
               <input style={INPUT} value={form.firstName} onChange={e => set('firstName', e.target.value)} placeholder="First name" />
             </div>
             <div>
-              <label style={LABEL}>Last Name *</label>
+              <label style={LABEL}>Last Name</label>
               <input style={INPUT} value={form.lastName} onChange={e => set('lastName', e.target.value)} placeholder="Last name" />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '16px', marginBottom: '16px' }}>
             <div>
-              <label style={LABEL}>Date of Birth *</label>
+              <label style={LABEL}>Date of Birth</label>
               <input
                 style={dobShowError ? INPUT_INVALID : INPUT}
                 value={dobText}
@@ -1407,7 +1333,7 @@ useEffect(() => {
             </div>
             <div>
               <label style={LABEL}>Cell Phone</label>
-              <input style={INPUT} value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} placeholder="(000) 000-0000 (optional)" />
+              <input style={INPUT} value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} placeholder="(000) 000-0000" />
             </div>
             <div>
               <label style={LABEL}>Preferred Language</label>
@@ -1419,6 +1345,8 @@ useEffect(() => {
             </div>
           </div>
 
+          </>)}
+
           {/* Inline duplicate-client banner -- not a popup. Appears here,
               right after the identity fields that trigger it and right
               before Address, so it's in view both immediately (comparing
@@ -1429,13 +1357,14 @@ useEffect(() => {
               matches={duplicateMatches}
               currentAgencyName={newAgencyMode ? newAgency.name : (selectedAgency?.name || '')}
               form={{
+                firstName: form.firstName, lastName: form.lastName,
                 dob: form.dob, phone: form.phone,
                 address: form.address, address2: form.address2,
                 city: form.city, state: form.state, zip: form.zip,
               }}
               resolved={matchResolution}
               onResolve={handleDuplicateResolve}
-              onDecline={handleDuplicateDecline}
+              onCancel={resetForm}
               onDismiss={handleDuplicateDismiss}
               onReopen={handleReopenBanner}
             />
@@ -1469,19 +1398,21 @@ useEffect(() => {
 
 
 
+          {!rescheduleMode && (<>
+
           {/* Address */}
           <div style={{ ...SECTION, marginTop: '24px' }}>Address</div>
           <div style={{ marginBottom: '16px' }}>
-            <label style={LABEL}>Street Address *</label>
+            <label style={LABEL}>Street Address</label>
             <input style={INPUT} value={form.address} onChange={e => set('address', e.target.value)} placeholder="123 Main Street" />
           </div>
           <div style={{ marginBottom: '16px' }}>
-            <label style={LABEL}>Address Line 2</label>
-            <input style={INPUT} value={form.address2} onChange={e => set('address2', e.target.value)} placeholder="Apt, Suite, Unit (optional)" />
+            <label style={LABEL}>Address Line 2 <span style={{ fontWeight: 600, color: '#9AA6B2', letterSpacing: 0 }}>(optional)</span></label>
+            <input style={INPUT} value={form.address2} onChange={e => set('address2', e.target.value)} placeholder="Apt, Suite, Unit" />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW_CITY_STATE_ZIP, gap: '16px', marginBottom: '16px' }}>
             <div>
-              <label style={LABEL}>City *</label>
+              <label style={LABEL}>City</label>
               {/* Plain text field. This carried a native <datalist>
                   autocomplete over the 40 most common City values on file;
                   Ben reported it pausing when he went back to correct an
@@ -1500,11 +1431,11 @@ useEffect(() => {
               />
             </div>
             <div>
-              <label style={LABEL}>State *</label>
+              <label style={LABEL}>State</label>
               <input style={INPUT} value={form.state} onChange={e => set('state', e.target.value)} />
             </div>
             <div>
-              <label style={LABEL}>Zip *</label>
+              <label style={LABEL}>Zip</label>
               <input style={INPUT} value={form.zip} onChange={e => set('zip', e.target.value)} placeholder="07090" />
             </div>
           </div>
@@ -1515,11 +1446,11 @@ useEffect(() => {
           <div style={{ ...SECTION, marginTop: '24px' }}>Household</div>
           <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '16px', marginBottom: '16px' }}>
             <div>
-              <label style={LABEL}>Household Size *</label>
+              <label style={LABEL}>Household Size</label>
               <input style={INPUT} type="number" min="1" value={form.hhSize} onChange={e => set('hhSize', e.target.value)} placeholder="Total people in household" />
             </div>
             <div>
-              <label style={LABEL}>Number of Children *</label>
+              <label style={LABEL}>Number of Children</label>
               <input style={INPUT} type="number" min="0" value={form.children} onChange={e => set('children', e.target.value)} placeholder="Children under 18" />
             </div>
           </div>
@@ -1544,145 +1475,46 @@ useEffect(() => {
             ))}
           </div>
 
+          </>)}
 
-
-          {/* Preferred Appointment */}
-          <div style={{ ...SECTION, marginTop: '8px' }}>Preferred Appointment</div>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={LABEL}>Preferred Saturday *</label>
-            <select
-              style={{ ...INPUT, cursor: 'pointer' }}
-              value={form.preferredDate}
-              onChange={e => {
-                set('preferredDate', e.target.value)
-                set('appointmentTime', null)
-              }}
-              disabled={availabilityLoading}
-            >
-              <option value="">
-                {availabilityLoading ? 'Loading dates...' : 'Select a Saturday...'}
-              </option>
-              {availableDates.map(d => {
-                const dateObj = new Date(d.date + 'T00:00:00')
-                const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-                return (
-                  <option key={d.date} value={d.date}>
-                    {label} — {d.totalBooked !== undefined
-                        ? describeDayLoad(d.totalBooked, d.dayCapacity)
-                        : `${d.slotsRemaining} slot${d.slotsRemaining === 1 ? '' : 's'}`}
-                  </option>
-                )
-              })}
-            </select>
-          </div>
-
-
-
-          {/* Time-slot pills — visible whenever a Saturday is picked */}
-          {form.preferredDate && (
-            <div style={{ marginBottom: '16px' }}>
-              <label style={LABEL}>
-                Time (optional — leave blank to auto-schedule)
-              </label>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(5, 1fr)',
-                  gap: '8px',
-                }}
-              >
-                {TIME_SLOTS.map(slot => {
-                  const booked = bookedForSlot(selectedDate, slot)
-                  const cap = SLOT_CAP[slot]
-                  const full = booked >= cap
-                  const selected = form.appointmentTime === slot
-                  return (
-                    <button
-                      key={slot}
-                      type="button"
-                      onClick={() =>
-                        set('appointmentTime', selected ? null : slot)
-                      }
-                      style={{
-                        padding: '10px 6px',
-                        borderRadius: '8px',
-                        border: selected
-                          ? '2px solid #2A7F6F'
-                          : full
-                            ? '1px solid #F0C4BE'
-                            : '1px solid #EDE9E1',
-                        background: selected
-                          ? '#2A7F6F'
-                          : full
-                            ? '#FDEDEC'
-                            : 'white',
-                        color: selected ? 'white' : full ? '#C0392B' : '#2C3A4A',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '3px',
-                        fontFamily: 'var(--font-montserrat)',
-                      }}
-                    >
-                      <span style={{ fontSize: '13px', fontWeight: 800, lineHeight: 1 }}>
-                        {slot}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          opacity: selected ? 0.85 : 1,
-                          lineHeight: 1,
-                        }}
-                      >
-                        {booked}/{cap}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              {isOverride && form.appointmentTime && (
-                <div
-                  style={{
-                    fontSize: '12px',
-                    color: '#8A6A00',
-                    marginTop: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#C9A84C"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" />
-                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
-                  Override — {form.appointmentTime} is at capacity (
-                  {bookedForSlot(selectedDate, form.appointmentTime)}/
-                  {SLOT_CAP[form.appointmentTime]} booked)
-                </div>
-              )}
-            </div>
+          {rescheduleMode && (
+            <p style={{ fontSize: '13.5px', color: '#2C3A4A', lineHeight: 1.6, marginTop: '8px', marginBottom: '20px' }}>
+              Rescheduling <strong>{rescheduleMode.clientName}</strong>&rsquo;s missed appointment. This reuses
+              their existing referral — no new record is created, and everything else on file (items,
+              household, notes, agency) stays as it was. Just pick the new date and time.
+            </p>
           )}
 
 
 
-          <div style={{ marginBottom: '8px' }} />
+          {/* Appointment — the capacity grid IS the picker, inline here where
+              the Saturday dropdown used to be (the appointment is the last
+              step of a linear form). No box: every other section sits bare on
+              the form and the cells give it structure enough. Four bookable
+              Saturdays; blackouts inside the span render struck and don't
+              count toward the four — the shared selectBookableWindow walk,
+              same as the agency form. The grid carries its own "+1 = requests
+              not yet accepted" legend; the soft-cap behaviour is left to be
+              learnt on the first red-cell click, where the echo's override
+              line covers it. */}
+          <div style={{ ...SECTION, marginTop: '8px' }}>Appointment</div>
+          <div style={{ marginBottom: '24px' }}>
+            <SaturdayCapacityGrid
+              mode="select"
+              capacityDisplay="counts"
+              weeks={4}
+              leadDays={1}
+              value={gridValue}
+              onChange={handleGridPick}
+            />
+          </div>
 
 
+
+          {!rescheduleMode && (<>
 
           {/* Notes */}
-          <div style={{ ...SECTION, marginTop: '8px' }}>Additional Notes</div>
+          <div style={{ ...SECTION, marginTop: '8px' }}>Notes <span style={{ fontWeight: 600, color: '#9AA6B2', letterSpacing: 0 }}>(optional)</span></div>
           <textarea
             style={{ ...INPUT, height: '90px', resize: 'vertical', marginBottom: '28px' }}
             value={form.notes}
@@ -1690,7 +1522,37 @@ useEffect(() => {
             placeholder="Any special circumstances or additional information..."
           />
 
+          </>)}
 
+
+
+          {/* Selection echo — confirms what the grid above set, right where the
+              decision is committed. */}
+          <div
+            style={{
+              marginBottom: '20px', padding: '14px 16px', borderRadius: '8px',
+              background: form.preferredDate ? '#EAF4F2' : '#F7F5F1',
+              border: `1px solid ${form.preferredDate ? '#B9DDD5' : '#EDE9E1'}`,
+            }}
+          >
+            {form.preferredDate ? (
+              <>
+                <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13.5px', color: '#1B2B4B' }}>
+                  Requesting {echoDate(form.preferredDate)}
+                  {form.appointmentTime ? ` · ${form.appointmentTime}` : ''}
+                </div>
+                {isOverride && form.appointmentTime && (
+                  <div style={{ fontSize: '12px', color: '#8A6A00', marginTop: '5px' }}>
+                    Over capacity — {bookedForSlot(selectedDate, form.appointmentTime)}/{SLOT_CAP[form.appointmentTime]} booked at {form.appointmentTime}. This is an override.
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ fontSize: '13px', color: '#7A8899' }}>
+                Pick a Saturday and time in the schedule above.
+              </div>
+            )}
+          </div>
 
           {error && (
             <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: '#C0392B' }}>
@@ -1698,14 +1560,30 @@ useEffect(() => {
             </div>
           )}
 
+          {/* Back out of reschedule mode — the typed form and the banner are
+              untouched, so the full form reappears exactly as it was. */}
+          {rescheduleMode && (
+            <button
+              type="button"
+              onClick={() => setRescheduleMode(null)}
+              style={{ background: 'transparent', border: 'none', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 600, fontSize: '12.5px', cursor: 'pointer', padding: '4px 0', marginBottom: '10px' }}
+            >
+              &larr; Back &mdash; this isn&rsquo;t a reschedule
+            </button>
+          )}
 
-
-          <button onClick={handleSubmit} disabled={loading || checkingDuplicate}
-            style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: (loading || checkingDuplicate) ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', cursor: (loading || checkingDuplicate) ? 'not-allowed' : 'pointer', letterSpacing: '0.02em' }}>
-            {checkingDuplicate ? 'Checking for existing client...' : loading ? 'Submitting...' : 'Submit Referral'}
+          {/* One Submit button — label and handler swap on rescheduleMode. Two
+              submit buttons on one page is a hazard, and with every editable
+              section hidden the mode is already unmistakable. */}
+          <button
+            onClick={rescheduleMode ? handleRescheduleConfirm : handleSubmit}
+            disabled={loading || checkingDuplicate}
+            style={{ width: '100%', padding: '14px', borderRadius: '8px', border: 'none', background: (loading || checkingDuplicate) ? '#7A8899' : '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', cursor: (loading || checkingDuplicate) ? 'not-allowed' : 'pointer', letterSpacing: '0.02em' }}
+          >
+            {rescheduleMode
+              ? (loading ? 'Rescheduling…' : 'Confirm Reschedule')
+              : (checkingDuplicate ? 'Checking for existing client...' : loading ? 'Submitting...' : 'Submit Referral')}
           </button>
-
-
 
         </div>
       </div>

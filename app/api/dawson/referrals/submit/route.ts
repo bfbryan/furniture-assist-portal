@@ -98,7 +98,12 @@ import { rescheduleReferral } from '@/lib/referrals/reschedule'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { pickFirstOpenSlot, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
 import { findNextFlexibleSlot, FLEXIBLE_LEAD_DAYS } from '@/lib/schedule/flexible'
-import { assertClientMayBeReferred, DoNotServeError } from '@/lib/clients/do-not-serve'
+import {
+  assertClientMayBeReferred,
+  findDoNotServeClientByIdentity,
+  doNotServeMessage,
+  DoNotServeError,
+} from '@/lib/clients/do-not-serve'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -309,6 +314,13 @@ export async function POST(req: Request) {
   // no-slot-yet Appointment Status.
   let scheduleFields: Record<string, any> = { 'Appointment Status': 'Pending Schedule' }
 
+  // DEAD as of the Add Referral rebuild: the form no longer offers a flexible
+  // option (the capacity grid is the only picker and every pick is a specific
+  // date + time), so `flexible` is never sent and this branch — plus the
+  // 'Pending Schedule' fall-through above — is unreachable from the UI. Left
+  // in place: a direct POST could still set it, findNextFlexibleSlot() and its
+  // rule in lib/schedule/flexible.ts are untouched, and removing it is a
+  // separate change. Same call the two agency surfaces already made.
   if (isFlexible) {
     // No date was asked for, so pick one: next Saturday at least
     // FLEXIBLE_LEAD_DAYS out that is under the 50 day cap and still has an
@@ -420,8 +432,35 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Staff creation failed: ${e.message}` }, { status: 500 })
   }
 
-  // ---- Resolve client (existing Clients record, or create a new one) ----
   const dobFormatted = formatDOB(dob)
+
+  // ---- Do-not-serve, IDENTITY check — FIRST, before any Client is resolved
+  //      or created. A dismissed DNS match must never leave an unflagged
+  //      Clients row behind: the exact-key lookup would then reuse it forever,
+  //      accumulating unflagged duplicates of someone we've decided not to
+  //      serve. Needs only name + DOB, all present here. Ordering note by the
+  //      record-id assert below.
+  try {
+    const flagged = await findDoNotServeClientByIdentity({ firstName, lastName, dob: dobFormatted })
+    if (flagged) {
+      console.warn(
+        `[do-not-serve] identity backstop blocked a Dawson referral before client creation: ` +
+        `first/last/DOB match flagged client ${flagged.id} (${flagged.name}).`,
+      )
+      throw new DoNotServeError(doNotServeMessage(flagged.name), flagged.id)
+    }
+  } catch (e: unknown) {
+    if (e instanceof DoNotServeError) {
+      return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
+    }
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json(
+      { error: `Could not verify this client's do-not-serve status, so the referral was not created: ${msg}` },
+      { status: 502 },
+    )
+  }
+
+  // ---- Resolve client (existing Clients record, or create a new one) ----
   let resolvedClientId: string
   let isDuplicate = false
 
@@ -489,20 +528,25 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Client resolution failed: ${e.message}` }, { status: 500 })
   }
 
-  // ---- Do-not-serve block ----
-  // The last thing checked before a referral record comes into existence, and
-  // deliberately placed AFTER client resolution rather than earlier: which
-  // Client this referral attaches to is only settled above, and that Client is
-  // what the flag lives on. Checking any sooner would be checking the wrong
-  // record in the divergence case, where a submitted edit forks off a fresh
-  // Client from the one the form matched.
+  // ---- Do-not-serve, RECORD-ID assert — on the resolved/linked Client. ----
   //
-  // A freshly created Client cannot be flagged, so in practice this fires only
-  // on the branch that LINKS an existing one. It is run unconditionally
-  // anyway, because "this branch can't be blocked" is the kind of thing that
-  // stops being true quietly.
+  // ORDER, end to end — DO NOT REORDER. When this ran BEFORE the identity
+  // check, a dismissed DNS match got a Clients row created for it first: a new,
+  // unflagged record that the next submit's exact-key lookup then reused,
+  // accumulating unflagged duplicates of a do-not-serve client.
+  //   1. identity DNS check   — name + DOB from the form, BEFORE any write
+  //                             (above). Blocks a typed identity that matches
+  //                             a flagged person, creating nothing.
+  //   2. resolve the Client   — exact-key find → link, else createClient.
+  //   3. record-id DNS assert  — here, on that record. Catches what step 1
+  //                             can't: the linked Client is itself flagged
+  //                             (matched by the Clients unique-id key, which
+  //                             normalizes differently from step 1's compare).
+  //   4. build + create the referral (below).
   //
-  // No override exists here by design. See lib/clients/do-not-serve.ts.
+  // Both DNS checks fail closed: DoNotServeError → 403 (one message, one
+  // wall); any other throw → 502 "could not verify". No override, by design —
+  // see lib/clients/do-not-serve.ts.
   try {
     await assertClientMayBeReferred(resolvedClientId)
   } catch (e: unknown) {
