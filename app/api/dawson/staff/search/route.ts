@@ -23,6 +23,18 @@
 // surfaces every caseworker there without Dawson recalling a name.
 //
 // Status filter matches the per-agency staff route: Active + Unclaimed.
+//
+// DOMAIN FALLBACK. The token match above splits on whitespace, so a full
+// email address is ONE token and a brand-new person at a known agency matches
+// nothing. When the query carries a parseable email domain, this route ALSO
+// returns `domainFamily` — every agency record whose staff use that domain,
+// with office name, town and staff count so the (real, not duplicate) family
+// of offices behind one domain — nine for @pmch.org, six for @dcf.nj.gov — is
+// distinguishable. It only SURFACES them; the form lets Dawson add the new
+// person to one. It never auto-links.
+//
+// Response shape: { staff: StaffSearchResult[], domainFamily: DomainFamilyAgency[] }
+// (was a bare array). One consumer — app/dawson/referrals/new/page.tsx.
 
 import { NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
@@ -80,6 +92,132 @@ function firstLookup(value: unknown): string {
   return typeof value === 'string' ? value : ''
 }
 
+const DOMAIN_RE = /^[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/
+
+/**
+ * A clean email domain from the query, or null. Fires on an `@` anywhere in
+ * the query (the part after the last `@`), OR on a bare domain typed on its
+ * own ("pmch.org"). Trailing junk ("grojas@pmch.org,") is trimmed.
+ */
+function extractDomain(q: string): string | null {
+  const lower = q.toLowerCase().trim()
+  let candidate: string
+  if (lower.includes('@')) {
+    candidate = lower.slice(lower.lastIndexOf('@') + 1)
+  } else if (DOMAIN_RE.test(lower)) {
+    candidate = lower
+  } else {
+    return null
+  }
+  candidate = candidate.replace(/^[^a-z0-9]+/, '').replace(/[^a-z0-9.-]+$/, '')
+  return DOMAIN_RE.test(candidate) ? candidate : null
+}
+
+type DomainFamilyAgency = {
+  agencyId: string
+  agencyName: string
+  officeName: string
+  city: string
+  staffCount: number
+  status: string
+}
+
+/**
+ * Every agency record whose staff use `domain`, with the fields that make nine
+ * near-identically-named PMCH rows tellable apart. Soft-fails to [] — this is
+ * additive help, not a reason to 500 the search.
+ */
+async function getDomainFamily(domain: string): Promise<DomainFamilyAgency[]> {
+  const esc = escapeFormulaToken(domain)
+  // SEARCH is a coarse filter (matches "@domain" anywhere in the address); the
+  // exact endsWith check happens in JS below.
+  const formula =
+    `AND(OR({Status} = "Active", {Status} = "Unclaimed", {Status} = "Invited"), ` +
+    `SEARCH("@${esc}", LOWER({Email})))`
+
+  const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/Agency Users`)
+  url.searchParams.set('filterByFormula', formula)
+  url.searchParams.set('maxRecords', '300')
+  url.searchParams.append('fields[]', 'Email')
+  url.searchParams.append('fields[]', 'Agency')
+  url.searchParams.append('fields[]', 'Agency Name (from Agency)')
+
+  let usersData: { records?: AirtableUserRecord[] }
+  try {
+    const res = await fetch(url.toString(), { headers: HEADERS })
+    if (!res.ok) return []
+    usersData = await res.json()
+  } catch {
+    return []
+  }
+
+  const suffix = `@${domain}`
+  const byAgency = new Map<string, { name: string; count: number }>()
+  for (const r of usersData.records ?? []) {
+    const email = String(r.fields['Email'] ?? '').toLowerCase().trim()
+    if (!email.endsWith(suffix)) continue
+    const agencyLink = r.fields['Agency']
+    const aid = Array.isArray(agencyLink) && typeof agencyLink[0] === 'string' ? agencyLink[0] : null
+    if (!aid) continue
+    const cur = byAgency.get(aid) ?? {
+      name: firstLookup(r.fields['Agency Name (from Agency)']).trim(),
+      count: 0,
+    }
+    cur.count += 1
+    byAgency.set(aid, cur)
+  }
+  if (byAgency.size === 0) return []
+
+  // Office Name / City / Status for those agencies — one bounded fetch.
+  const ids = [...byAgency.keys()]
+  const clauses = ids.map(id => `RECORD_ID() = "${escapeFormulaToken(id)}"`).join(', ')
+  const aUrl = new URL(`https://api.airtable.com/v0/${BASE_ID}/Agencies`)
+  aUrl.searchParams.set('filterByFormula', ids.length > 1 ? `OR(${clauses})` : clauses)
+  aUrl.searchParams.set('maxRecords', String(ids.length))
+  for (const f of ['Agency Name', 'Office Name', 'City', 'Status']) {
+    aUrl.searchParams.append('fields[]', f)
+  }
+  const meta = new Map<string, { name: string; officeName: string; city: string; status: string }>()
+  try {
+    const ar = await fetch(aUrl.toString(), { headers: HEADERS })
+    if (ar.ok) {
+      const ad = await ar.json()
+      for (const r of ad.records ?? []) {
+        meta.set(r.id, {
+          name: (r.fields['Agency Name'] as string) ?? '',
+          officeName: (r.fields['Office Name'] as string) ?? '',
+          city: (r.fields['City'] as string) ?? '',
+          status: (r.fields['Status'] as string) ?? '',
+        })
+      }
+    }
+  } catch {
+    // soft — fall back to the name off the Agency Users lookup, no office/city
+  }
+
+  return ids
+    .map(id => {
+      const c = byAgency.get(id)!
+      const m = meta.get(id)
+      return {
+        agencyId: id,
+        agencyName: (m?.name || c.name || '').trim(),
+        officeName: (m?.officeName ?? '').trim(),
+        city: (m?.city ?? '').trim(),
+        staffCount: c.count,
+        status: (m?.status ?? '').trim(),
+      }
+    })
+    // Most staff on file first — the "main" office. An email-named record
+    // (itself a symptom of the bug this fixes) sorts last regardless, so the
+    // real offices are what Dawson sees first.
+    .sort((a, b) => {
+      const aJunk = a.agencyName.includes('@') ? 1 : 0
+      const bJunk = b.agencyName.includes('@') ? 1 : 0
+      return aJunk - bJunk || b.staffCount - a.staffCount || a.agencyName.localeCompare(b.agencyName)
+    })
+}
+
 /**
  * Status for a specific set of agency ids. Empty in, empty out - no request.
  *
@@ -121,8 +259,10 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url)
   const q = (searchParams.get('q') ?? '').trim()
 
+  const empty = { staff: [], domainFamily: [] }
+
   if (q.length < MIN_QUERY_LENGTH) {
-    return NextResponse.json([])
+    return NextResponse.json(empty)
   }
 
   const tokens = q
@@ -132,7 +272,7 @@ export async function GET(req: Request) {
     .slice(0, MAX_TOKENS)
 
   if (tokens.length === 0) {
-    return NextResponse.json([])
+    return NextResponse.json(empty)
   }
 
   // The staff label already contains name, agency and email, so it is
@@ -236,5 +376,8 @@ export async function GET(req: Request) {
     return a.email.localeCompare(b.email)
   })
 
-  return NextResponse.json(results)
+  const domain = extractDomain(q)
+  const domainFamily = domain ? await getDomainFamily(domain) : []
+
+  return NextResponse.json({ staff: results, domainFamily })
 }
