@@ -27,7 +27,7 @@ import { formatSlot } from '@/lib/referrals/slot-display'
 import { matchesSearch } from '@/lib/search'
 import { useListUrlState } from '@/components/internal/useListUrlState'
 import CancelModal from '@/components/internal/modals/CancelModal'
-import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
+import PickSlotModal from '@/components/internal/modals/PickSlotModal'
 import {
   OverflowMenu,
   type MenuItem,
@@ -411,7 +411,6 @@ function ReferralsView() {
   const [loading, setLoading] = useState(true)
   const [reloadTick, setReloadTick] = useState(0)
 
-  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
   const [openMenuId, setOpenMenuId] = useState<string | null>(null)
   const [cancelModal, setCancelModal] = useState({ open: false, id: '', name: '' })
   const [rescheduleModal, setRescheduleModal] = useState({ open: false, id: '', name: '' })
@@ -454,18 +453,14 @@ function ReferralsView() {
     return () => { cancelled = true }
   }, [singleDate, lowerBound, reloadTick])
 
-  // Availability for the Reschedule modal, plus the refocus refetch.
+  // Refocus refetch — LOAD-BEARING.
   //
-  // LOAD-BEARING: the OCR reconciliation pass is this tab losing and regaining
-  // focus — open a referral, check the scan, come back. Without the refetch,
-  // every row Dawson just touched still shows its pre-edit status. Do not
-  // remove this as an unused listener.
+  // The OCR reconciliation pass is this tab losing and regaining focus — open
+  // a referral, check the scan, come back. Without the refetch, every row
+  // Dawson just touched still shows its pre-edit status. Do not remove this as
+  // an unused listener. (The Reschedule modal's own availability fetch went
+  // when it moved to the capacity grid, which fetches its own data.)
   useEffect(() => {
-    fetch('/api/dawson/schedule/available?weeks=8&leadDays=1', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(d => setAvailableDates(Array.isArray(d) ? d : []))
-      .catch(() => {})
-
     const refresh = () => setReloadTick(t => t + 1)
     const onVisible = () => { if (document.visibilityState === 'visible') refresh() }
     window.addEventListener('focus', refresh)
@@ -576,6 +571,7 @@ function ReferralsView() {
 
   const startReschedule = (id: string, name: string) => {
     setOpenMenuId(null)
+    setActionError(null)
     setRescheduleModal({ open: true, id, name })
   }
   const startCancel = (id: string, name: string) => {
@@ -619,7 +615,7 @@ function ReferralsView() {
     }
   }
 
-  const handleRescheduleConfirm = async (preferredDate: string, appointmentTime: string | null) => {
+  const handleRescheduleConfirm = async (preferredDate: string, appointmentTime: string) => {
     setActionLoading(true)
     try {
       const res = await fetch(`/api/dawson/referrals/${rescheduleModal.id}/reschedule`, {
@@ -735,7 +731,10 @@ function ReferralsView() {
           ))}
         </div>
 
-        {actionError && (
+        {/* Not while the reschedule modal is open — it shows the same error
+            in place. Cancel errors have no in-modal surface, so they still
+            land here. */}
+        {actionError && !rescheduleModal.open && (
           <div style={{
             background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px',
             padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#C0392B',
@@ -817,11 +816,14 @@ function ReferralsView() {
         onConfirm={handleCancelConfirm}
         onClose={() => setCancelModal({ open: false, id: '', name: '' })}
       />
-      <RescheduleModal
+      <PickSlotModal
+        key={rescheduleModal.id || 'none'}
         open={rescheduleModal.open}
         name={rescheduleModal.name}
-        availableDates={availableDates}
+        referralId={rescheduleModal.id}
+        intent="reschedule"
         loading={actionLoading}
+        error={actionError}
         onConfirm={handleRescheduleConfirm}
         onClose={() => setRescheduleModal({ open: false, id: '', name: '' })}
       />

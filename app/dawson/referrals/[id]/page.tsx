@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import CancelModal from '@/components/internal/modals/CancelModal'
-import RescheduleModal, { type AvailableDate } from '@/components/internal/modals/RescheduleModal'
+import PickSlotModal from '@/components/internal/modals/PickSlotModal'
 import { DAWSON_PAGE_BAR_HEIGHT } from '@/components/internal/DawsonPageBar'
 import {
   IconBtn, RescheduleIcon, CancelIcon, RESCHEDULE_COLOR, CANCEL_COLOR,
@@ -1469,7 +1469,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   const [actionLoading, setActionLoading] = useState(false)
   const [cancelModal, setCancelModal] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' })
   const [rescheduleModal, setRescheduleModal] = useState<{ open: boolean; id: string; name: string }>({ open: false, id: '', name: '' })
-  const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
+  const [rescheduleError, setRescheduleError] = useState<string | null>(null)
   // "Ready for Post-Appt Email" checkbox — Dawson flips this once he's
   // audited the pickup sheet against the portal for a Completed record. A
   // future Tuesday batch job reads this flag, sends the post-appt email, and
@@ -1509,13 +1509,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         .catch(e => setLoadError(e instanceof Error ? e.message : String(e)))
         .finally(() => setLoading(false))
     })
-    // Availability powers the Reschedule modal's Saturday picker. leadDays=1
-    // so a reschedule can land on the upcoming Saturday; the endpoint's
-    // default of 7 would skip it from midweek.
-    fetch('/api/dawson/schedule/available?weeks=8&leadDays=1', { cache: 'no-store' })
-      .then(r => r.json())
-      .then(data => setAvailableDates(Array.isArray(data) ? data : []))
-      .catch(() => {})
   }, [params])
 
 
@@ -1564,9 +1557,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
   async function handleRescheduleConfirm(
     preferredDate: string,
-    appointmentTime: string | null,
+    appointmentTime: string,
   ) {
     setActionLoading(true)
+    setRescheduleError(null)
     try {
       const res = await fetch(`/api/dawson/referrals/${rescheduleModal.id}/reschedule`, {
         method: 'POST',
@@ -1575,11 +1569,13 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       })
       if (!res.ok) {
         const err = await res.json().catch(() => ({}))
-        alert(err.error || 'Reschedule failed')
+        setRescheduleError(err.error || 'Reschedule failed. Try again.')
         return
       }
       setRescheduleModal({ open: false, id: '', name: '' })
       refetchReferral()
+    } catch {
+      setRescheduleError("That didn't go through. Try again.")
     } finally {
       setActionLoading(false)
     }
@@ -2001,7 +1997,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               <IconBtn
                 color={RESCHEDULE_COLOR}
                 title="Reschedule"
-                onClick={() => setRescheduleModal({ open: true, id: referral.id, name: referral.clientName })}
+                onClick={() => { setRescheduleError(null); setRescheduleModal({ open: true, id: referral.id, name: referral.clientName }) }}
               >
                 <RescheduleIcon />
               </IconBtn>
@@ -2099,11 +2095,14 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         onClose={() => setCancelModal({ open: false, id: '', name: '' })}
         onConfirm={handleCancelConfirm}
       />
-      <RescheduleModal
+      <PickSlotModal
+        key={rescheduleModal.id || 'none'}
         open={rescheduleModal.open}
         name={rescheduleModal.name}
-        availableDates={availableDates}
+        referralId={rescheduleModal.id}
+        intent="reschedule"
         loading={actionLoading}
+        error={rescheduleError}
         onClose={() => setRescheduleModal({ open: false, id: '', name: '' })}
         onConfirm={handleRescheduleConfirm}
       />
