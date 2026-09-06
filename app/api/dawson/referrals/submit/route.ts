@@ -432,8 +432,35 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Staff creation failed: ${e.message}` }, { status: 500 })
   }
 
-  // ---- Resolve client (existing Clients record, or create a new one) ----
   const dobFormatted = formatDOB(dob)
+
+  // ---- Do-not-serve, IDENTITY check — FIRST, before any Client is resolved
+  //      or created. A dismissed DNS match must never leave an unflagged
+  //      Clients row behind: the exact-key lookup would then reuse it forever,
+  //      accumulating unflagged duplicates of someone we've decided not to
+  //      serve. Needs only name + DOB, all present here. Ordering note by the
+  //      record-id assert below.
+  try {
+    const flagged = await findDoNotServeClientByIdentity({ firstName, lastName, dob: dobFormatted })
+    if (flagged) {
+      console.warn(
+        `[do-not-serve] identity backstop blocked a Dawson referral before client creation: ` +
+        `first/last/DOB match flagged client ${flagged.id} (${flagged.name}).`,
+      )
+      throw new DoNotServeError(doNotServeMessage(flagged.name), flagged.id)
+    }
+  } catch (e: unknown) {
+    if (e instanceof DoNotServeError) {
+      return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
+    }
+    const msg = e instanceof Error ? e.message : String(e)
+    return NextResponse.json(
+      { error: `Could not verify this client's do-not-serve status, so the referral was not created: ${msg}` },
+      { status: 502 },
+    )
+  }
+
+  // ---- Resolve client (existing Clients record, or create a new one) ----
   let resolvedClientId: string
   let isDuplicate = false
 
@@ -501,55 +528,27 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `Client resolution failed: ${e.message}` }, { status: 500 })
   }
 
-  // ---- Do-not-serve block ----
-  // The last thing checked before a referral record comes into existence, and
-  // deliberately placed AFTER client resolution rather than earlier: which
-  // Client this referral attaches to is only settled above, and that Client is
-  // what the flag lives on. Checking any sooner would be checking the wrong
-  // record in the divergence case, where a submitted edit forks off a fresh
-  // Client from the one the form matched.
+  // ---- Do-not-serve, RECORD-ID assert — on the resolved/linked Client. ----
   //
-  // A freshly created Client cannot be flagged, so in practice this fires only
-  // on the branch that LINKS an existing one. It is run unconditionally
-  // anyway, because "this branch can't be blocked" is the kind of thing that
-  // stops being true quietly.
+  // ORDER, end to end — DO NOT REORDER. When this ran BEFORE the identity
+  // check, a dismissed DNS match got a Clients row created for it first: a new,
+  // unflagged record that the next submit's exact-key lookup then reused,
+  // accumulating unflagged duplicates of a do-not-serve client.
+  //   1. identity DNS check   — name + DOB from the form, BEFORE any write
+  //                             (above). Blocks a typed identity that matches
+  //                             a flagged person, creating nothing.
+  //   2. resolve the Client   — exact-key find → link, else createClient.
+  //   3. record-id DNS assert  — here, on that record. Catches what step 1
+  //                             can't: the linked Client is itself flagged
+  //                             (matched by the Clients unique-id key, which
+  //                             normalizes differently from step 1's compare).
+  //   4. build + create the referral (below).
   //
-  // TWO checks, both fail closed:
-  //
-  //   1. assertClientMayBeReferred(resolvedClientId) — the LINKED/created
-  //      Client record, by id. The real guard everywhere a Client is resolved.
-  //
-  //   2. findDoNotServeClientByIdentity(name + DOB) — the identity backstop.
-  //      The record-id check reads the record we resolved, so it passes when a
-  //      genuine DNS match was shown in the duplicate banner and dismissed as
-  //      "not the same person": resolvedClientId is then a brand-new Clients
-  //      row written Status 'Active'. This second check catches that — it
-  //      requires first + last + DOB to all agree with a flagged record, which
-  //      is the Clients table's own identity key, so two different people who
-  //      merely share a name (different DOB) do NOT trip it. The case we want
-  //      to keep working keeps working; the routed-around flag gets caught.
-  //
-  // Both throw DoNotServeError on a hit (→ 403, same message — to the user
-  // it's one wall) and anything else on a failed lookup (→ 502 "could not
-  // verify"). The identity hit is logged distinctly: the record-id assert
-  // firing is routine (the linked client is flagged), while the identity
-  // backstop firing means the resolved record is NOT flagged but a
-  // same-identity flagged client exists — worth a greppable line.
-  //
-  // No override exists here by design. See lib/clients/do-not-serve.ts.
+  // Both DNS checks fail closed: DoNotServeError → 403 (one message, one
+  // wall); any other throw → 502 "could not verify". No override, by design —
+  // see lib/clients/do-not-serve.ts.
   try {
     await assertClientMayBeReferred(resolvedClientId)
-    const flaggedByIdentity = await findDoNotServeClientByIdentity({
-      firstName, lastName, dob: dobFormatted,
-    })
-    if (flaggedByIdentity) {
-      console.warn(
-        `[do-not-serve] identity backstop blocked a Dawson referral: resolved client ` +
-        `${resolvedClientId} is not flagged, but flagged client ${flaggedByIdentity.id} ` +
-        `(${flaggedByIdentity.name}) matches first/last/DOB.`,
-      )
-      throw new DoNotServeError(doNotServeMessage(flaggedByIdentity.name), flaggedByIdentity.id)
-    }
   } catch (e: unknown) {
     if (e instanceof DoNotServeError) {
       return NextResponse.json({ error: e.message, doNotServe: true }, { status: 403 })
