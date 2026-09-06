@@ -10,6 +10,7 @@ import { FIELD_BORDER } from '@/lib/ui/field-border'
 import { maskMdyInput, parseMdyToISO } from '@/lib/dates'
 import AddAgencyStaffModal, { type AddStaffResult } from '@/components/internal/modals/AddAgencyStaffModal'
 import DuplicateClientBanner, { type ClientMatch } from '@/components/internal/modals/DuplicateClientModal'
+import SaturdayCapacityGrid, { type SlotSelection } from '@/components/internal/SaturdayCapacityGrid'
 
 
 
@@ -40,6 +41,16 @@ function formatPhone(raw: string): string {
   if (d.length >= 4) return `(${d.slice(0,3)}) ${d.slice(3)}`
   if (d.length > 0) return `(${d}`
   return ''
+}
+
+
+
+// 'YYYY-MM-DD' -> "Sat, Oct 10, 2026" for the appointment echo beside Submit.
+function echoDate(iso: string): string {
+  if (!iso) return ''
+  return new Date(iso + 'T00:00:00').toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+  })
 }
 
 
@@ -706,6 +717,20 @@ useEffect(() => {
     selectedDate !== undefined &&
     bookedForSlot(selectedDate, form.appointmentTime) >= SLOT_CAP[form.appointmentTime]
 
+  // The rail grid is the only date picker on the page. It always picks a
+  // date AND a time together (one click), so form.appointmentTime is never
+  // null once a date is set — the old "leave time blank to auto-schedule"
+  // path is gone with the flexible option. `availableDates` is still fetched,
+  // but only to compute the over-50 override note in the echo below.
+  const gridValue: SlotSelection | null =
+    form.preferredDate && form.appointmentTime
+      ? { date: form.preferredDate, time: form.appointmentTime }
+      : null
+  const handleGridPick = (sel: SlotSelection) => {
+    set('preferredDate', sel.date)
+    set('appointmentTime', sel.time)
+  }
+
 
 
   // Actually posts the referral. Called either directly (no duplicate
@@ -847,13 +872,6 @@ useEffect(() => {
     }))
   }
 
-  const handleDuplicateDecline = () => {
-    // "Same person — do not book." No-op today: just hides the banner and
-    // leaves the form as Dawson left it. Kept as its own handler (distinct
-    // from onDismiss) in case a backend hook gets added here later.
-    setBannerDismissed(true)
-  }
-
   const handleDuplicateDismiss = () => {
     // "None of these are the same person" -- proceed as a genuinely new client.
     setBannerDismissed(true)
@@ -921,6 +939,10 @@ useEffect(() => {
       hhSize: '# in Household',
       children: '# of Children',
       dob: 'Date of Birth',
+      // Required here to match the agency New Referral form — two forms
+      // writing one Client Referrals table shouldn't disagree on what's
+      // mandatory.
+      phone: 'Cell Phone',
     }
     // Named before the generic missing-fields message, because a date of birth
     // that has been typed but does not parse IS missing as far as form.dob is
@@ -1141,19 +1163,27 @@ useEffect(() => {
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-      <div style={{ maxWidth: '780px', margin: '0 auto', padding: '32px' }}>
-        <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px' }}>
+      {/* Two columns: form left, capacity grid in a sticky rail right. The grid
+          is the ONLY date picker on the page, and the rail keeps it in view
+          while the (long) form scrolls. Below ~1440px the shell's fixed 240px
+          sidebar leaves too little for both columns, so .fa-add-referral-grid
+          stacks and the rail moves to the TOP (order: -1) rather than the
+          bottom — it can't be off-screen when it's the only way to pick a
+          date. Tracks + the stack rule live in globals.css. */}
+      <div style={{ maxWidth: '1440px', margin: '0 auto', padding: '32px' }}>
+        <div className="fa-add-referral-grid">
+        <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '32px', minWidth: 0 }}>
 
-
+          <p style={{ fontSize: '12.5px', color: '#7A8899', marginBottom: '4px' }}>All fields required unless noted.</p>
 
           {/* Agency + Staff Selection */}
-          <div style={SECTION}>Agency & Staff</div>
+          <div style={SECTION}>Agency &amp; staff</div>
 
 
 
           {/* Agency combobox */}
           <div style={{ marginBottom: '16px' }}>
-            <label style={LABEL}>Agency or Staff Member *</label>
+            <label style={LABEL}>Agency or Staff Member</label>
             <div ref={agencyComboRef} style={{ position: 'relative' }}>
               <input
                 style={INPUT}
@@ -1281,7 +1311,7 @@ useEffect(() => {
                   and a half-width name box beside an empty gap reads as a
                   field that failed to render. */}
               <div style={{ marginBottom: '12px' }}>
-                <label style={LABEL}>Agency Name *</label>
+                <label style={LABEL}>Agency Name</label>
                 <input style={INPUT} value={newAgency.name} onChange={e => setNewAgency({ ...newAgency, name: e.target.value })} placeholder="Agency name" />
               </div>
               <div style={{ fontSize: '12px', fontWeight: 700, color: '#2A7F6F', marginBottom: '12px', marginTop: '8px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
@@ -1289,17 +1319,17 @@ useEffect(() => {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px', marginBottom: '12px' }}>
                 <div>
-                  <label style={LABEL}>First Name *</label>
+                  <label style={LABEL}>First Name</label>
                   <input style={INPUT} value={newStaff.firstName} onChange={e => setNewStaff({ ...newStaff, firstName: e.target.value })} />
                 </div>
                 <div>
-                  <label style={LABEL}>Last Name *</label>
+                  <label style={LABEL}>Last Name</label>
                   <input style={INPUT} value={newStaff.lastName} onChange={e => setNewStaff({ ...newStaff, lastName: e.target.value })} />
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px' }}>
                 <div>
-                  <label style={LABEL}>Staff Email *</label>
+                  <label style={LABEL}>Staff Email</label>
                   <input style={INPUT} type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="staff@example.com" />
                 </div>
                 <div>
@@ -1315,7 +1345,7 @@ useEffect(() => {
           {/* Staff selection (only if existing agency is picked) */}
           {selectedAgency && !newAgencyMode && (
             <div style={{ marginBottom: '16px' }}>
-              <label style={LABEL}>Staff Member *</label>
+              <label style={LABEL}>Staff Member</label>
               <select
                 style={INPUT}
                 value={newStaffMode ? '__new__' : (selectedStaff?.id ?? '')}
@@ -1346,17 +1376,17 @@ useEffect(() => {
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px', marginBottom: '12px' }}>
                 <div>
-                  <label style={LABEL}>First Name *</label>
+                  <label style={LABEL}>First Name</label>
                   <input style={INPUT} value={newStaff.firstName} onChange={e => setNewStaff({ ...newStaff, firstName: e.target.value })} />
                 </div>
                 <div>
-                  <label style={LABEL}>Last Name *</label>
+                  <label style={LABEL}>Last Name</label>
                   <input style={INPUT} value={newStaff.lastName} onChange={e => setNewStaff({ ...newStaff, lastName: e.target.value })} />
                 </div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '12px' }}>
                 <div>
-                  <label style={LABEL}>Staff Email *</label>
+                  <label style={LABEL}>Staff Email</label>
                   <input style={INPUT} type="email" value={newStaff.email} onChange={e => setNewStaff({ ...newStaff, email: e.target.value })} placeholder="staff@example.com" />
                 </div>
                 <div>
@@ -1374,20 +1404,20 @@ useEffect(() => {
 
 
           {/* Client Info */}
-          <div style={SECTION}>Client Information</div>
+          <div style={SECTION}>Client</div>
           <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '16px', marginBottom: '16px' }}>
             <div>
-              <label style={LABEL}>First Name *</label>
+              <label style={LABEL}>First Name</label>
               <input style={INPUT} value={form.firstName} onChange={e => set('firstName', e.target.value)} placeholder="First name" />
             </div>
             <div>
-              <label style={LABEL}>Last Name *</label>
+              <label style={LABEL}>Last Name</label>
               <input style={INPUT} value={form.lastName} onChange={e => set('lastName', e.target.value)} placeholder="Last name" />
             </div>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '16px', marginBottom: '16px' }}>
             <div>
-              <label style={LABEL}>Date of Birth *</label>
+              <label style={LABEL}>Date of Birth</label>
               <input
                 style={dobShowError ? INPUT_INVALID : INPUT}
                 value={dobText}
@@ -1407,7 +1437,7 @@ useEffect(() => {
             </div>
             <div>
               <label style={LABEL}>Cell Phone</label>
-              <input style={INPUT} value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} placeholder="(000) 000-0000 (optional)" />
+              <input style={INPUT} value={form.phone} onChange={e => set('phone', formatPhone(e.target.value))} placeholder="(000) 000-0000" />
             </div>
             <div>
               <label style={LABEL}>Preferred Language</label>
@@ -1435,7 +1465,6 @@ useEffect(() => {
               }}
               resolved={matchResolution}
               onResolve={handleDuplicateResolve}
-              onDecline={handleDuplicateDecline}
               onDismiss={handleDuplicateDismiss}
               onReopen={handleReopenBanner}
             />
@@ -1472,16 +1501,16 @@ useEffect(() => {
           {/* Address */}
           <div style={{ ...SECTION, marginTop: '24px' }}>Address</div>
           <div style={{ marginBottom: '16px' }}>
-            <label style={LABEL}>Street Address *</label>
+            <label style={LABEL}>Street Address</label>
             <input style={INPUT} value={form.address} onChange={e => set('address', e.target.value)} placeholder="123 Main Street" />
           </div>
           <div style={{ marginBottom: '16px' }}>
-            <label style={LABEL}>Address Line 2</label>
-            <input style={INPUT} value={form.address2} onChange={e => set('address2', e.target.value)} placeholder="Apt, Suite, Unit (optional)" />
+            <label style={LABEL}>Address Line 2 <span style={{ fontWeight: 600, color: '#9AA6B2', letterSpacing: 0 }}>(optional)</span></label>
+            <input style={INPUT} value={form.address2} onChange={e => set('address2', e.target.value)} placeholder="Apt, Suite, Unit" />
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW_CITY_STATE_ZIP, gap: '16px', marginBottom: '16px' }}>
             <div>
-              <label style={LABEL}>City *</label>
+              <label style={LABEL}>City</label>
               {/* Plain text field. This carried a native <datalist>
                   autocomplete over the 40 most common City values on file;
                   Ben reported it pausing when he went back to correct an
@@ -1500,11 +1529,11 @@ useEffect(() => {
               />
             </div>
             <div>
-              <label style={LABEL}>State *</label>
+              <label style={LABEL}>State</label>
               <input style={INPUT} value={form.state} onChange={e => set('state', e.target.value)} />
             </div>
             <div>
-              <label style={LABEL}>Zip *</label>
+              <label style={LABEL}>Zip</label>
               <input style={INPUT} value={form.zip} onChange={e => set('zip', e.target.value)} placeholder="07090" />
             </div>
           </div>
@@ -1515,11 +1544,11 @@ useEffect(() => {
           <div style={{ ...SECTION, marginTop: '24px' }}>Household</div>
           <div style={{ display: 'grid', gridTemplateColumns: FORM_ROW, gap: '16px', marginBottom: '16px' }}>
             <div>
-              <label style={LABEL}>Household Size *</label>
+              <label style={LABEL}>Household Size</label>
               <input style={INPUT} type="number" min="1" value={form.hhSize} onChange={e => set('hhSize', e.target.value)} placeholder="Total people in household" />
             </div>
             <div>
-              <label style={LABEL}>Number of Children *</label>
+              <label style={LABEL}>Number of Children</label>
               <input style={INPUT} type="number" min="0" value={form.children} onChange={e => set('children', e.target.value)} placeholder="Children under 18" />
             </div>
           </div>
@@ -1546,138 +1575,34 @@ useEffect(() => {
 
 
 
-          {/* Preferred Appointment */}
-          <div style={{ ...SECTION, marginTop: '8px' }}>Preferred Appointment</div>
-          <div style={{ marginBottom: '16px' }}>
-            <label style={LABEL}>Preferred Saturday *</label>
-            <select
-              style={{ ...INPUT, cursor: 'pointer' }}
-              value={form.preferredDate}
-              onChange={e => {
-                set('preferredDate', e.target.value)
-                set('appointmentTime', null)
-              }}
-              disabled={availabilityLoading}
-            >
-              <option value="">
-                {availabilityLoading ? 'Loading dates...' : 'Select a Saturday...'}
-              </option>
-              {availableDates.map(d => {
-                const dateObj = new Date(d.date + 'T00:00:00')
-                const label = dateObj.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
-                return (
-                  <option key={d.date} value={d.date}>
-                    {label} — {d.totalBooked !== undefined
-                        ? describeDayLoad(d.totalBooked, d.dayCapacity)
-                        : `${d.slotsRemaining} slot${d.slotsRemaining === 1 ? '' : 's'}`}
-                  </option>
-                )
-              })}
-            </select>
-          </div>
-
-
-
-          {/* Time-slot pills — visible whenever a Saturday is picked */}
-          {form.preferredDate && (
-            <div style={{ marginBottom: '16px' }}>
-              <label style={LABEL}>
-                Time (optional — leave blank to auto-schedule)
-              </label>
-              <div
-                style={{
-                  display: 'grid',
-                  gridTemplateColumns: 'repeat(5, 1fr)',
-                  gap: '8px',
-                }}
-              >
-                {TIME_SLOTS.map(slot => {
-                  const booked = bookedForSlot(selectedDate, slot)
-                  const cap = SLOT_CAP[slot]
-                  const full = booked >= cap
-                  const selected = form.appointmentTime === slot
-                  return (
-                    <button
-                      key={slot}
-                      type="button"
-                      onClick={() =>
-                        set('appointmentTime', selected ? null : slot)
-                      }
-                      style={{
-                        padding: '10px 6px',
-                        borderRadius: '8px',
-                        border: selected
-                          ? '2px solid #2A7F6F'
-                          : full
-                            ? '1px solid #F0C4BE'
-                            : '1px solid #EDE9E1',
-                        background: selected
-                          ? '#2A7F6F'
-                          : full
-                            ? '#FDEDEC'
-                            : 'white',
-                        color: selected ? 'white' : full ? '#C0392B' : '#2C3A4A',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        alignItems: 'center',
-                        gap: '3px',
-                        fontFamily: 'var(--font-montserrat)',
-                      }}
-                    >
-                      <span style={{ fontSize: '13px', fontWeight: 800, lineHeight: 1 }}>
-                        {slot}
-                      </span>
-                      <span
-                        style={{
-                          fontSize: '11px',
-                          fontWeight: 600,
-                          opacity: selected ? 0.85 : 1,
-                          lineHeight: 1,
-                        }}
-                      >
-                        {booked}/{cap}
-                      </span>
-                    </button>
-                  )
-                })}
-              </div>
-              {isOverride && form.appointmentTime && (
-                <div
-                  style={{
-                    fontSize: '12px',
-                    color: '#8A6A00',
-                    marginTop: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '6px',
-                  }}
-                >
-                  <svg
-                    width="13"
-                    height="13"
-                    viewBox="0 0 24 24"
-                    fill="none"
-                    stroke="#C9A84C"
-                    strokeWidth="2.4"
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                  >
-                    <path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                    <line x1="12" y1="9" x2="12" y2="13" />
-                    <line x1="12" y1="17" x2="12.01" y2="17" />
-                  </svg>
-                  Override — {form.appointmentTime} is at capacity (
-                  {bookedForSlot(selectedDate, form.appointmentTime)}/
-                  {SLOT_CAP[form.appointmentTime]} booked)
+          {/* Appointment — just the echo now. The picker is the grid in the
+              rail; this confirms the selection next to Submit. */}
+          <div style={{ ...SECTION, marginTop: '8px' }}>Appointment</div>
+          <div
+            style={{
+              marginBottom: '24px', padding: '14px 16px', borderRadius: '8px',
+              background: form.preferredDate ? '#EAF4F2' : '#F7F5F1',
+              border: `1px solid ${form.preferredDate ? '#B9DDD5' : '#EDE9E1'}`,
+            }}
+          >
+            {form.preferredDate ? (
+              <>
+                <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13.5px', color: '#1B2B4B' }}>
+                  Requesting {echoDate(form.preferredDate)}
+                  {form.appointmentTime ? ` · ${form.appointmentTime}` : ''}
                 </div>
-              )}
-            </div>
-          )}
-
-
-
-          <div style={{ marginBottom: '8px' }} />
+                {isOverride && form.appointmentTime && (
+                  <div style={{ fontSize: '12px', color: '#8A6A00', marginTop: '5px' }}>
+                    Over capacity — {bookedForSlot(selectedDate, form.appointmentTime)}/{SLOT_CAP[form.appointmentTime]} booked at {form.appointmentTime}. This is an override.
+                  </div>
+                )}
+              </>
+            ) : (
+              <div style={{ fontSize: '13px', color: '#7A8899' }}>
+                Pick a Saturday and time in the schedule<span className="fa-add-referral-rail-hint"> to the right</span>.
+              </div>
+            )}
+          </div>
 
 
 
@@ -1705,7 +1630,29 @@ useEffect(() => {
             {checkingDuplicate ? 'Checking for existing client...' : loading ? 'Submitting...' : 'Submit Referral'}
           </button>
 
+        </div>
 
+        {/* RIGHT — the capacity rail. Sticky on the two-column layout (the one
+            place it earns it: he's picking from it, not just consulting it),
+            static and above the form once stacked. */}
+        <div className="fa-add-referral-rail">
+          <div style={{ background: 'white', borderRadius: '12px', border: '1px solid #EDE9E1', padding: '16px' }}>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#7A8899', marginBottom: '10px' }}>
+              Pick a Saturday
+            </div>
+            <SaturdayCapacityGrid
+              mode="select"
+              capacityDisplay="counts"
+              weeks={8}
+              leadDays={1}
+              value={gridValue}
+              onChange={handleGridPick}
+            />
+            <p style={{ fontSize: '12px', color: '#7A8899', marginTop: '10px', lineHeight: 1.5 }}>
+              50 a day is a soft cap here — a full slot turns red but stays selectable as an override.
+            </p>
+          </div>
+        </div>
 
         </div>
       </div>

@@ -309,6 +309,13 @@ export async function POST(req: Request) {
   // no-slot-yet Appointment Status.
   let scheduleFields: Record<string, any> = { 'Appointment Status': 'Pending Schedule' }
 
+  // DEAD as of the Add Referral rebuild: the form no longer offers a flexible
+  // option (the capacity grid is the only picker and every pick is a specific
+  // date + time), so `flexible` is never sent and this branch — plus the
+  // 'Pending Schedule' fall-through above — is unreachable from the UI. Left
+  // in place: a direct POST could still set it, findNextFlexibleSlot() and its
+  // rule in lib/schedule/flexible.ts are untouched, and removing it is a
+  // separate change. Same call the two agency surfaces already made.
   if (isFlexible) {
     // No date was asked for, so pick one: next Saturday at least
     // FLEXIBLE_LEAD_DAYS out that is under the 50 day cap and still has an
@@ -501,6 +508,17 @@ export async function POST(req: Request) {
   // on the branch that LINKS an existing one. It is run unconditionally
   // anyway, because "this branch can't be blocked" is the kind of thing that
   // stops being true quietly.
+  //
+  // GAP, on purpose: this reads the LINKED/created Client record by id. If
+  // Dawson is shown a genuine DNS match in the duplicate banner and clicks
+  // "Not the same person", resolvedClientId is a brand-new Clients row written
+  // Status 'Active', so this passes. That is correct when two people really do
+  // share a name — but it means the record-id assert is NOT a complete DNS
+  // guard on this path. findDoNotServeClientByIdentity() in
+  // lib/clients/do-not-serve.ts is the identity backstop for exactly this
+  // shape of miss; it is currently wired only into the no-Client-link
+  // reschedule path, not here. Do not delete it on the assumption this assert
+  // covers everything — it does not.
   //
   // No override exists here by design. See lib/clients/do-not-serve.ts.
   try {
