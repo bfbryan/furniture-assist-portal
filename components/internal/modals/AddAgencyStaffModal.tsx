@@ -160,7 +160,9 @@ export default function AddAgencyStaffModal({
 
   const [selectedAgency, setSelectedAgency] = useState<Agency | null>(initialAgency)
   const [agencyQuery, setAgencyQuery] = useState(
-    initialAgency?.name ?? (seedIsPerson ? '' : initialQuery.trim())
+    // Never seed the agency box with an email — that is how the whole address
+    // ended up as an agency name. It still seeds the staff email below.
+    initialAgency?.name ?? (seedIsPerson || initialQuery.includes('@') ? '' : initialQuery.trim())
   )
   const [agencyDropdownOpen, setAgencyDropdownOpen] = useState(false)
 
@@ -204,8 +206,10 @@ export default function AddAgencyStaffModal({
     a => a.name.toLowerCase() === trimmedAgencyQuery.toLowerCase()
   )
 
-  // Creating a new agency = text typed, nothing selected, no exact match.
-  const isNewAgency = !selectedAgency && !!trimmedAgencyQuery && !exactAgencyMatch
+  // Creating a new agency = text typed, nothing selected, no exact match, and
+  // not an email address (see handleSave — an @ in the name is a hard stop).
+  const isNewAgency =
+    !selectedAgency && !!trimmedAgencyQuery && !exactAgencyMatch && !trimmedAgencyQuery.includes('@')
 
   function pickAgency(agency: Agency) {
     setSelectedAgency(agency)
@@ -222,6 +226,12 @@ export default function AddAgencyStaffModal({
   function handleSave() {
     if (!selectedAgency && !trimmedAgencyQuery) {
       setError('Pick an existing agency or type a new agency name.')
+      return
+    }
+    // Hard stop, no override: an email address is not an agency name. This is
+    // the failure that produced "grojas@pmch.org" as an Agencies row.
+    if (!selectedAgency && !exactAgencyMatch && trimmedAgencyQuery.includes('@')) {
+      setError("That's an email address, not an agency name. Search for the agency above, or type its actual name.")
       return
     }
     if (!staff.firstName.trim()) {
@@ -371,22 +381,6 @@ export default function AddAgencyStaffModal({
                     onMouseLeave={e => (e.currentTarget.style.background = 'white')}
                   >
                     {a.name}
-                    {a.status === 'Unclaimed' && (
-                      <span
-                        style={{
-                          marginLeft: '8px',
-                          fontSize: '10px',
-                          fontWeight: 700,
-                          padding: '1px 6px',
-                          borderRadius: '10px',
-                          background: 'rgba(122,136,153,0.15)',
-                          color: '#7A8899',
-                          letterSpacing: '0.04em',
-                        }}
-                      >
-                        UNCLAIMED
-                      </span>
-                    )}
                   </div>
                 ))}
                 {isNewAgency && (

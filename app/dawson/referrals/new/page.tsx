@@ -197,6 +197,21 @@ type StaffSearchResult = StaffMember & {
 
 
 
+// When the query carries an email domain, the search also returns every
+// agency record whose staff use that domain — the real family of offices
+// behind one org (nine for @pmch.org). Rendered in the Agencies group so
+// Dawson picks the right office instead of minting another duplicate.
+type DomainFamilyAgency = {
+  agencyId: string
+  agencyName: string
+  officeName: string
+  city: string
+  staffCount: number
+  status: string
+}
+
+
+
 type AvailableDate = {
   date: string
   slotsRemaining: number
@@ -293,12 +308,17 @@ export default function DawsonAddReferralPage() {
 
   // Cross-agency staff search (debounced, server-side)
   const [staffResults, setStaffResults] = useState<StaffSearchResult[]>([])
+  const [domainFamily, setDomainFamily] = useState<DomainFamilyAgency[]>([])
   const [staffSearching, setStaffSearching] = useState(false)
 
 
 
   // "Add staff member" modal, opened when a search comes up empty
   const [showAddStaffModal, setShowAddStaffModal] = useState(false)
+  // Set when a domain-family row is clicked: that office goes into the modal
+  // as the preselected agency, so "add the new person here" is one step.
+  // Null for the plain "+ Add new" path.
+  const [modalSeedAgency, setModalSeedAgency] = useState<Agency | null>(null)
 
 
 
@@ -392,6 +412,7 @@ export default function DawsonAddReferralPage() {
     const q = agencyQuery.trim()
     if (q.length < 2 || selectedAgency || newAgencyMode) {
       setStaffResults([])
+      setDomainFamily([])
       setStaffSearching(false)
       return
     }
@@ -401,14 +422,15 @@ export default function DawsonAddReferralPage() {
 
     const timer = setTimeout(() => {
       fetch(`/api/dawson/staff/search?q=${encodeURIComponent(q)}`)
-        .then(r => (r.ok ? r.json() : []))
+        .then(r => (r.ok ? r.json() : { staff: [], domainFamily: [] }))
         .then(data => {
           if (cancelled) return
-          setStaffResults(Array.isArray(data) ? data : [])
+          setStaffResults(Array.isArray(data?.staff) ? data.staff : [])
+          setDomainFamily(Array.isArray(data?.domainFamily) ? data.domainFamily : [])
           setStaffSearching(false)
         })
         .catch(() => {
-          if (!cancelled) { setStaffResults([]); setStaffSearching(false) }
+          if (!cancelled) { setStaffResults([]); setDomainFamily([]); setStaffSearching(false) }
         })
     }, 250)
 
@@ -602,6 +624,13 @@ useEffect(() => {
     ? agencies.filter(a => matchesSearch(agencyQuery, a.name))
     : agencies
 
+  // When the query is an email and the server found agencies on that domain,
+  // the Agencies group shows THAT family (2-line rows, no name-substring
+  // filter — an email never substring-matches a name). Otherwise it's the
+  // name match above.
+  const domainMode = agencyQuery.trim().includes('@') && domainFamily.length > 0
+  const agencyGroupCount = domainMode ? domainFamily.length : filteredAgencies.length
+
 
 
   const exactMatch = agencies.some(a => a.name.toLowerCase() === agencyQuery.trim().toLowerCase())
@@ -648,6 +677,22 @@ useEffect(() => {
 
 
   const openAddStaffModal = () => {
+    setModalSeedAgency(null)
+    setAgencyDropdownOpen(false)
+    setShowAddStaffModal(true)
+  }
+
+  // Clicking an agency in the domain-family list: open the modal with that
+  // office preselected and the typed email carried through, so Dawson only
+  // adds the person's name. Never creates a new agency.
+  const openAddStaffForFamily = (fam: DomainFamilyAgency) => {
+    setModalSeedAgency({
+      id: fam.agencyId,
+      name: fam.agencyName,
+      email: null,
+      contactName: '',
+      status: fam.status,
+    })
     setAgencyDropdownOpen(false)
     setShowAddStaffModal(true)
   }
@@ -681,6 +726,7 @@ useEffect(() => {
     setStaffResults([])
     setAgencyDropdownOpen(false)
     setShowAddStaffModal(false)
+    setModalSeedAgency(null)
   }
 
 
@@ -1134,11 +1180,6 @@ useEffect(() => {
                     >
                       <div style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: 600 }}>
                         {s.name || s.email}
-                        {s.status === 'Unclaimed' && (
-                          <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', background: 'rgba(122,136,153,0.15)', color: '#7A8899', letterSpacing: '0.04em' }}>
-                            UNCLAIMED
-                          </span>
-                        )}
                       </div>
                       <div style={{ fontSize: '11.5px', color: '#7A8899', marginTop: '2px' }}>
                         {s.name && s.email ? `${s.email} · ` : ''}
@@ -1147,15 +1188,38 @@ useEffect(() => {
                     </div>
                   ))}
 
-                  {filteredAgencies.length > 0 && staffResults.length > 0 && (
+                  {agencyGroupCount > 0 && staffResults.length > 0 && (
                     <div style={{ position: 'sticky', top: 0, zIndex: 1, padding: '7px 14px 5px', fontSize: '11px', fontWeight: 800, color: '#2A7F6F', textTransform: 'uppercase', letterSpacing: '0.08em', background: '#EAF4F2', borderTop: '1px solid #EDE9E1' }}>
                       Agencies
                     </div>
                   )}
-                  {filteredAgencies.length === 0 && !agencyQuery.trim() && (
+                  {!domainMode && filteredAgencies.length === 0 && !agencyQuery.trim() && (
                     <div style={{ padding: '12px 14px', fontSize: '13px', color: '#7A8899' }}>No agencies</div>
                   )}
-                  {filteredAgencies.map(a => (
+
+                  {/* Domain family — the offices behind the typed email's
+                      domain. Two lines so nine near-identical PMCH names are
+                      tellable apart: agency name, then office · town · count.
+                      Click adds the new person to that office; no new agency. */}
+                  {domainMode && domainFamily.map(fam => {
+                    const line2 = [fam.officeName, fam.city, `${fam.staffCount} staff`].filter(Boolean).join(' · ')
+                    return (
+                      <div
+                        key={fam.agencyId}
+                        onClick={() => openAddStaffForFamily(fam)}
+                        style={{ padding: '9px 14px', cursor: 'pointer', borderBottom: '1px solid #F7F5F1' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#FAF8F4')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+                      >
+                        <div style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {fam.agencyName}
+                        </div>
+                        <div style={{ fontSize: '11.5px', color: '#7A8899', marginTop: '2px' }}>{line2}</div>
+                      </div>
+                    )
+                  })}
+
+                  {!domainMode && filteredAgencies.map(a => (
                     <div
                       key={a.id}
                       onClick={() => pickAgency(a)}
@@ -1164,27 +1228,25 @@ useEffect(() => {
                       onMouseLeave={e => (e.currentTarget.style.background = 'white')}
                     >
                       {a.name}
-                      {a.status === 'Unclaimed' && (
-                        <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 700, padding: '1px 6px', borderRadius: '10px', background: 'rgba(122,136,153,0.15)', color: '#7A8899', letterSpacing: '0.04em' }}>
-                          UNCLAIMED
-                        </span>
-                      )}
                     </div>
                   ))}
-                  {/* Nothing matched at all */}
+                  {/* Nothing matched at all — only once the search has settled,
+                      so a fast typist doesn't see "no matches" then rows. */}
                   {agencyQuery.trim().length >= 2 &&
                     !staffSearching &&
                     staffResults.length === 0 &&
-                    filteredAgencies.length === 0 && (
+                    agencyGroupCount === 0 && (
                       <div style={{ padding: '12px 14px', fontSize: '13px', color: '#7A8899' }}>
                         No staff or agency matches "{agencyQuery.trim()}"
                       </div>
                     )}
 
-                  {agencyQuery.trim() && !exactMatch && (
+                  {/* Not while the search is in flight — the debounced results
+                      may still land and this row invites clicking past them. */}
+                  {agencyQuery.trim() && !exactMatch && !staffSearching && (
                     <div
                       onClick={openAddStaffModal}
-                      style={{ padding: '10px 14px', fontSize: '13px', color: '#2A7F6F', cursor: 'pointer', fontWeight: 600, background: '#EAF4F2', borderTop: (filteredAgencies.length > 0 || staffResults.length > 0) ? '1px solid #EDE9E1' : 'none' }}
+                      style={{ padding: '10px 14px', fontSize: '13px', color: '#2A7F6F', cursor: 'pointer', fontWeight: 600, background: '#EAF4F2', borderTop: (agencyGroupCount > 0 || staffResults.length > 0) ? '1px solid #EDE9E1' : 'none' }}
                     >
                       + Add new staff member or agency
                     </div>
@@ -1594,8 +1656,8 @@ useEffect(() => {
         <AddAgencyStaffModal
           agencies={agencies}
           initialQuery={agencyQuery}
-          initialAgency={selectedAgency}
-          onClose={() => setShowAddStaffModal(false)}
+          initialAgency={modalSeedAgency ?? selectedAgency}
+          onClose={() => { setShowAddStaffModal(false); setModalSeedAgency(null) }}
           onSave={handleAddStaffSave}
         />
       )}
