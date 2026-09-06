@@ -33,7 +33,7 @@ import { isAwaitingOutcome } from '@/lib/referrals/no-show-window'
 import { TIME_CAPS, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
 import SaturdayCapacityGrid from '@/components/internal/SaturdayCapacityGrid'
 import PickSlotModal from '@/components/internal/modals/PickSlotModal'
-import type { AvailableDate } from '@/components/internal/modals/RescheduleModal'
+import type { AvailableDate } from '@/lib/schedule/available'
 
 // ---------------------------------------------------------------- shapes
 

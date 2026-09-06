@@ -2,29 +2,29 @@
 
 // components/internal/modals/PickSlotModal.tsx
 //
-// The "Pick Another" / "Pick another" modal on the Needs Action page. A thin
-// shell — the same overlay + white panel chrome as RescheduleModal — wrapping
-// the shared SaturdayCapacityGrid in select mode. This is the grid's first
-// real call site.
+// The one internal "pick a Saturday for this referral" modal: a thin shell
+// (overlay + white panel) around the shared SaturdayCapacityGrid in select
+// mode. It absorbed the old RescheduleModal (Nov 2026) — that modal did the
+// same job with a bespoke dropdown + time-pill UI, and keeping two was how the
+// three booking implementations happened.
 //
-// RescheduleModal itself does NOT fit here: it carries its own bespoke date
-// dropdown + time-pill UI fed by /api/dawson/schedule/available, which is the
-// thing the capacity grid replaces. Only the chrome is shared.
-//
-// Two callers, set by `intent`:
-//   - 'reschedule' (default) — a Reschedule row. excludeReferralId is the
-//     referral being moved, so its held slot reads as "current" (and is netted
-//     out of that cell's booked count) and its own pending request drops out of
-//     the soft tally. Confirm → page applyReschedule() → POST
-//     /api/dawson/referrals/[id]/reschedule (snapshot + agency email +
-//     withheld-notice handling).
+// `intent` picks the wording and the confirm path:
+//   - 'reschedule' (default) — moving a referral to a new Saturday.
+//       • Needs Action "Pick another" on a Reschedule row → applyReschedule()
+//       • Referrals list row menu → "Reschedule"
+//       • referral detail page action bar → "Reschedule"
+//     All three POST /api/dawson/referrals/[id]/reschedule (snapshot + agency
+//     email + withheld-notice handling). excludeReferralId is the referral
+//     being moved: its held slot reads "Current" and nets out of that cell's
+//     count, and its own pending request drops from the soft tally.
 //   - 'approve' — a New referrals row's "Pick another". The referral holds no
-//     slot, so nothing is netted out; excludeReferralId only drops its own
-//     pending request from the soft tally. Confirm → page approveReferral()
-//     with the picked slot as an explicit override → POST
-//     /api/dawson/referrals/[id]/approve.
+//     slot, so nothing nets out; excludeReferralId only drops its own pending
+//     request from the soft tally. Confirm → approveReferral() with the picked
+//     slot as an explicit override → POST /api/dawson/referrals/[id]/approve.
 //
-// On confirm this hands (date, time) back to the caller.
+// On confirm this hands (date, time) back to the caller. Parents pass a `key`
+// tied to the referral id so a fresh referral (or close→reopen) remounts it
+// and `sel` starts empty — there is no reset effect.
 
 import { useState } from 'react'
 import SaturdayCapacityGrid, { type SlotSelection } from '@/components/internal/SaturdayCapacityGrid'
@@ -40,8 +40,6 @@ type Props = {
   onClose: () => void
 }
 
-// The parent gives this a `key` tied to the referral id, so a fresh referral
-// (or a close→reopen) remounts it and `sel` starts empty — no reset effect.
 export default function PickSlotModal({
   open, name, referralId, loading, error, intent = 'reschedule', onConfirm, onClose,
 }: Props) {
@@ -83,8 +81,7 @@ export default function PickSlotModal({
 
         <SaturdayCapacityGrid
           mode="select"
-          dense
-          weeks={6}
+          weeks={4}
           leadDays={1}
           excludeReferralId={referralId}
           value={sel}
