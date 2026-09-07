@@ -86,7 +86,12 @@ export async function GET(req: NextRequest) {
   const sendDay = automation.fields["Send Day"];
   const sendHour = (automation.fields["Send Time"] || "").slice(0, 2);
 
-  if (day !== sendDay || hour !== sendHour) {
+  // Send Day tolerates both shapes: a string today, a multi-select array once
+  // the Airtable field is converted. Reduces to `day === sendDay` while it's a
+  // string, so this is a no-op until the field flips.
+  const dayMatches = Array.isArray(sendDay) ? sendDay.includes(day) : day === sendDay;
+
+  if (!dayMatches || hour !== sendHour) {
     return NextResponse.json({ skipped: "not scheduled time", day, hour });
   }
 
