@@ -46,7 +46,10 @@ export type EmailAutomationRecord = {
   fields: {
     "Email Type": string; // primary field, e.g. "Appointment Reminder"
     Enabled?: boolean;
-    "Send Day"?: string; // e.g. "Monday"
+    // "Monday" while the Airtable field is single-line text; string[] once it
+    // is converted to a multi-select (e.g. ["Monday", "Wednesday"]). Every
+    // comparison site tolerates both — see the three cron routes.
+    "Send Day"?: string | string[];
     "Send Time"?: string; // e.g. "08:00"
     "Subject Line"?: string;
     Template?: string;
