@@ -73,13 +73,20 @@ function isRequestStatus(s: string): boolean {
   return s === 'Reschedule' || s === 'Pending Schedule' || s === 'Unscheduled'
 }
 
+// '7d' was added for the dashboard's "Cancelled, last 7 days" card, which links
+// here as ?pill=cancelled&range=7d so the number lands on the actual records.
+// Kept as a real button (not deep-link-only) so that view shows an active
+// range rather than none. Note: the list bounds on Effective Appointment Date
+// while the card counts by cancellation date, so the two can differ for a
+// cancel of a far-future slot.
 const RANGES = [
+  { key: '7d', label: 'Last 7 days' },
   { key: '30d', label: 'Last 30 days' },
   { key: '90d', label: 'Last 90 days' },
   { key: '180d', label: 'Last 6 months' },
   { key: 'all', label: 'All time' },
 ] as const
-const RANGE_DAYS: Record<string, number> = { '30d': 30, '90d': 90, '180d': 180, all: 0 }
+const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '180d': 180, all: 0 }
 
 // Resting state. A key at its default is dropped from the URL (useListUrlState),
 // so /dawson/referrals with no query string is the clean default view.

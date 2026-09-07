@@ -121,6 +121,14 @@ export async function getAllReferrals(filters?: {
   appointmentDateFrom?: string   // inclusive lower bound, ISO date
   appointmentDateTo?: string     // inclusive upper bound, ISO date
   dateFrom?: string              // legacy alias for appointmentDateFrom
+  // Sep 2026: inclusive lower bound on {Cancellation Email Sent At} — the
+  // timestamp the portal cancel path stamps when it emails the agency. Lets a
+  // caller ask "cancelled through the portal since <date>" without an
+  // appointment-date bound, which would miss a cancel of a far-future slot.
+  // The dashboard's "Cancelled, last 7 days" card uses this. Rows cancelled
+  // before the field was un-misspelled (2026-08-14) never match — correct, not
+  // a lookup failure.
+  cancellationFrom?: string      // inclusive lower bound, ISO date
   agency?: string                // Agencies record id — matched against {Referring Agency ID}
   limit?: number                 // cap total rows (server-side maxRecords, applied after sort)
   // Substring match on client name / agency / staff, applied in JS AFTER the
@@ -160,6 +168,17 @@ export async function getAllReferrals(filters?: {
   if (filters?.appointmentDateTo) {
     conditions.push(
       `OR(IS_BEFORE({Effective Appointment Date}, "${filters.appointmentDateTo}"), IS_SAME({Effective Appointment Date}, "${filters.appointmentDateTo}", 'day'))`
+    )
+  }
+
+  if (filters?.cancellationFrom) {
+    // {Cancellation Email Sent At} is a datetime; the blank-guard keeps rows
+    // that never had it written (pre-2026-08-14) from matching via a null date
+    // comparison.
+    conditions.push(
+      `AND({Cancellation Email Sent At} != "", ` +
+      `OR(IS_AFTER({Cancellation Email Sent At}, "${filters.cancellationFrom}"), ` +
+      `IS_SAME({Cancellation Email Sent At}, "${filters.cancellationFrom}", 'day')))`
     )
   }
 

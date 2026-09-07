@@ -1,38 +1,36 @@
 // app/dawson/page.tsx
 //
-// Dawson's Operations Dashboard.
+// Dawson's Operations Dashboard — his landing page.
 //
-// Rebuilt August 2026. It used to be four shortcut tiles and nothing else, so
-// the first thing Dawson did every morning was click one of them to find out
-// whether there was anything to do. Ben asked for the time-sensitive work to be
-// on the page itself, with the shortcut icons moved to the right, and left the
-// arrangement open ("or however you think it logically should sit on the
-// page"). What it shows now, top to bottom, is what has a clock on it:
+// Rebuilt September 2026. The August build was three work lists (Awaiting
+// review, reschedule requests, pending agencies) plus a Next-2-Saturdays card
+// and a Quick Actions rail. This drops all of that:
 //
-//   1. THE NEXT TWO APPOINTMENT SATURDAYS - per-hour appointment counts, and
-//      the date itself opens that day's print roster in a new tab. This is the
-//      only thing here that is about a fixed date in the near future, so it
-//      leads.
-//   2. AWAITING REVIEW - split into new referrals and reschedule requests,
-//      because they are two different decisions (approve/reject vs. which
-//      date), which is the same split /dawson/referrals/review makes.
-//   3. AGENCIES PENDING APPROVAL - real work, but it waits without costing
-//      anybody an appointment, so it sits last.
+//   • Quick Actions        — every target is one click away in the left nav.
+//   • The read-only work lists — replaced by three COUNT cards. The number
+//     tells Dawson what KIND of work is waiting before he clicks through to
+//     Needs Action, which already shows the same rows in priority order.
+//   • Next 2 Saturdays     — widened to Next 4, with per-slot counts, a total
+//     against capacity, print buttons, and one attention line beneath.
 //
-// The four shortcuts are unchanged in label, description, colour, icon and
-// destination. They are a right-hand rail now instead of a 2x2 block filling
-// the page, and each row carries its icon on the right.
+// LAYOUT. Two columns (.fa-dawson-dash-grid): a 320px stack of four stat
+// cards on the left, the two Saturday cards on the right. Wrapper capped at
+// 1100px and centred, matching the Agencies and Referrals pages. Stacks to one
+// column below 1280 (the Dawson shell keeps its 240px sidebar at every width).
 //
-// WIDTH. Dawson works on an iPad, and the Dawson shell's sidebar is a fixed
-// 240px at every width, so the content area is 784px in landscape and 528px in
-// portrait. Every grid on this page is either a single column or collapses to
-// one through .fa-dawson-dash-grid / .fa-dawson-cols in globals.css, which use
-// the project's existing 1280px breakpoint. Measured at 1440, 1024, 768 and
-// 390; see the PR.
-//
-// EMPTY STATES. All three sections render whether or not they have anything in
-// them. A missing section and an empty one look identical, and "nothing to
-// review" is information Dawson wants rather than a reason to hide the card.
+// DATA. One Promise.all, server-side. Measured against the live base: batch
+// wall ~0.9s typical, ~1.3s on a cold/contended hit. The long pole is the
+// past-60-days referral read (~350 rows, ~830KB in the full list shape); if
+// that latency ever bites, the levers are a shorter window or a field-trimmed
+// fetch for this one query.
+//   • getSaturdaySchedule()          — both Saturday cards
+//   • getNeedsActionCounts()         — the three review stat cards; shared with
+//                                      the nav badge route so they can't drift
+//   • getAllReferrals(cancelled, cancellationFrom = today-7)  — the fourth card
+//   • getAllReferrals(Completed/No Show/Scheduled, effective date in the last
+//     60 days) — grouped here by Saturday for the Past-4 card. Bounded
+//     server-side on {Effective Appointment Date}; the grouping is over that
+//     bounded slice, the same shape the search work settled on.
 
 import Link from 'next/link'
 import { currentUser } from '@clerk/nextjs/server'
@@ -40,527 +38,297 @@ import {
   easternHour,
   easternTodayISO,
   formatDateOnly,
+  addDaysISO,
   differenceInDaysISO,
 } from '@/lib/dates'
-import { getSaturdaySchedule, getAllReferrals, getAllAgencies } from '@/lib/airtable'
-import { TIME_ORDER } from '@/lib/schedule/capacity'
+import {
+  getSaturdaySchedule,
+  getAllReferrals,
+  type SaturdayScheduleRow,
+} from '@/lib/airtable'
+import { getNeedsActionCounts } from '@/lib/dawson/needs-action-counts'
+import { isAwaitingOutcome } from '@/lib/referrals/no-show-window'
+import { selectBookableWindow, type SaturdayGridRow } from '@/lib/schedule/grid'
+import { TIME_ORDER, TIME_CAPS, type TimeSlot } from '@/lib/schedule/capacity'
 import DawsonPageControls from '@/components/internal/DawsonPageControls'
-
-// The slices of getSaturdaySchedule / getAllReferrals / getAllAgencies this page
-// reads. Structural rather than imported, so a change to one of those helpers
-// shows up here as a type error instead of silently rendering blanks.
-type Saturday = {
-  id: string
-  date: string
-  status: string
-  slots9am: number
-  slots10am: number
-  slots11am: number
-  slots12pm: number
-  slots1pm: number
-  totalFilled: number
-}
-
-type PendingReferral = {
-  id: string
-  clientName: string
-  referralDate: string | null
-  appointmentDate: string | null
-  appointmentStatus: string
-  preferredDate: string | null
-  referringAgency: string | null
-}
-
-type PendingAgency = {
-  id: string
-  name: string
-  registrationDate: string | null
-}
-
-// How many rows each work list shows before it says "+N more". Enough to see
-// the shape of the queue without turning the dashboard into the queue.
-const MAX_ROWS = 5
-
-// Ben asked for "the next two appointment weeks".
-const WEEKS_AHEAD = 2
+import {
+  PastSaturdaysCard,
+  UpcomingSaturdaysCard,
+  type PastWeek,
+  type UpcomingWeek,
+} from '@/components/internal/DashboardSaturdayCards'
 
 const NAVY = '#1B2B4B'
-const TEAL = '#2A7F6F'
 const MUTED = '#7A8899'
 const BORDER = '#EDE9E1'
 const GOLD = '#C9A84C'
-const BLUE = '#5B8DB8'
 
-function greetingFor(hour: number) {
+// How full a Saturday "should" be by the time it is this many weeks out. The
+// attention line names the SOONEST upcoming Saturday that falls short — a flat
+// threshold would treat "empty at 4 weeks" (normal) like "empty at 1 week" (a
+// problem). Silent when nothing qualifies: a line that always fires isn't a
+// signal. Starting values; retune against a few real weeks.
+const ATTENTION_TARGET: Record<number, number> = { 1: 0.8, 2: 0.6, 3: 0.35, 4: 0.15 }
+
+function greetingFor(hour: number): string {
   if (hour < 12) return 'Good morning'
   if (hour < 17) return 'Good afternoon'
   return 'Good evening'
 }
 
 /** "Sat, Oct 3" */
-function shortSaturday(iso: string): string {
+function shortSat(iso: string): string {
   return formatDateOnly(iso, { weekday: 'short', month: 'short', day: 'numeric' })
 }
 
-/** "Oct 3, 2026" */
-function shortDate(iso: string | null): string {
-  if (!iso) return '-'
-  return formatDateOnly(iso.slice(0, 10), { month: 'short', day: 'numeric', year: 'numeric' })
+// getSaturdaySchedule's row -> the shape selectBookableWindow (the shared
+// "N bookable Saturdays, blackouts struck but not counted" walk) expects. Only
+// date/status drive the walk; the slot map carries the per-hour counts through
+// for rendering. soft/current are grid-only concerns, zeroed here.
+function toGridRow(s: SaturdayScheduleRow): SaturdayGridRow {
+  const flat: Record<TimeSlot, number> = {
+    '9am': s.slots9am,
+    '10am': s.slots10am,
+    '11am': s.slots11am,
+    '12pm': s.slots12pm,
+    '1pm': s.slots1pm,
+  }
+  const slots = {} as SaturdayGridRow['slots']
+  for (const t of TIME_ORDER) {
+    slots[t] = { booked: flat[t] ?? 0, cap: TIME_CAPS[t], soft: 0, current: false }
+  }
+  return {
+    id: s.id,
+    date: String(s.date).slice(0, 10),
+    status: s.status,
+    totalCapacity: s.totalCapacity,
+    totalFilled: s.totalFilled,
+    slotsRemaining: s.slotsRemaining,
+    slots,
+  }
 }
 
-/** "Today", "Tomorrow", "in 12 days". */
-function relativeDay(iso: string, todayISO: string): string {
-  const days = differenceInDaysISO(todayISO, iso)
-  if (days === null) return ''
-  if (days === 0) return 'Today'
-  if (days === 1) return 'Tomorrow'
-  return `in ${days} days`
+function pickAttention(
+  weeks: { date: string; totalFilled: number; totalCapacity: number }[],
+  todayISO: string,
+): string | null {
+  let best: { date: string; weeksOut: number; fill: number; filled: number } | null = null
+  for (const w of weeks) {
+    if (w.totalCapacity <= 0) continue
+    const days = differenceInDaysISO(todayISO, w.date)
+    if (days === null || days < 0) continue
+    const weeksOut = Math.max(1, Math.ceil(days / 7))
+    const target = ATTENTION_TARGET[weeksOut] ?? ATTENTION_TARGET[4]
+    const fill = w.totalFilled / w.totalCapacity
+    if (fill >= target) continue
+    if (
+      !best ||
+      weeksOut < best.weeksOut ||
+      (weeksOut === best.weeksOut && fill < best.fill)
+    ) {
+      best = { date: w.date, weeksOut, fill, filled: w.totalFilled }
+    }
+  }
+  if (!best) return null
+  const label = formatDateOnly(best.date, { month: 'short', day: 'numeric' })
+  const wk = best.weeksOut === 1 ? '1 week' : `${best.weeksOut} weeks`
+  const tail = best.filled === 0 ? 'empty' : `only ${best.filled} booked`
+  return `${label} is ${wk} out and ${tail}.`
 }
 
-const CARD: React.CSSProperties = {
+const STAT_CARD: React.CSSProperties = {
+  flex: 1,
+  display: 'flex',
+  flexDirection: 'column',
+  justifyContent: 'center',
   background: 'white',
   borderRadius: '14px',
   border: `1px solid ${BORDER}`,
   boxShadow: '0 2px 8px rgba(27,43,75,0.05)',
-  overflow: 'hidden',
-}
-
-const CARD_HEAD: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'baseline',
-  justifyContent: 'space-between',
-  gap: '10px',
-  padding: '16px 20px',
-  borderBottom: `1px solid ${BORDER}`,
-}
-
-const CARD_TITLE: React.CSSProperties = {
-  fontFamily: 'var(--font-montserrat)',
-  fontWeight: 800,
-  fontSize: '14px',
-  color: NAVY,
-}
-
-const SECTION_LABEL: React.CSSProperties = {
-  fontSize: '10.5px',
-  fontWeight: 800,
-  letterSpacing: '0.08em',
-  textTransform: 'uppercase',
-  color: MUTED,
-}
-
-const EMPTY: React.CSSProperties = {
-  padding: '14px 20px',
-  fontSize: '13px',
-  color: MUTED,
-}
-
-const ROW: React.CSSProperties = {
-  display: 'flex',
-  alignItems: 'baseline',
-  justifyContent: 'space-between',
-  gap: '12px',
-  padding: '10px 20px',
-  borderBottom: `1px solid #F7F5F1`,
-}
-
-const ROW_LINK: React.CSSProperties = {
-  fontSize: '13px',
-  fontWeight: 600,
-  color: TEAL,
-  textDecoration: 'none',
-  overflowWrap: 'anywhere',
-}
-
-const ROW_META: React.CSSProperties = {
-  fontSize: '11px',
-  color: MUTED,
-  whiteSpace: 'nowrap',
-  flexShrink: 0,
-}
-
-const MORE: React.CSSProperties = {
-  display: 'block',
-  padding: '10px 20px',
-  fontSize: '12px',
-  fontWeight: 700,
-  color: TEAL,
-  textDecoration: 'none',
+  padding: '18px 20px',
 }
 
 export default async function DawsonDashboard() {
-  const user = await currentUser()
-  const firstName = user?.firstName ?? ''
-  // Eastern, not the runtime's clock: this renders on Vercel, where local time
-  // is UTC, so after 8pm Eastern the greeting read "Good morning" and the date
-  // line showed tomorrow.
-  const greeting = greetingFor(easternHour())
   const todayISO = easternTodayISO()
-  const dateStr = formatDateOnly(todayISO, {
-    weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-  })
 
-  // In parallel: 41 Saturdays, new-referral requests (Review = 'Pending'),
-  // reschedule requests (Appointment Status = 'Reschedule', regardless of
-  // review), and the pending agencies. New referrals and reschedules are two
-  // separate queries now — an agency reschedule request leaves the referral
-  // 'Approved', so it no longer shows up under review = 'Pending'.
-  const [schedule, pendingReview, rescheduleRequests, pendingAgencies] = await Promise.all([
+  const [user, schedule, counts, cancelledRecent, pastRows] = await Promise.all([
+    currentUser(),
     getSaturdaySchedule(),
-    getAllReferrals({ review: 'Pending' }),
-    getAllReferrals({ statuses: ['Reschedule'] }),
-    getAllAgencies('Pending'),
+    getNeedsActionCounts(todayISO),
+    getAllReferrals({ statuses: ['Cancelled'], cancellationFrom: addDaysISO(todayISO, -7) }),
+    getAllReferrals({
+      statuses: ['Completed', 'No Show', 'Scheduled'],
+      appointmentDateFrom: addDaysISO(todayISO, -60),
+      appointmentDateTo: todayISO,
+    }),
   ])
 
-  // The next two APPOINTMENT Saturdays. Blackouts are skipped rather than
-  // counted: a blackout is a Saturday with no appointments on it, so showing
-  // one would spend half of this card saying nothing is happening.
-  const upcomingSaturdays = schedule
-    .filter((s: Saturday) => {
-      if (!s.date) return false
-      if (s.status === 'Blackout') return false
-      const diff = differenceInDaysISO(todayISO, s.date)
-      return diff !== null && diff >= 0
-    })
-    .slice(0, WEEKS_AHEAD)
+  const firstName = user?.firstName ?? ''
+  const greeting = greetingFor(easternHour())
+  const dateStr = formatDateOnly(todayISO, {
+    weekday: 'long',
+    month: 'long',
+    day: 'numeric',
+    year: 'numeric',
+  })
 
-  // Two queries above. Belt and braces: keep any 'Reschedule'-status record out
-  // of the new-referral list even if it somehow also matched review='Pending'.
-  const newRequests = pendingReview.filter(
-    (r: PendingReferral) => r.appointmentStatus !== 'Reschedule',
-  )
-  const awaitingReviewCount = newRequests.length + rescheduleRequests.length
-
-  const actions = [
+  // ---- LEFT: four stat cards. The first three go plainly to Needs Action
+  // (no anchors) — its cards are short and already priority-ordered; three
+  // counts still earn their place by naming the kind of work first. The
+  // cancelled card is the Phase-1 signal: cancellations coming through the
+  // portal instead of dying in an inbox.
+  const statCards = [
+    { label: 'Reschedules to review', value: counts.reschedule, gold: true, href: '/dawson/needs-action' },
+    { label: 'New referrals to review', value: counts.newReferrals, gold: true, href: '/dawson/needs-action' },
+    { label: 'Agencies to review', value: counts.agencies, gold: true, href: '/dawson/needs-action' },
     {
-      label: 'Add Referral',
-      description: 'Create a new client referral',
-      href: '/dawson/referrals/new',
-      color: NAVY,
-      bg: 'rgba(27,43,75,0.08)',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19"/>
-          <line x1="5" y1="12" x2="19" y2="12"/>
-        </svg>
-      ),
-    },
-    {
-      label: 'Scheduled Referrals',
-      description: 'View upcoming pickups',
-      href: '/dawson/referrals/scheduled',
-      color: TEAL,
-      bg: 'rgba(42,127,111,0.1)',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M9 11l3 3L22 4"/>
-          <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>
-        </svg>
-      ),
-    },
-    {
-      label: 'Saturday Schedule',
-      description: 'Appointments by time slot, print pickup sheets',
-      href: '/dawson/schedule',
-      color: BLUE,
-      bg: 'rgba(91,141,184,0.12)',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
-          <line x1="16" y1="2" x2="16" y2="6"/>
-          <line x1="8" y1="2" x2="8" y2="6"/>
-          <line x1="3" y1="10" x2="21" y2="10"/>
-        </svg>
-      ),
-    },
-    {
-      label: 'View History',
-      description: 'Past referrals & appointments',
-      href: '/dawson/referrals/history',
-      color: MUTED,
-      bg: 'rgba(122,136,153,0.14)',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 3h18v18H3z"/>
-          <polyline points="3 9 21 9"/>
-          <polyline points="3 15 21 15"/>
-          <polyline points="9 3 9 21"/>
-        </svg>
-      ),
+      label: 'Cancelled, last 7 days',
+      value: cancelledRecent.length,
+      gold: false,
+      href: '/dawson/referrals?pill=cancelled&range=7d',
     },
   ]
 
+  // ---- RIGHT: Past 4 Saturdays, oldest → newest (same direction as Next 4).
+  //
+  // Only Completed is shown. No-show and show-rate were removed because both
+  // decay: rescheduling a no-show overwrites its status to 'Scheduled' and
+  // repoints its Saturday link, so it leaves the old Saturday's counts (Aug 29
+  // reads high only because ~40 of its no-shows were swept forward). Completed
+  // doesn't decay — a completed referral is never rescheduled.
+  //
+  // 'No Show' stays in the fetch even though it isn't displayed: `empty` is
+  // "no referral grouped to this Saturday at all", and without the No Show rows
+  // a Saturday where every appointment was missed would look like a day nothing
+  // was booked. A still-'Scheduled' past row is "Awaiting" (isAwaitingOutcome,
+  // the Referrals page's check) and withholds the count.
+  const pastWeeks: PastWeek[] = schedule
+    .filter(s => s.date && String(s.date).slice(0, 10) < todayISO && s.status !== 'Blackout')
+    .slice(-4)
+    .map(s => {
+      const d = String(s.date).slice(0, 10)
+      const rows = pastRows.filter(
+        (r: { effectiveAppointmentDate: string | null }) =>
+          (r.effectiveAppointmentDate ?? '').slice(0, 10) === d,
+      )
+      const completed = rows.filter(
+        (r: { appointmentStatus: string }) => r.appointmentStatus === 'Completed',
+      ).length
+      const awaiting = rows.some(
+        (r: { appointmentStatus: string; appointmentDate: string | null }) =>
+          isAwaitingOutcome(r.appointmentStatus, r.appointmentDate, todayISO),
+      )
+      return {
+        date: d,
+        dateLabel: shortSat(d),
+        awaiting,
+        completed,
+        empty: rows.length === 0,
+      }
+    })
+
+  // ---- RIGHT: Next 4 Saturdays via the shared bookable walk. Blackouts are
+  // dropped here, not struck through — this card is about what needs filling,
+  // and the Saturday Schedule page shows closures for anyone who wants them.
+  const { visible, bookableShown } = selectBookableWindow(schedule.map(toGridRow), {
+    weeks: 4,
+    fromISO: todayISO,
+    firstBookableISO: todayISO,
+  })
+  const upcomingWeeks: UpcomingWeek[] = visible
+    .filter(r => r.status !== 'Blackout')
+    .map(r => ({
+      date: r.date,
+      dateLabel: shortSat(r.date),
+      slots: TIME_ORDER.map(t => ({ label: t, booked: r.slots[t].booked, cap: r.slots[t].cap })),
+      totalFilled: r.totalFilled,
+      totalCapacity: r.totalCapacity,
+    }))
+
+  const lastPublished = schedule.length
+    ? String(schedule[schedule.length - 1].date).slice(0, 10)
+    : null
+  const horizonNote =
+    bookableShown < 4 && lastPublished
+      ? `Schedule published through ${formatDateOnly(lastPublished, { month: 'short', day: 'numeric' })}.`
+      : null
+
+  const attention = pickAttention(
+    upcomingWeeks.map(w => ({
+      date: w.date,
+      totalFilled: w.totalFilled,
+      totalCapacity: w.totalCapacity,
+    })),
+    todayISO,
+  )
+
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
-
       <DawsonPageControls>
         <span style={{ fontSize: '12px', color: MUTED }}>{dateStr}</span>
       </DawsonPageControls>
 
-      <div style={{ padding: '28px 32px', maxWidth: '1200px', margin: '0 auto' }}>
-
-        {/* Greeting */}
-        <div style={{ marginBottom: '24px' }}>
-          <div style={{
-            fontFamily: 'var(--font-montserrat)', fontWeight: 800,
-            fontSize: '26px', color: NAVY, lineHeight: 1.15,
-          }}>
-            {greeting}{firstName ? `, ${firstName}` : ''}
-          </div>
+      <div style={{ padding: '28px 32px', maxWidth: '1100px', margin: '0 auto' }}>
+        <div
+          style={{
+            marginBottom: '22px',
+            fontFamily: 'var(--font-montserrat)',
+            fontWeight: 800,
+            fontSize: '24px',
+            color: NAVY,
+            lineHeight: 1.15,
+          }}
+        >
+          {greeting}
+          {firstName ? `, ${firstName}` : ''}
         </div>
 
-        {/* Work on the left, shortcuts on the right. Below 1280px the rail
-            drops under the work rather than squeezing beside it - see
-            .fa-dawson-dash-grid in globals.css. */}
+        {/* grid-template-areas (globals.css): "stats cards" / ".  attn".
+            alignItems: stretch grows the stats column to the CARDS' height —
+            row 1 — while the attention line sits in row 2 and doesn't drag the
+            last stat card past the bottom of Next 4. */}
         <div
           className="fa-dawson-dash-grid"
-          style={{ display: 'grid', gap: '20px', alignItems: 'start' }}
+          style={{ display: 'grid', columnGap: '20px', rowGap: '10px', alignItems: 'stretch' }}
         >
-
-          {/* ================= LEFT: the work ================= */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0 }}>
-
-            {/* ---------- 1. Next two Saturdays ---------- */}
-            <div style={CARD}>
-              <div style={CARD_HEAD}>
-                <div style={CARD_TITLE}>Next {WEEKS_AHEAD} Saturdays</div>
-                <Link href="/dawson/schedule" style={{ ...ROW_META, color: TEAL, fontWeight: 700, textDecoration: 'none' }}>
-                  Saturday Schedule
-                </Link>
-              </div>
-
-              {upcomingSaturdays.length === 0 ? (
-                <div style={EMPTY}>No upcoming Saturdays on the schedule.</div>
-              ) : (
+          {/* LEFT — four stat cards, each flex: 1 so they divide the column
+              height evenly. The numeral is pinned at 2rem and does NOT scale
+              with the card. */}
+          <div style={{ gridArea: 'stats', display: 'flex', flexDirection: 'column', gap: '12px', minWidth: 0 }}>
+            {statCards.map(c => (
+              <Link key={c.label} href={c.href} style={{ ...STAT_CARD, textDecoration: 'none' }}>
                 <div
-                  className="fa-dawson-cols"
-                  style={{ display: 'grid', gap: '1px', background: BORDER }}
+                  style={{
+                    fontFamily: 'var(--font-montserrat)',
+                    fontWeight: 800,
+                    fontSize: '2rem',
+                    lineHeight: 1,
+                    // Zero isn't waiting on anything — the muted zero-count grey
+                    // from the Agencies FilterPill, not gold. Non-zero keeps its
+                    // colour (gold for the review queues, navy for cancelled).
+                    color: c.value === 0 ? '#B8C1CC' : c.gold ? GOLD : NAVY,
+                  }}
                 >
-                  {upcomingSaturdays.map((sat: Saturday) => {
-                    const counts: Array<[string, number]> = [
-                      ['9am',  sat.slots9am],
-                      ['10am', sat.slots10am],
-                      ['11am', sat.slots11am],
-                      ['12pm', sat.slots12pm],
-                      ['1pm',  sat.slots1pm],
-                    ]
-                    // TIME_ORDER is the fill order the schedulers use; keeping
-                    // the same order here means this reads like the Saturday
-                    // Schedule page and the time-slot pills on Add Referral.
-                    const ordered = TIME_ORDER.map(
-                      t => counts.find(([label]) => label === t) ?? [t, 0],
-                    ) as Array<[string, number]>
-
-                    return (
-                      <div key={sat.id} style={{ background: 'white', padding: '14px 20px 6px' }}>
-                        <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '10px', flexWrap: 'wrap' }}>
-                          {/* The date IS the link to that day's roster, and it
-                              opens in a new tab: Dawson prints the roster while
-                              still working from the dashboard, and losing the
-                              page he came from to a print view is the whole
-                              reason he would not use it. */}
-                          <a
-                            href={`/print/roster/${sat.date}`}
-                            target="_blank"
-                            rel="noreferrer"
-                            title="Open this day's print roster in a new tab"
-                            style={{
-                              fontFamily: 'var(--font-montserrat)',
-                              fontWeight: 800,
-                              fontSize: '15px',
-                              color: TEAL,
-                              textDecoration: 'none',
-                            }}
-                          >
-                            {shortSaturday(sat.date)}
-                          </a>
-                          <span style={ROW_META}>{relativeDay(sat.date, todayISO)}</span>
-                        </div>
-
-                        <div style={{ marginTop: '10px' }}>
-                          {ordered.map(([label, count]) => (
-                            <div
-                              key={label}
-                              style={{
-                                display: 'flex',
-                                alignItems: 'baseline',
-                                justifyContent: 'space-between',
-                                gap: '10px',
-                                padding: '5px 0',
-                                borderBottom: '1px solid #F7F5F1',
-                              }}
-                            >
-                              <span style={{ fontSize: '12.5px', color: '#2C3A4A' }}>{label}</span>
-                              <span style={{
-                                fontFamily: 'var(--font-montserrat)',
-                                fontWeight: 800,
-                                fontSize: '13px',
-                                color: count > 0 ? NAVY : MUTED,
-                              }}>
-                                {count}
-                              </span>
-                            </div>
-                          ))}
-                        </div>
-
-                        <div style={{
-                          display: 'flex', alignItems: 'baseline', justifyContent: 'space-between',
-                          gap: '10px', padding: '9px 0 10px',
-                        }}>
-                          <span style={SECTION_LABEL}>Total</span>
-                          <span style={{
-                            fontFamily: 'var(--font-montserrat)', fontWeight: 800,
-                            fontSize: '14px', color: NAVY,
-                          }}>
-                            {sat.totalFilled}
-                          </span>
-                        </div>
-                      </div>
-                    )
-                  })}
+                  {c.value}
                 </div>
-              )}
-            </div>
-
-            {/* ---------- 2. Awaiting review ---------- */}
-            <div style={CARD}>
-              <div style={CARD_HEAD}>
-                <div style={CARD_TITLE}>Awaiting review</div>
-                <Link href="/dawson/referrals/review" style={{ ...ROW_META, color: TEAL, fontWeight: 700, textDecoration: 'none' }}>
-                  {awaitingReviewCount} waiting
-                </Link>
-              </div>
-
-              {/* New referrals */}
-              <div style={{ padding: '12px 20px 6px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ width: '3px', height: '12px', background: GOLD, borderRadius: '2px' }} />
-                <span style={SECTION_LABEL}>New referrals</span>
-                <span style={{ ...ROW_META, marginLeft: 'auto' }}>{newRequests.length}</span>
-              </div>
-              {newRequests.length === 0 ? (
-                <div style={{ ...EMPTY, paddingTop: '2px' }}>Nothing new to review.</div>
-              ) : (
-                <>
-                  {newRequests.slice(0, MAX_ROWS).map((r: PendingReferral) => (
-                    <div key={r.id} style={ROW}>
-                      <Link href={`/dawson/referrals/${r.id}`} style={ROW_LINK}>
-                        {r.clientName || 'Unnamed client'}
-                      </Link>
-                      <span style={ROW_META}>{r.referringAgency || shortDate(r.referralDate)}</span>
-                    </div>
-                  ))}
-                  {newRequests.length > MAX_ROWS && (
-                    <Link href="/dawson/referrals/review" style={MORE}>
-                      +{newRequests.length - MAX_ROWS} more
-                    </Link>
-                  )}
-                </>
-              )}
-
-              {/* Reschedule requests */}
-              <div style={{ padding: '12px 20px 6px', display: 'flex', alignItems: 'center', gap: '8px', borderTop: `1px solid ${BORDER}` }}>
-                <span style={{ width: '3px', height: '12px', background: BLUE, borderRadius: '2px' }} />
-                <span style={SECTION_LABEL}>Reschedule requests</span>
-                <span style={{ ...ROW_META, marginLeft: 'auto' }}>{rescheduleRequests.length}</span>
-              </div>
-              {rescheduleRequests.length === 0 ? (
-                <div style={{ ...EMPTY, paddingTop: '2px' }}>No reschedule requests.</div>
-              ) : (
-                <>
-                  {rescheduleRequests.slice(0, MAX_ROWS).map((r: PendingReferral) => (
-                    <div key={r.id} style={ROW}>
-                      <Link href={`/dawson/referrals/${r.id}`} style={ROW_LINK}>
-                        {r.clientName || 'Unnamed client'}
-                      </Link>
-                      {/* What they asked to move TO, which is the decision in
-                          front of him. Falls back to the booked date. */}
-                      <span style={ROW_META}>
-                        {shortDate(r.preferredDate ?? r.appointmentDate)}
-                      </span>
-                    </div>
-                  ))}
-                  {rescheduleRequests.length > MAX_ROWS && (
-                    <Link href="/dawson/referrals/review" style={MORE}>
-                      +{rescheduleRequests.length - MAX_ROWS} more
-                    </Link>
-                  )}
-                </>
-              )}
-            </div>
-
-            {/* ---------- 3. Agencies pending approval ---------- */}
-            <div style={CARD}>
-              <div style={CARD_HEAD}>
-                <div style={CARD_TITLE}>Agencies pending approval</div>
-                <Link href="/dawson/agencies/pending" style={{ ...ROW_META, color: TEAL, fontWeight: 700, textDecoration: 'none' }}>
-                  {pendingAgencies.length} waiting
-                </Link>
-              </div>
-
-              {pendingAgencies.length === 0 ? (
-                <div style={EMPTY}>No agencies awaiting approval.</div>
-              ) : (
-                <>
-                  {pendingAgencies.slice(0, MAX_ROWS).map((a: PendingAgency) => (
-                    <div key={a.id} style={ROW}>
-                      <Link href={`/dawson/agencies/${a.id}?from=pending`} style={ROW_LINK}>
-                        {a.name}
-                      </Link>
-                      <span style={ROW_META}>{shortDate(a.registrationDate)}</span>
-                    </div>
-                  ))}
-                  {pendingAgencies.length > MAX_ROWS && (
-                    <Link href="/dawson/agencies/pending" style={MORE}>
-                      +{pendingAgencies.length - MAX_ROWS} more
-                    </Link>
-                  )}
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* ================= RIGHT: the shortcuts ================= */}
-          <div style={{ ...CARD, minWidth: 0 }}>
-            <div style={CARD_HEAD}>
-              <div style={CARD_TITLE}>Quick actions</div>
-            </div>
-            {actions.map(action => (
-              <Link
-                key={action.label}
-                href={action.href}
-                style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '14px',
-                  padding: '14px 20px',
-                  borderBottom: '1px solid #F7F5F1',
-                  textDecoration: 'none',
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontFamily: 'var(--font-montserrat)', fontWeight: 700,
-                    fontSize: '14px', color: NAVY, marginBottom: '2px',
-                  }}>
-                    {action.label}
-                  </div>
-                  <div style={{ fontSize: '12px', color: MUTED }}>
-                    {action.description}
-                  </div>
-                </div>
-                {/* Ben asked for the icons on the right. */}
-                <div style={{
-                  width: '40px', height: '40px', borderRadius: '10px',
-                  background: action.bg, color: action.color,
-                  display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  flexShrink: 0,
-                }}>
-                  {action.icon}
-                </div>
+                <div style={{ fontSize: '13px', color: MUTED, marginTop: '7px' }}>{c.label}</div>
               </Link>
             ))}
           </div>
 
+          {/* RIGHT row 1 — the two Saturday cards */}
+          <div style={{ gridArea: 'cards', display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0 }}>
+            <PastSaturdaysCard weeks={pastWeeks} />
+            <UpcomingSaturdaysCard weeks={upcomingWeeks} horizonNote={horizonNote} />
+          </div>
+
+          {/* RIGHT row 2 — the attention line, out of the height the stats
+              column matches against. */}
+          {attention && (
+            <div style={{ gridArea: 'attn', fontSize: '12.5px', color: '#8A6A00' }}>
+              {attention}
+            </div>
+          )}
         </div>
       </div>
     </div>
