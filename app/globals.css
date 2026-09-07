@@ -542,22 +542,22 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 /* ---------- Dawson Operations Dashboard ----------
-   The one page in the Dawson portal that has a side rail. Same shape and the
-   same 1280px breakpoint as .fa-dashboard-grid above; a separate class because
-   everything above this line is the agency portal and the two should be free
-   to move independently.
+   The rebuilt dashboard (Sep 2026): a 320px left column of four stat cards,
+   the two Saturday cards on the right. Same 1280px stack breakpoint as
+   .fa-dashboard-grid above; a separate class because everything above this
+   line is the agency portal and the two should move independently.
 
    The Dawson shell keeps its fixed 240px sidebar at every width (Ben's standing
    rule), so the content area is 784px on an iPad in landscape and 528px in
    portrait. Both are below 1280, which is why both get the stacked single
-   column rather than a 484px column beside a 300px rail. */
+   column rather than a 320px column beside the Saturday cards. */
 .fa-dawson-dash-grid {
-  grid-template-columns: minmax(0, 1fr) 320px;
-}
-
-/* The two Saturday cards, side by side on a wide screen. */
-.fa-dawson-cols {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: 320px minmax(0, 1fr);
+  /* stats spans row 1 only, so alignItems: stretch grows it to the Saturday
+     cards' height and not to the attention line, which lives in row 2. */
+  grid-template-areas:
+    "stats cards"
+    ".     attn";
 }
 
 /* Needs Action: cards column + the capacity-grid rail. Two columns only when
@@ -765,11 +765,14 @@ h1, h2, h3, h4, h5, h6 {
     gap: 10px;
   }
 
-  /* Label plus a 200px select overflowed a 390px screen and reintroduced
-     sideways scroll; the select takes its own line instead. */
-  .fa-dawson-dash-grid,
-  .fa-dawson-cols {
+  /* Dashboard: the stat column drops above the Saturday cards rather than
+     sitting beside them once the shell sidebar leaves too little width. */
+  .fa-dawson-dash-grid {
     grid-template-columns: minmax(0, 1fr);
+    grid-template-areas:
+      "stats"
+      "cards"
+      "attn";
   }
 
   /* Same on the Active page's staff filter, which is a non-wrapping flex row
