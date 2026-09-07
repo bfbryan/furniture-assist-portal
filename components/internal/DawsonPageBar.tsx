@@ -31,6 +31,7 @@
 
 import { usePathname } from 'next/navigation'
 import DawsonAvatarMenu from './DawsonAvatarMenu'
+import DawsonUniversalSearch from './DawsonUniversalSearch'
 
 // The bar's fixed height in px. Hardcoded (a layout height can't be derived in
 // CSS), but kept as ONE constant: the bar sets its own minHeight from it, and
@@ -122,6 +123,11 @@ export default function DawsonPageBar({
       </span>
 
       <span style={{ flex: 1 }} />
+
+      {/* Universal lookup — clients, agencies and staff, on every internal
+          route. Sits at the right end next to the avatar (spacer above pushes
+          it there); 460px cap lives in the component. */}
+      <DawsonUniversalSearch />
 
       <DawsonAvatarMenu fullName={fullName} email={email} initials={initials} />
     </div>
