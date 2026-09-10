@@ -48,8 +48,11 @@ export default async function AdminPage() {
   )
 
 
-  // AT staff → source of truth for status, invite state, and identity
-  const atStaff = await getAgencyUsersByAgencyId(agency.name)
+  // AT staff → source of truth for status, invite state, and identity.
+  // Scoped by the agency RECORD ID, not the name — Agency Name is not unique
+  // across offices of one organisation, so a name match rendered both offices'
+  // rosters here with a live Send Invite button beside each.
+  const atStaff = await getAgencyUsersByAgencyId(agency.id)
 
 
   // Hide Wrong Agency rows entirely — Dawson handles them from his backend

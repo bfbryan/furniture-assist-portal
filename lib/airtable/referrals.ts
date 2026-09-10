@@ -77,10 +77,13 @@ function shapeReferralListItem(record: any) {
   }
 }
 
-export async function getReferralsByAgencyId(agencyName: string) {
-  // {Referring Agency} is now a lookup, but Airtable formulas can still
-  // compare against lookup values as strings (single-value lookup → string).
-  const formula = encodeURIComponent(`{Referring Agency} = "${agencyName}"`)
+export async function getReferralsByAgencyId(agencyId: string) {
+  // Match on the agency RECORD ID, not the name — Agency Name is not unique
+  // (two offices of one organisation share it by design), so a name match
+  // pooled their referrals. {Referring Agency ID} is a single-value lookup
+  // (Referring Staff Link → Agency Users → Agency Record ID), populated on
+  // every referral in the base.
+  const formula = encodeURIComponent(`{Referring Agency ID} = "${agencyId}"`)
   const data = await airtableFetch(
     'Client Referrals',
     `?filterByFormula=${formula}&sort[0][field]=Referral%20Date&sort[0][direction]=desc`,
@@ -88,12 +91,12 @@ export async function getReferralsByAgencyId(agencyName: string) {
   return data.records.map(shapeReferralListItem)
 }
 
-export async function getReferralsByStaffName(agencyName: string, staffName: string) {
-  // Both {Referring Agency} and {Referring Staff} are now lookups through
-  // Referring Staff Link → Agency Users. The single-value formula equality
-  // still works for matching exact strings.
+export async function getReferralsByStaffName(agencyId: string, staffName: string) {
+  // Agency half matches on {Referring Agency ID} (record id, see
+  // getReferralsByAgencyId); staff half stays on the {Referring Staff} name
+  // lookup — that is a within-agency identity axis, out of scope here.
   const formula = encodeURIComponent(
-    `AND({Referring Agency} = "${agencyName}", {Referring Staff} = "${staffName}")`,
+    `AND({Referring Agency ID} = "${agencyId}", {Referring Staff} = "${staffName}")`,
   )
   const data = await airtableFetch(
     'Client Referrals',

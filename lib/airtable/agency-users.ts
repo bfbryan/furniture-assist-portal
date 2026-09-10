@@ -270,7 +270,12 @@ export async function getStaffWithDetails(staffId: string) {
 }
 
 export async function getAgencyUsersByAgencyId(agencyId: string) {
-  const formula = encodeURIComponent(`{Agency} = "${agencyId}"`)
+  // Was `{Agency} = "<value>"`, which resolves the link to its primary field —
+  // the Agency Name — and Agency Name is not unique, so two offices of one
+  // organisation pooled their rosters. {Agency Record ID} is a lookup on the
+  // single-value {Agency} link, so it is itself single-value: an exact `=`
+  // comparison is correct and can't partial-match the way FIND/ARRAYJOIN can.
+  const formula = encodeURIComponent(`{Agency Record ID} = "${agencyId}"`)
   const data = await airtableFetch(
     'Agency Users',
     `?filterByFormula=${formula}&sort[0][field]=Last%20Name&sort[0][direction]=asc`,

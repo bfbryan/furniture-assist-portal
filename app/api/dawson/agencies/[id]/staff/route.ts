@@ -19,24 +19,20 @@ export async function GET(
 
   const { id } = await params
 
-  // Step 1: fetch agency to get its name (linked field returns primary field value)
-  const agencyRes = await fetch(
-    `https://api.airtable.com/v0/${BASE_ID}/Agencies/${id}`,
-    { headers: HEADERS }
-  )
-  if (!agencyRes.ok) {
-    return NextResponse.json({ error: 'Agency not found' }, { status: 404 })
-  }
-  const agency = await agencyRes.json()
-  const agencyName = agency.fields['Agency Name'] as string
-  const safeName = agencyName.replace(/"/g, '\\"')
+  // Match on the agency RECORD ID (already in the URL), not its name. Agency
+  // Name is not unique — two offices of one organisation share it — so the old
+  // id -> name -> `{Agency} = "<name>"` round-trip merged both offices' rosters
+  // into this picker, and this route writes a durable Referring Staff Link.
+  // {Agency Record ID} is a single-value lookup on the {Agency} link, so an
+  // exact `=` is correct.
+  const safeId = id.replace(/"/g, '\\"')
 
-  // Step 2: fetch Active + Unclaimed + Invited users for this agency.
+  // Fetch Active + Unclaimed + Invited users for this agency.
   // 'Invited' matters from the moment the Invite button writes it until that
   // person's first sign-in; without it the agency's own admin drops out of
   // this dropdown for the whole of that window.
   const formula = encodeURIComponent(
-    `AND({Agency} = "${safeName}", OR({Status} = "Active", {Status} = "Unclaimed", {Status} = "Invited"))`
+    `AND({Agency Record ID} = "${safeId}", OR({Status} = "Active", {Status} = "Unclaimed", {Status} = "Invited"))`
   )
   const usersRes = await fetch(
     `https://api.airtable.com/v0/${BASE_ID}/Agency%20Users?filterByFormula=${formula}`,

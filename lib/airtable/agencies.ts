@@ -107,35 +107,22 @@ export async function getAllAgencies(status?: string) {
 }
 
 export async function getAgencyWithDetails(agencyId: string) {
-  // Fetch agency first to get the name
   const agency = await airtableFetch('Agencies', `/${agencyId}`)
-  const agencyName = agency.fields['Agency Name'] as string
 
-  // Then fetch users and referrals in parallel.
+  // Users and referrals in parallel, both scoped by the agency RECORD ID —
+  // never the name. Agency Name is not unique (two offices of one organisation
+  // share it), so any name match pooled both offices' rosters and referral
+  // lists onto this page.
   //
-  // USERS. The filter matches on {Agency Record ID}, NOT on {Agency}.
+  // USERS: {Agency Record ID} is a lookup on Agency Users that pulls the linked
+  // agency's RECORD_ID(). (The pre-2026 filter FIND("rec…", ARRAYJOIN({Agency}))
+  // searched a record id inside a string of agency *names* and matched nothing,
+  // ever — that is why this page once showed "No portal users yet" for every
+  // agency.)
   //
-  // {Agency} is the linked-record field, and a linked-record field referenced
-  // from an Airtable formula resolves to the linked rows' PRIMARY FIELD - for
-  // Agencies that is the agency's name. So the previous filter,
-  // FIND("recXXXX", ARRAYJOIN({Agency}, ",")), was looking for a record id
-  // inside a string of agency names and matched nothing, ever. Verified against
-  // the live base: it returned 0 rows for an agency with three Active users.
-  // That is why this page said "No portal users yet" for every agency and why
-  // its Active Staff tile always read 0 - not just for active staff, for all of
-  // them.
-  //
-  // {Agency Record ID} is an existing lookup on Agency Users that pulls the
-  // linked agency's RECORD_ID() formula, so it genuinely contains ids. Matching
-  // on it keeps this id-based rather than name-based, which also means a
-  // renamed agency and two agencies with similar names can't confuse it.
-  //
-  // Referrals filter uses {Referring Agency} which is now a lookup through
-  // Referring Staff Link, but single-value lookup formulas still compare as
-  // strings, so the existing filter still works for the linked-staff case.
-  // Referrals with NO staff link (Branch c in createReferralWithAgency) will
-  // not appear in this list — they have no Referring Agency lookup value.
-  // Those should be reconciled at agency-claim time.
+  // REFERRALS: {Referring Agency ID} is the single-value lookup
+  // Referring Staff Link → Agency Users → Agency Record ID, populated on every
+  // referral in the base. Was {Referring Agency} (the name lookup).
   const [users, referrals] = await Promise.all([
     airtableFetch(
       'Agency Users',
@@ -143,7 +130,7 @@ export async function getAgencyWithDetails(agencyId: string) {
     ),
     airtableFetch(
       'Client Referrals',
-      `?filterByFormula=${encodeURIComponent(`{Referring Agency} = "${agencyName}"`)}&sort[0][field]=Referral%20Date&sort[0][direction]=desc`,
+      `?filterByFormula=${encodeURIComponent(`{Referring Agency ID} = "${agencyId}"`)}&sort[0][field]=Referral%20Date&sort[0][direction]=desc`,
     ),
   ])
 

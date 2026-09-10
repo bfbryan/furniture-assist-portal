@@ -18,7 +18,6 @@ import { auth, clerkClient } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import {
   getAgencyUserByClerkId,
-  getAgencyById,
   getReferralsByAgencyId,
   getReferralsByStaffName,
 } from '@/lib/airtable'
@@ -101,12 +100,13 @@ export default async function DashboardPage() {
   if (!agencyUser) redirect('/sign-in')
   if (agencyUser.status === 'Inactive') redirect('/inactive')
 
-  const agency = await getAgencyById(agencyUser.agencyId!)
   const isAdmin = agencyUser.role === 'Admin'
 
+  // Scoped by the agency RECORD ID, not the name — Agency Name is not unique
+  // across offices of one organisation. agencyUser.agencyId is that record id.
   const scopedReferrals: ScopedReferral[] = isAdmin
-    ? await getReferralsByAgencyId(agency.name)
-    : await getReferralsByStaffName(agency.name, agencyUser.name)
+    ? await getReferralsByAgencyId(agencyUser.agencyId!)
+    : await getReferralsByStaffName(agencyUser.agencyId!, agencyUser.name)
 
   // One Eastern "today" for the whole render.
   const todayISO = easternTodayISO()

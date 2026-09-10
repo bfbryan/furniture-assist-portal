@@ -6,7 +6,6 @@ import { auth, clerkClient } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import {
   getAgencyUserByClerkId,
-  getAgencyById,
   getReferralsByStaffName,
   getReferralsByAgencyId,
 } from '@/lib/airtable'
@@ -61,12 +60,12 @@ export default async function ActiveReferralsPage() {
   }
   if (agencyUser.status === 'Inactive') redirect('/inactive')
 
-  const agency = await getAgencyById(agencyUser.agencyId!)
-
+  // Scoped by the agency RECORD ID, not the name — Agency Name is not unique
+  // across offices of one organisation. agencyUser.agencyId is that record id.
   const allReferrals =
     agencyUser.role === 'Admin'
-      ? await getReferralsByAgencyId(agency.name)
-      : await getReferralsByStaffName(agency.name, agencyUser.name)
+      ? await getReferralsByAgencyId(agencyUser.agencyId!)
+      : await getReferralsByStaffName(agencyUser.agencyId!, agencyUser.name)
 
   // `awaitingOutcome`: Scheduled, but the appointment date has passed and no
   // outcome is recorded yet. Computed here (server, Eastern "today") with the
