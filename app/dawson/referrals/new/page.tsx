@@ -169,6 +169,14 @@ type Agency = {
   email: string | null
   contactName: string
   status: string
+  // GET /api/dawson/agencies already returns these (getAllAgencies). They were
+  // dropped from this type, which is why two records with the same Agency Name
+  // — Center for Great Expectations "Supportive Housing" #202 and "START" #221
+  // — rendered as identical rows. Optional: absent on the Agency objects
+  // synthesised in pickStaffResult / openAddStaffForFamily, and on most real
+  // agencies (no Office Name on file).
+  officeName?: string | null
+  city?: string | null
 }
 
 
@@ -294,7 +302,15 @@ export default function DawsonAddReferralPage() {
   const [selectedAgency, setSelectedAgency] = useState<Agency | null>(null)
   const [selectedStaff, setSelectedStaff] = useState<StaffMember | null>(null)
   const [agenciesLoading, setAgenciesLoading] = useState(true)
-  const [staffLoading, setStaffLoading] = useState(false)
+  // Four states, not one boolean: a genuinely staffless agency, a 500 and a
+  // bogus id used to render identically ("Select staff member..." + "+ Add
+  // new"), so an ambiguous empty state nudged toward creating a record.
+  //   idle    — no agency picked
+  //   loading — fetch in flight
+  //   ok      — resolved; staffMembers may be [] (genuine empty) or populated
+  //   error   — fetch failed or returned non-ok; shown as a line under the field
+  const [staffLoadState, setStaffLoadState] =
+    useState<'idle' | 'loading' | 'ok' | 'error'>('idle')
 
 
 
@@ -441,22 +457,39 @@ export default function DawsonAddReferralPage() {
 
   // Load staff when an existing agency is selected
   useEffect(() => {
-    if (!selectedAgency) { setStaffMembers([]); setSelectedStaff(null); return }
+    if (!selectedAgency) { setStaffMembers([]); setSelectedStaff(null); setStaffLoadState('idle'); return }
 
     // Honour a staff pick that arrived together with the agency.
     const skipReset = skipStaffResetRef.current
     skipStaffResetRef.current = false
 
-    setStaffLoading(true)
+    setStaffLoadState('loading')
     if (!skipReset) {
       setSelectedStaff(null)
       setNewStaffMode(false)
       setNewStaff({ firstName: '', lastName: '', email: '', phone: '' })
     }
+
+    // cancelled guard: a fast agency switch can land a stale response after the
+    // next fetch has already started.
+    let cancelled = false
     fetch(`/api/dawson/agencies/${selectedAgency.id}/staff`)
-      .then(r => r.json())
-      .then(data => { setStaffMembers(Array.isArray(data) ? data : []); setStaffLoading(false) })
-      .catch(() => setStaffLoading(false))
+      .then(r => {
+        // A non-ok response is an error, not an empty list.
+        if (!r.ok) throw new Error(`staff fetch ${r.status}`)
+        return r.json()
+      })
+      .then(data => {
+        if (cancelled) return
+        setStaffMembers(Array.isArray(data) ? data : [])
+        setStaffLoadState('ok')
+      })
+      .catch(() => {
+        if (cancelled) return
+        setStaffMembers([])
+        setStaffLoadState('error')
+      })
+    return () => { cancelled = true }
   }, [selectedAgency])
 
 
@@ -692,6 +725,8 @@ useEffect(() => {
       email: null,
       contactName: '',
       status: fam.status,
+      officeName: fam.officeName || null,
+      city: fam.city || null,
     })
     setAgencyDropdownOpen(false)
     setShowAddStaffModal(true)
@@ -1219,17 +1254,29 @@ useEffect(() => {
                     )
                   })}
 
-                  {!domainMode && filteredAgencies.map(a => (
-                    <div
-                      key={a.id}
-                      onClick={() => pickAgency(a)}
-                      style={{ padding: '10px 14px', fontSize: '13px', color: '#2C3A4A', cursor: 'pointer', borderBottom: '1px solid #F7F5F1' }}
-                      onMouseEnter={e => (e.currentTarget.style.background = '#FAF8F4')}
-                      onMouseLeave={e => (e.currentTarget.style.background = 'white')}
-                    >
-                      {a.name}
-                    </div>
-                  ))}
+                  {/* Second line — office · town — same format as the
+                      domain-family block above, so two records with the same
+                      Agency Name are tellable apart. Renders nothing extra when
+                      there is no Office Name, which is most agencies. */}
+                  {!domainMode && filteredAgencies.map(a => {
+                    const line2 = [a.officeName, a.city].filter(Boolean).join(' · ')
+                    return (
+                      <div
+                        key={a.id}
+                        onClick={() => pickAgency(a)}
+                        style={{ padding: '9px 14px', cursor: 'pointer', borderBottom: '1px solid #F7F5F1' }}
+                        onMouseEnter={e => (e.currentTarget.style.background = '#FAF8F4')}
+                        onMouseLeave={e => (e.currentTarget.style.background = 'white')}
+                      >
+                        <div style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {a.name}
+                        </div>
+                        {line2 && (
+                          <div style={{ fontSize: '11.5px', color: '#7A8899', marginTop: '2px' }}>{line2}</div>
+                        )}
+                      </div>
+                    )
+                  })}
                   {/* Nothing matched at all — only once the search has settled,
                       so a fast typist doesn't see "no matches" then rows. */}
                   {agencyQuery.trim().length >= 2 &&
@@ -1254,6 +1301,17 @@ useEffect(() => {
                 </div>
               )}
             </div>
+
+            {/* Office · town for the selected agency — the same line the
+                dropdown row showed, kept visible so a pick between two
+                same-named records is confirmed, not lost on selection. Blank
+                when there is no Office Name. */}
+            {selectedAgency && !newAgencyMode && (() => {
+              const line2 = [selectedAgency.officeName, selectedAgency.city].filter(Boolean).join(' · ')
+              return line2 ? (
+                <div style={{ fontSize: '11.5px', color: '#7A8899', marginTop: '5px' }}>{line2}</div>
+              ) : null
+            })()}
           </div>
 
 
@@ -1308,19 +1366,41 @@ useEffect(() => {
                 style={INPUT}
                 value={newStaffMode ? '__new__' : (selectedStaff?.id ?? '')}
                 onChange={e => pickStaff(e.target.value)}
-                disabled={staffLoading}
+                disabled={staffLoadState === 'loading'}
               >
-                <option value="">{staffLoading ? 'Loading...' : 'Select staff member...'}</option>
+                {/* Placeholder text says which state we're in. The error case
+                    is NOT an option — it renders as a line under the field, so
+                    it can't be hidden behind a value that already points at a
+                    valid selection. */}
+                {staffLoadState === 'loading' && <option value="">Loading staff...</option>}
+                {staffLoadState === 'ok' && staffMembers.length === 0 && (
+                  <option value="">No staff at this agency yet</option>
+                )}
+                {(staffLoadState === 'error' ||
+                  (staffLoadState === 'ok' && staffMembers.length > 0)) && (
+                  <option value="">Select staff member...</option>
+                )}
+
                 {/* Keep a picked-from-search person visible while the
                     per-agency list is still loading in behind them. */}
                 {selectedStaff && !staffMembers.some(m => m.id === selectedStaff.id) && (
                   <option value={selectedStaff.id}>{selectedStaff.displayName}</option>
                 )}
                 {staffMembers.map(s => (
-  <option key={s.id} value={s.id}>{s.displayName}</option>
-))}
-                <option value="__new__">+ Add new staff member</option>
+                  <option key={s.id} value={s.id}>{s.displayName}</option>
+                ))}
+
+                {/* Only once the load has actually succeeded — never while
+                    loading, never on error. */}
+                {staffLoadState === 'ok' && (
+                  <option value="__new__">+ Add new staff member</option>
+                )}
               </select>
+              {staffLoadState === 'error' && (
+                <div style={{ fontSize: '12px', color: '#C0392B', marginTop: '5px' }}>
+                  Couldn&rsquo;t load staff — try again.
+                </div>
+              )}
             </div>
           )}
 
