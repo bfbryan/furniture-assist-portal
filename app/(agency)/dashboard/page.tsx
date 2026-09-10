@@ -20,6 +20,7 @@ import {
   getAgencyUserByClerkId,
   getReferralsByAgencyId,
   getReferralsByStaffName,
+  getUnconfirmedStaffAtAgency,
 } from '@/lib/airtable'
 import { easternTodayISO, addDaysISO, parseDateOnly, formatDateOnly } from '@/lib/dates'
 import { clientAddressLine } from '@/lib/address'
@@ -108,6 +109,21 @@ export default async function DashboardPage() {
     ? await getReferralsByAgencyId(agencyUser.agencyId!)
     : await getReferralsByStaffName(agencyUser.agencyId!, agencyUser.name)
 
+  // Admin-only prompt: referrals that exist for this agency but are hidden
+  // because the staff member who made them has not been confirmed as working
+  // here. The visibility gate (getReferralsByAgencyId) excludes them, so this
+  // is a dedicated read — name only, no client data.
+  const unconfirmed = isAdmin
+    ? await getUnconfirmedStaffAtAgency(agencyUser.agencyId!)
+    : { referralCount: 0, staffNames: [] as string[] }
+  const ucCount = unconfirmed.referralCount
+  const ucNames = unconfirmed.staffNames
+  const ucFirst = ucNames[0]?.split(' ')[0] ?? 'they'
+  const ucLine =
+    ucNames.length === 1
+      ? `${ucCount} referral${ucCount === 1 ? '' : 's'} from an unconfirmed staff member: ${ucNames[0]} — is ${ucFirst} at your office?`
+      : `${ucCount} referral${ucCount === 1 ? '' : 's'} from unconfirmed staff members: ${ucNames.join(', ')} — confirm the ones who work at your office.`
+
   // One Eastern "today" for the whole render.
   const todayISO = easternTodayISO()
   const dow = parseDateOnly(todayISO)!.getUTCDay() // 0 Sun … 6 Sat
@@ -179,6 +195,32 @@ export default async function DashboardPage() {
       >
         {/* ============ LEFT — actionable ============ */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px', minWidth: 0 }}>
+          {/* Unconfirmed-staff prompt. Admin only, shown only when referrals are
+              actually being hidden by the membership gate. Links to the Team
+              page, where the person can be confirmed (or flagged not-here).
+              Name only — no client data on the dashboard. */}
+          {isAdmin && ucCount > 0 && (
+            <Link
+              href="/team"
+              style={{
+                display: 'block',
+                textDecoration: 'none',
+                background: 'white',
+                borderRadius: '12px',
+                boxShadow: '0 2px 12px rgba(27,43,75,0.07)',
+                borderLeft: '3px solid #C9A84C',
+                padding: '16px 18px 16px 15px',
+              }}
+            >
+              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8B7724', marginBottom: '6px' }}>
+                Needs your confirmation
+              </div>
+              <p style={{ fontSize: '13px', color: '#2C3A4A', lineHeight: 1.55, margin: 0 }}>
+                {ucLine}
+              </p>
+            </Link>
+          )}
+
           {/* Count cards — two rows. "This Saturday" is a confirmed, time-bound
               fact; the two gold cards both mean "waiting to hear back from
               Furniture Assist", so they're paired on the second row while the

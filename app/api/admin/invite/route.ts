@@ -53,6 +53,14 @@ async function createAgencyUserRecord(data: {
     'Invited Date':  new Date().toISOString(),
     'Phone Number':  data.phone ?? '',
     'Invited By':    data.invitedByName,
+    // Add-and-invite: the admin is adding this person to their own team and
+    // inviting them in one action, which is itself the vouch. Confirm the
+    // membership up front so their referrals are visible from first sign-in
+    // rather than making the admin come back and confirm a person they just
+    // typed in. Decided By is the admin's name, same as Invited By.
+    'Membership Status':      'Confirmed',
+    'Membership Decided By':  data.invitedByName,
+    'Membership Decided At':  new Date().toISOString(),
     // Linked record — Airtable expects an array of record IDs
     'Agency':        [data.agencyId],
   }

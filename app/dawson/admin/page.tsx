@@ -5,8 +5,8 @@
 //
 // Exists because the sidebar had grown long enough to be hard to scan. It
 // replaces an Admin section that listed Scan Upload and Email Log directly,
-// and it takes on Flagged Wrong Agency, which used to sit under Agencies.
-// Ben asked for those three in one place.
+// and it takes on "Not at this office" (formerly "Flagged Wrong Agency"),
+// which used to sit under Agencies. Ben asked for those three in one place.
 //
 // Deliberately plain: a labelled link and one line of description each, not a
 // dashboard. No counts, no data fetching, nothing that needs to stay in sync
@@ -15,7 +15,7 @@
 //
 // ON ACCESS. isPortalAdmin decides who sees the link, not who can open the
 // page. Every route below is still behind requireDawsonAccess like the rest of
-// the portal, so Dawson, Ray and Chase can reach Flagged Wrong Agency by URL
+// the portal, so Dawson, Ray and Chase can reach "Not at this office" by URL
 // exactly as they could before. That is unchanged on purpose: this was a nav
 // change, and closing a route is a separate decision for Ben to make.
 
@@ -24,9 +24,9 @@ import Link from 'next/link'
 const LINKS = [
   {
     href: '/dawson/staff/wrong-agency',
-    label: 'Flagged Wrong Agency',
+    label: 'Not at this office',
     description:
-      'Staff an agency admin flagged as belonging somewhere else, ready to be moved to the right agency.',
+      'Staff an agency admin flagged as not working at their office. Their portal access and referral visibility are already revoked; ready to be moved to the right agency.',
   },
   {
     href: '/dawson/scans/upload',

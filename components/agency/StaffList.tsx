@@ -7,13 +7,18 @@
 // the shared ⋯ overflow menu, the .fa-*-row stacked pattern on mobile.
 //
 // Groups key primarily on Portal Status; Status wins a conflict, so a person
-// marked Inactive lands in Inactive whatever their Portal Status. Wrong Agency
-// rows never render here (also filtered server-side in team/page.tsx).
+// marked Inactive lands in Inactive whatever their Portal Status. The one
+// override above all of that: Membership Status = 'Not At This Office' pulls a
+// row into its own collapsed "Not at this office" section, with Confirm as the
+// undo. Membership is a SEPARATE axis from the invite lifecycle — an admin
+// asserting the person works here — and 'Confirmed' is what makes that person's
+// referrals visible to the agency (enforced in the referral reads, not here).
 //
 // Every menu action hits an /api/admin/staff/[id]/* route that re-checks
 // org:admin AND that the row is at the caller's agency — see
 // lib/auth/agency-admin-access.ts. Hiding a menu is presentation, not
-// permission.
+// permission — Send Invite in particular is refused server-side unless
+// Membership Status = 'Confirmed'.
 
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
@@ -32,10 +37,17 @@ type Member = {
   phone: string | null
   role: string // 'Admin' | 'Staff'
   status: string // 'Unclaimed' | 'Invited' | 'Active' | 'Inactive' | ...
-  portalInviteStatus: string // 'Not Invited' | 'Invite Sent' | 'Claimed' | 'Wrong Agency'
+  portalInviteStatus: string // 'Not Invited' | 'Invite Sent' | 'Claimed'
   invitedDate: string | null
   invitedBy: string | null
   claimedDate: string | null
+  // Membership axis — set by an agency admin, orthogonal to status /
+  // portalInviteStatus. null = unconfirmed (the default). 'Confirmed' gates
+  // referral visibility; 'Not At This Office' hides it and routes the row to
+  // its own section.
+  membershipStatus: string | null // 'Confirmed' | 'Not At This Office' | null
+  membershipDecidedBy: string | null
+  membershipDecidedAt: string | null
   clerkRole: string
   lastSignInAt: number | null
 }
@@ -50,12 +62,13 @@ type Props = {
   inviterEmail: string
 }
 
-type GroupKey = 'ready' | 'invited' | 'active' | 'inactive'
+type GroupKey = 'ready' | 'invited' | 'active' | 'inactive' | 'notHere'
 
-// Wrong Agency never renders on the agency side, whatever the Status (the page
-// also filters it server-side). Otherwise: group on Portal Status, but Status
-// 'Inactive' wins a conflict. Status 'Unclaimed' / 'Invited' are vestigial here
-// and ignored. Anything matching nothing is dropped rather than guessed at.
+// Membership Status 'Not At This Office' wins over everything — the row goes to
+// the 'notHere' section regardless of where its account lifecycle would place
+// it. Otherwise: group on Portal Status, but Status 'Inactive' wins a conflict.
+// Status 'Unclaimed' / 'Invited' are vestigial here and ignored. Anything
+// matching nothing is dropped rather than guessed at.
 //
 // A Claimed row groups as 'active' whatever its Status (Inactive is already
 // handled above). The claim handler stamps Portal Status = Claimed and flips
@@ -64,7 +77,7 @@ type GroupKey = 'ready' | 'invited' | 'active' | 'inactive'
 // and any later drift between the two fields — still renders instead of
 // vanishing from the page. The Status→Active retry on the next sign-in stands.
 function classify(m: Member): GroupKey | null {
-  if (m.portalInviteStatus === 'Wrong Agency') return null
+  if (m.membershipStatus === 'Not At This Office') return 'notHere'
   if (m.status === 'Inactive') return 'inactive'
   if (m.portalInviteStatus === 'Not Invited') return 'ready'
   if (m.portalInviteStatus === 'Invite Sent') return 'invited'
@@ -112,6 +125,9 @@ const ACCENT: Record<GroupKey, { bar: string; heading: string }> = {
   invited:  { bar: '#C9A84C', heading: '#8B7724' },
   active:   { bar: '#2A7F6F', heading: '#2A7F6F' },
   inactive: { bar: '#9AA6B2', heading: '#7A8899' },
+  // Same resting grey as Inactive — a recoverable parked state, not an alarm.
+  // The destructive weight lives in the confirm dialog that gets you here.
+  notHere:  { bar: '#9AA6B2', heading: '#7A8899' },
 }
 const CARD: React.CSSProperties = {
   background: 'white', borderRadius: '12px',
@@ -216,14 +232,23 @@ function Row({
 
 type ActionKey =
   | 'send-invite' | 'resend' | 'revoke' | 'not-here'
+  | 'confirm' | 'confirm-invite'
   | 'make-admin' | 'remove-admin' | 'deactivate' | 'reactivate'
 
 // The subject — the name the reader scans before confirming — is bold navy so
 // it's the most scannable thing in the sentence.
 const SUBJECT: React.CSSProperties = { color: '#1B2B4B', fontWeight: 700 }
 
-// Only three actions stop for a confirm; the rest fire and flash.
-const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string) => React.ReactNode; button: string; danger?: boolean }>> = {
+// Actions that stop for a confirm; the rest fire and flash. `body` gets the
+// name, plus `extra.count` for 'not-here' (the number of past referrals about
+// to be hidden — fetched when the dialog opens, null while loading).
+//
+// "No longer works here" (deactivate) and "Not at this office" (not-here) are
+// deliberately different: the first is routine and reversible with no data
+// consequence — the person's referral history stays visible to the agency.
+// The second hides everything they ever referred and is the rare, destructive
+// one, so it names the count and it alone.
+const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string, extra?: { count: number | null }) => React.ReactNode; button: string; danger?: boolean }>> = {
   revoke: {
     title: 'Revoke invitation',
     body: n => <>Revoke the invitation for <strong style={SUBJECT}>{n}</strong>? Their invite link will stop working.</>,
@@ -231,13 +256,27 @@ const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string) => R
   },
   'not-here': {
     title: 'Not at this office',
-    body: n => <>Furniture Assist will move <strong style={SUBJECT}>{n}</strong> to the correct agency. They&apos;ll no longer appear on your team list.</>,
-    button: 'Confirm', danger: true,
+    body: (n, extra) => {
+      const c = extra?.count
+      return (
+        <>
+          <strong style={SUBJECT}>{n}</strong> will be marked as not working at your
+          office.{' '}
+          {c === null || c === undefined
+            ? 'Any past referrals they made will be hidden from your agency’s view.'
+            : c === 0
+              ? 'They have no past referrals in your agency’s view.'
+              : <>This will hide <strong style={SUBJECT}>{c} past referral{c === 1 ? '' : 's'}</strong> from your agency&apos;s view.</>}
+          {' '}You can undo it by confirming {n} again.
+        </>
+      )
+    },
+    button: 'Mark not at this office', danger: true,
   },
   deactivate: {
-    title: 'Remove portal access',
-    body: n => <>Remove <strong style={SUBJECT}>{n}</strong>&apos;s access to the portal? Their referral history stays on file and access can be restored later.</>,
-    button: 'Deactivate', danger: true,
+    title: 'No longer works here',
+    body: n => <>Remove <strong style={SUBJECT}>{n}</strong>&apos;s access to the portal? Their referral history stays visible to your agency and access can be restored later.</>,
+    button: 'Remove access', danger: true,
   },
 }
 
@@ -254,6 +293,10 @@ export default function StaffList({
   // amber, and it does NOT auto-dismiss — it points at Resend Invite.
   const [flash, setFlash] = useState<{ tone: 'ok' | 'err' | 'warn'; text: string } | null>(null)
   const [confirm, setConfirm] = useState<{ action: ActionKey; id: string; name: string } | null>(null)
+  // Referrals about to be hidden by "Not at this office". Fetched only while
+  // that dialog is open; null = not yet loaded. The row itself never shows a
+  // count.
+  const [notHereCount, setNotHereCount] = useState<number | null>(null)
 
   useEffect(() => {
     if (!confirm) return
@@ -262,8 +305,22 @@ export default function StaffList({
     return () => document.removeEventListener('keydown', onKey)
   }, [confirm, loading])
 
+  // Load the referral count when the "Not at this office" dialog opens. At this
+  // point the row is still Confirmed, so the count is the real number that will
+  // disappear. Scoped + counted server-side (GET .../referral-count).
+  useEffect(() => {
+    setNotHereCount(null)
+    if (!confirm || confirm.action !== 'not-here') return
+    let cancelled = false
+    fetch(`/api/admin/staff/${confirm.id}/referral-count`)
+      .then(r => (r.ok ? r.json() : { count: null }))
+      .then(d => { if (!cancelled) setNotHereCount(typeof d.count === 'number' ? d.count : null) })
+      .catch(() => { if (!cancelled) setNotHereCount(null) })
+    return () => { cancelled = true }
+  }, [confirm])
+
   const buckets = useMemo(() => {
-    const b: Record<GroupKey, Member[]> = { ready: [], invited: [], active: [], inactive: [] }
+    const b: Record<GroupKey, Member[]> = { ready: [], invited: [], active: [], inactive: [], notHere: [] }
     for (const m of members) {
       const k = classify(m)
       if (k) b[k].push(m)
@@ -272,6 +329,7 @@ export default function StaffList({
     b.ready.sort(byName)
     b.inactive.sort(byName)
     b.active.sort(byName)
+    b.notHere.sort(byName)
     b.invited.sort((a, z) => {
       const at = a.invitedDate ? new Date(a.invitedDate).getTime() : 0
       const zt = z.invitedDate ? new Date(z.invitedDate).getTime() : 0
@@ -289,7 +347,16 @@ export default function StaffList({
         'send-invite': () => fetch(`/api/admin/staff/${id}/invite`, { method: 'POST' }),
         resend: () => fetch(`/api/admin/staff/${id}/invite`, { method: 'POST' }),
         revoke: () => fetch(`/api/admin/staff/${id}/cancel-invite`, { method: 'POST' }),
-        'not-here': () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ portalInviteStatus: 'Wrong Agency' }) }),
+        'not-here': () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ membershipStatus: 'Not At This Office' }) }),
+        confirm: () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ membershipStatus: 'Confirmed' }) }),
+        // Two sequential requests — there is no combined endpoint. Confirm
+        // first (the invite route refuses an unconfirmed row server-side); if
+        // that fails, surface it and don't attempt the invite.
+        'confirm-invite': async () => {
+          const r1 = await fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ membershipStatus: 'Confirmed' }) })
+          if (!r1.ok) return r1
+          return fetch(`/api/admin/staff/${id}/invite`, { method: 'POST' })
+        },
         deactivate: () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Inactive' }) }),
         reactivate: () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Active' }) }),
         'make-admin': () => fetch(`/api/admin/staff/${id}/role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'Admin' }) }),
@@ -303,13 +370,14 @@ export default function StaffList({
       }
       const ok: Record<ActionKey, string> = {
         'send-invite': 'Invite sent', resend: 'Invite re-sent', revoke: 'Invitation revoked',
-        'not-here': 'Flagged for Furniture Assist', deactivate: 'Access removed', reactivate: 'Access restored',
+        'not-here': 'Marked not at this office', confirm: 'Confirmed', 'confirm-invite': 'Confirmed & invited',
+        deactivate: 'Access removed', reactivate: 'Access restored',
         'make-admin': 'Now an admin', 'remove-admin': 'Now staff',
       }
       // The invite routes return 200 with emailSent:false when the row was
       // written but Resend didn't take the message. The person is still
       // invited and the link is live — say so, and point at Resend Invite.
-      if ((action === 'send-invite' || action === 'resend') && body.emailSent === false) {
+      if ((action === 'send-invite' || action === 'resend' || action === 'confirm-invite') && body.emailSent === false) {
         keepFlash = true
         setFlash({
           tone: 'warn',
@@ -345,15 +413,44 @@ export default function StaffList({
   })
 
   const menuFor = (m: Member, g: GroupKey): MenuItem[] => {
-    if (g === 'ready') return [
-      { label: 'Send Invite', color: '#2A7F6F', icon: MAIL_ICON, onClick: () => act('send-invite', m) },
-      { label: 'Not at this office', color: '#C0392B', icon: PIN_OFF_ICON, onClick: () => act('not-here', m) },
-    ]
-    if (g === 'invited') return [
-      { label: 'Resend Invite', color: '#2A7F6F', icon: RESEND_ICON, onClick: () => act('resend', m) },
-      { label: 'Revoke Invite', color: '#C0392B', icon: X_ICON, onClick: () => act('revoke', m) },
-      { label: 'Not at this office', color: '#C0392B', icon: PIN_OFF_ICON, onClick: () => act('not-here', m), divider: true },
-    ]
+    // The rare, destructive one — hides every past referral the person made.
+    // Always last, always dividered off from the routine actions above it.
+    const notHereItem: MenuItem = {
+      label: 'Not at this office', color: '#C0392B', icon: PIN_OFF_ICON,
+      onClick: () => act('not-here', m), divider: true,
+    }
+    const confirmItem: MenuItem = {
+      label: 'Confirm', color: '#2A7F6F', icon: UNDO_ICON, onClick: () => act('confirm', m),
+    }
+    const confirmed = m.membershipStatus === 'Confirmed'
+
+    if (g === 'ready') {
+      if (confirmed) return [
+        { label: 'Send Invite', color: '#2A7F6F', icon: MAIL_ICON, onClick: () => act('send-invite', m) },
+        notHereItem,
+      ]
+      // Unconfirmed roster row: confirming is the gate for the invite (the
+      // route refuses it server-side otherwise). "Confirm & Invite" is the
+      // primary path and does both, one request then the other; "Confirm
+      // only" vouches without sending the invite yet.
+      return [
+        { label: 'Confirm & Invite', color: '#2A7F6F', icon: MAIL_ICON, onClick: () => act('confirm-invite', m) },
+        { label: 'Confirm only', color: '#2A7F6F', icon: UNDO_ICON, onClick: () => act('confirm', m) },
+        notHereItem,
+      ]
+    }
+
+    if (g === 'invited') {
+      const items: MenuItem[] = [
+        { label: 'Resend Invite', color: '#2A7F6F', icon: RESEND_ICON, onClick: () => act('resend', m) },
+        { label: 'Revoke Invite', color: '#C0392B', icon: X_ICON, onClick: () => act('revoke', m) },
+      ]
+      // Invited before membership existed: Resend is refused server-side until
+      // the person is vouched for, so offer Confirm here too.
+      if (!confirmed) items.splice(1, 0, confirmItem)
+      return [...items, notHereItem]
+    }
+
     if (g === 'active') {
       // The signed-in admin's own row carries no menu — you can't deactivate
       // yourself and lock the agency out.
@@ -363,15 +460,26 @@ export default function StaffList({
       // /api/admin/staff/[id]/role are left intact for when self-service role
       // management is added back.
       if (m.clerkUserId && m.clerkUserId === currentUserId) return []
-      return [
-        { label: 'Deactivate', color: '#C0392B', icon: X_ICON, onClick: () => act('deactivate', m) },
-      ]
+      const items: MenuItem[] = []
+      if (!confirmed) items.push(confirmItem)
+      items.push({ label: 'No longer works here', color: '#C0392B', icon: X_ICON, onClick: () => act('deactivate', m) })
+      items.push(notHereItem)
+      return items
     }
+
+    if (g === 'notHere') {
+      // The undo: confirming again clears 'Not At This Office' and their
+      // referrals return to the agency's view.
+      return [confirmItem]
+    }
+
     // inactive
     return [{ label: 'Reactivate', color: '#2A7F6F', icon: UNDO_ICON, onClick: () => act('reactivate', m) }]
   }
 
-  const total = buckets.ready.length + buckets.invited.length + buckets.active.length + buckets.inactive.length
+  const total =
+    buckets.ready.length + buckets.invited.length + buckets.active.length +
+    buckets.inactive.length + buckets.notHere.length
 
   const cc = confirm ? CONFIRM[confirm.action] : null
 
@@ -447,7 +555,7 @@ export default function StaffList({
         >
           <div style={{ background: 'white', borderRadius: '16px', padding: '32px', maxWidth: '420px', width: '100%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
             <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '17px', color: '#1B2B4B', marginBottom: '10px' }}>{cc.title}</h3>
-            <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>{cc.body(confirm.name)}</p>
+            <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>{cc.body(confirm.name, { count: notHereCount })}</p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setConfirm(null)} disabled={loading}
                 style={{ padding: '9px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
@@ -471,9 +579,17 @@ export default function StaffList({
         <>
           {buckets.ready.length > 0 && (
             <GroupCard groupKey="ready" title="Ready to invite" count={buckets.ready.length}
-              columns={['Name', 'Email', 'Role', '']}>
+              columns={['Name', 'Email', 'Role', 'Confirmation']}>
               {buckets.ready.map(m => (
-                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'ready')} />
+                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'ready')}
+                  context={
+                    m.membershipStatus === 'Confirmed'
+                      ? <><span className="fa-active-mobile-label">Confirmation </span>
+                          <span style={{ color: '#2A7F6F' }}>Confirmed{m.membershipDecidedBy ? ` by ${m.membershipDecidedBy}` : ''}</span></>
+                      : <><span className="fa-active-mobile-label">Confirmation </span>
+                          <span style={{ color: '#9AA6B2' }}>Not yet confirmed</span></>
+                  }
+                />
               ))}
             </GroupCard>
           )}
@@ -526,6 +642,28 @@ export default function StaffList({
               {buckets.inactive.map(m => (
                 <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'inactive')} />
               ))}
+            </GroupCard>
+          )}
+
+          {buckets.notHere.length > 0 && (
+            <GroupCard groupKey="notHere" title="Not at this office" count={buckets.notHere.length} collapsible
+              columns={['Name', 'Email', 'Role', 'Flagged']}>
+              {buckets.notHere.map(m => (
+                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'notHere')}
+                  context={
+                    <>
+                      <span className="fa-active-mobile-label">Flagged </span>
+                      {m.membershipDecidedAt
+                        ? <>{shortDate(m.membershipDecidedAt)}{relative(m.membershipDecidedAt) ? ` · ${relative(m.membershipDecidedAt)}` : ''}</>
+                        : '—'}
+                      {m.membershipDecidedBy && <div style={{ fontSize: '11px', color: '#9AA6B2', marginTop: '1px' }}>by {m.membershipDecidedBy}</div>}
+                    </>
+                  }
+                />
+              ))}
+              <p style={{ fontSize: '12px', color: '#9AA6B2', lineHeight: 1.6, margin: '12px 0 2px' }}>
+                Referrals from anyone in this section are hidden from your agency&apos;s view. Confirm a person to bring their referrals back.
+              </p>
             </GroupCard>
           )}
         </>

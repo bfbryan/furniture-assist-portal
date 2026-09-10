@@ -235,6 +235,15 @@ export async function POST(
     invitedDate: now,
     invitedBy: invitedByName,
     clerkUserId: adminClerkUserId,
+    // Auto-confirm the Primary Admin's own membership in the SAME PATCH so it
+    // is atomic with the invite. They are the person the agency is being
+    // handed to — there is no one else to vouch for them, and without this
+    // their own referrals (and the referral-visibility gate generally) would
+    // sit dark until they confirmed themselves. Decided By is the operations
+    // portal, not a person.
+    membershipStatus: 'Confirmed',
+    membershipDecidedBy: 'Furniture Assist',
+    membershipDecidedAt: now,
   })
 
   // 6. Welcome email. Skipped (not failed) while the automation is disabled.

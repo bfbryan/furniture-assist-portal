@@ -1,10 +1,17 @@
 // app/(agency)/team/page.tsx
-// Agency admin team page — 4-section layout
+// Agency admin team page — 5-section layout
 // - Ready to Invite to Portal (Unclaimed + Not Invited)
 // - Awaiting Claim  (Invited + Invite Sent)
 // - Active Staff    (Active + Claimed, admins excluded — admin lives in header)
 // - Inactive        (collapsed)
-// Hidden entirely: Portal Invite Status = Wrong Agency (server-side filter)
+// - Not at this office (collapsed) — Membership Status = 'Not At This Office'
+//
+// Membership is a SEPARATE axis from the invite lifecycle: the buckets above
+// are still driven by Status / Portal Invite Status. "Not at this office" is
+// the one exception — those rows are pulled out into their own collapsed
+// section (with Confirm as the undo) regardless of where their account
+// lifecycle would otherwise place them. Nothing is server-side filtered any
+// more; StaffList.classify() routes every row.
 //
 // Delegates the invite form to StaffList's modal-driven
 // "+ Invite Staff Member" button.
@@ -55,13 +62,10 @@ export default async function AdminPage() {
   const atStaff = await getAgencyUsersByAgencyId(agency.id)
 
 
-  // Hide Wrong Agency rows entirely — Dawson handles them from his backend
-  const visibleStaff = atStaff.filter(
-    (s: any) => s.portalInviteStatus !== 'Wrong Agency'
-  )
-
-
-  const members = visibleStaff.map((staff: any) => {
+  // Every row goes through — StaffList.classify() decides the section, including
+  // routing Membership Status = 'Not At This Office' into its own collapsed
+  // group. The membership fields ride along on the spread below.
+  const members = atStaff.map((staff: any) => {
     const clerkMember = clerkMembers.find(
       (c: any) => c.clerkUserId === staff.clerkUserId
     )

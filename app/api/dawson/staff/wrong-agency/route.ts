@@ -1,15 +1,19 @@
 // app/api/dawson/staff/wrong-agency/route.ts
 //
-// GET — every Agency Users row an agency admin has flagged as belonging to
-// somebody else.
+// GET — every Agency Users row an agency admin has flagged as not working at
+// their office.
 //
-// Flagging one of these does three things (PATCH /api/admin/staff/[id]/status):
-// it deletes their Clerk organisation membership, it writes Portal Invite
-// Status = 'Wrong Agency', and the agency Team page then filters them out of
-// its own list. Up to now that was the end of it — the row went quiet in
-// Airtable and no portal surface showed it, so nobody internally could see who
-// had been flagged or act on it. This route, and the page over it, are the
-// missing end of that flow.
+// Flagging one of these does three things (PATCH /api/admin/staff/[id]/status,
+// membershipStatus: 'Not At This Office'): it deletes their Clerk organisation
+// membership, it writes Membership Status = 'Not At This Office' with a
+// Membership Decided By / Decided At stamp, and the agency Team page moves them
+// into its own "Not at this office" section (Confirm undoes it). Their past
+// referrals stop being visible to the agency. This route, and the page over
+// it, are the internal view of who has been flagged.
+//
+// (Before the membership-confirmation branch this flag lived on Portal Invite
+// Status as 'Wrong Agency', with no timestamp — hence the older field names in
+// the URL path and page route, kept to avoid breaking links.)
 //
 // Static segment, so it does not collide with the [id] route beside it: Next
 // matches a literal path segment ahead of a dynamic one.
@@ -32,6 +36,8 @@ const FIELDS = [
   'Invited Date',
   'Invited By',
   'Record Creation Date',
+  'Membership Decided At',
+  'Membership Decided By',
 ]
 
 export async function GET() {
@@ -39,7 +45,7 @@ export async function GET() {
   if (denied) return denied
 
   const url = new URL(`https://api.airtable.com/v0/${BASE_ID}/Agency Users`)
-  url.searchParams.set('filterByFormula', '{Portal Invite Status} = "Wrong Agency"')
+  url.searchParams.set('filterByFormula', '{Membership Status} = "Not At This Office"')
   url.searchParams.set('pageSize', '100')
   for (const f of FIELDS) url.searchParams.append('fields[]', f)
 
@@ -57,6 +63,8 @@ export async function GET() {
     'Invited Date'?: string
     'Invited By'?: string
     'Record Creation Date'?: string
+    'Membership Decided At'?: string
+    'Membership Decided By'?: string
   }
   type AirtableRecord = { id: string; fields?: AgencyUserFields }
 
@@ -89,17 +97,24 @@ export async function GET() {
       agencyId: f['Agency']?.[0] ?? null,
       agencyName: f['Agency Name (from Agency)']?.[0] ?? null,
       status: f['Status'] ?? null,
-      // The flag itself carries no timestamp — there is no field for one on
-      // Agency Users — so these two are what the page can honestly date it by.
-      // See the note on the page for what that means for the "when" column.
       invitedDate: f['Invited Date'] ?? null,
       invitedBy: f['Invited By'] ?? null,
       addedDate: f['Record Creation Date'] ?? null,
+      // The flag now carries its own timestamp and author (Membership Decided
+      // At / By), written by PATCH /api/admin/staff/[id]/status. decidedAt is
+      // what the page dates the flag by; decidedBy is which agency admin
+      // raised it.
+      decidedAt: f['Membership Decided At'] ?? null,
+      decidedBy: f['Membership Decided By'] ?? null,
     }
   })
 
-  // Most recently added first — a flag raised today is the one worth reading.
-  staff.sort((a, b) => (b.addedDate ?? '').localeCompare(a.addedDate ?? ''))
+  // Most recently flagged first — a flag raised today is the one worth reading.
+  // Falls back to Record Creation Date for any row flagged before the timestamp
+  // field existed.
+  staff.sort((a, b) =>
+    (b.decidedAt ?? b.addedDate ?? '').localeCompare(a.decidedAt ?? a.addedDate ?? ''),
+  )
 
   return NextResponse.json(staff)
 }
