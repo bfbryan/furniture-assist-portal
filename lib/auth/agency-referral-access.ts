@@ -19,7 +19,7 @@
 
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { getAgencyUserByClerkId, getAgencyById, getReferralById } from '@/lib/airtable'
+import { getAgencyUserByClerkId, getReferralById } from '@/lib/airtable'
 
 type Referral = Awaited<ReturnType<typeof getReferralById>>
 
@@ -61,24 +61,25 @@ export async function requireAgencyReferralAccess(
     return { denied: NextResponse.json({ error: 'Unauthorized' }, { status: 403 }) }
   }
 
-  const agency = await getAgencyById(agencyUser.agencyId!)
-  if (referral.referringAgency !== agency.name) {
+  // The referral belongs to the caller's agency — matched on the record id, not
+  // the name. Agency Name is not unique (two offices of one organisation share
+  // it by design), so the name comparison this used to do let an admin of one
+  // office read and act on the other office's referrals. referringAgencyId is
+  // the record id, chased through Referring Staff Link -> Agency Users ->
+  // Agency by getReferralById — the same chain the name lookup used, so there
+  // is no state where the name would be trustworthy and the id not.
+  if (!referral.referringAgencyId) {
+    // 472/472 referrals in the base are staff-linked, so this should never
+    // fire. A null id means a malformed record with no staff link — deny
+    // rather than fall back to a name match, which is exactly where the name
+    // collision would reopen, on the records least likely to be watched.
+    console.error(
+      `[agency-referral-access] referral ${referralId} has no referringAgencyId ` +
+        `(missing Referring Staff Link?) — denying access`,
+    )
     return { denied: NextResponse.json({ error: 'Unauthorized' }, { status: 403 }) }
   }
-
-  // Agency Name is not unique. Two pairs of Agencies rows in the live base
-  // share a name, so the string comparison above cannot tell them apart — and
-  // every route behind this guard reads or writes a client's referral, name,
-  // date of birth and address.
-  //
-  // referringAgencyId is the record id, chased through Referring Staff Link ->
-  // Agency Users -> Agency by getReferralById. Checked as an ADDITIONAL gate
-  // rather than a replacement: it is null whenever the referral has no staff
-  // link, and also whenever that extra lookup happens to fail, so making it
-  // the only test would turn a transient Airtable error into a 403 on
-  // someone's own referral. Requiring both means this can only ever deny
-  // access the name check would have allowed.
-  if (referral.referringAgencyId && referral.referringAgencyId !== agencyUser.agencyId) {
+  if (referral.referringAgencyId !== agencyUser.agencyId) {
     return { denied: NextResponse.json({ error: 'Unauthorized' }, { status: 403 }) }
   }
 
