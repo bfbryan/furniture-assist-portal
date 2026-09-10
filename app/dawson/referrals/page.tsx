@@ -51,8 +51,6 @@ type Referral = {
   appointmentStatus: string
   referredBy: string | null
   referringAgency: string | null
-  city: string | null
-  state: string | null
   clientReceiptUrl: string | null
 }
 
@@ -130,14 +128,16 @@ const STATUS_UI: Record<DerivedStatus, { label: string; bg: string; color: strin
   withdrawn: { label: 'Withdrawn', bg: 'rgba(192,57,43,0.10)', color: '#C0392B' },
 }
 
-// Client · Agency · Town · Appointment · Status · ⋯
+// Client · Agency · Staff · Appointment · Status · ⋯
 //
-// Staff (the agency person who sent the referral) is NOT a column: at the
-// 1100px content cap, a sixth data column forces Client and Agency to truncate
-// past readability given how long agency names run in this base. Staff stays
-// searchable and is one row-click away on the detail page.
+// The third column was the client's town; it is now the referring staff member
+// (the agency person who filed it). Dawson needs both which agency AND who
+// there — "that woman at HCDFS" is how he thinks — and knowing it without
+// opening the referral is the point. Town added nothing at this width. Still
+// six columns, so the track sizes are unchanged. Plain text: the Staff [id]
+// deep-link is a follow-up.
 const GRID = 'minmax(0, 1.6fr) minmax(0, 1.3fr) 120px minmax(140px, 0.9fr) 150px 40px'
-const COLS = ['Client', 'Agency', 'Town', 'Appointment', 'Status', '']
+const COLS = ['Client', 'Agency', 'Staff', 'Appointment', 'Status', '']
 
 // ---------------------------------------------------------------- helpers
 
@@ -250,7 +250,7 @@ function ReferralRow({
   const apptText = req
     ? formatSlot(r.preferredDate, r.preferredTime, fmtDate)
     : formatSlot(r.effectiveAppointmentDate, r.appointmentTime, fmtDate)
-  const town = r.city ? [r.city, r.state].filter(Boolean).join(', ') : '—'
+  const staff = r.referredBy ?? '—'
   const href = `/dawson/referrals/${r.id}`
 
   return (
@@ -290,9 +290,9 @@ function ReferralRow({
         {r.referringAgency ?? '—'}
       </div>
 
-      {/* Town */}
+      {/* Staff — the agency person who filed it. Plain text; not a link. */}
       <div style={{ fontSize: '13px', color: '#7A8899', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {town}
+        {staff}
       </div>
 
       {/* Appointment — gold + bold for a request (preferred date, not a
