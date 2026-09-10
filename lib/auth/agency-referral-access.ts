@@ -83,5 +83,18 @@ export async function requireAgencyReferralAccess(
     return { denied: NextResponse.json({ error: 'Unauthorized' }, { status: 403 }) }
   }
 
+  // The referring staff member's membership must be CONFIRMED by an agency
+  // admin. This is the detail-route half of the same gate the list reads
+  // apply in their query formula (getReferralsByAgencyId /
+  // getReferralsByStaffName). referringStaffMembership is the {Referring
+  // Staff Membership} lookup off the referral getReferralById already
+  // fetched — no extra staff-row read. Blank (the unconfirmed default) and
+  // 'Not At This Office' both fail this, so a referral becomes reachable
+  // here only once someone at the agency has vouched for the person who
+  // made it.
+  if (referral.referringStaffMembership !== 'Confirmed') {
+    return { denied: NextResponse.json({ error: 'Unauthorized' }, { status: 403 }) }
+  }
+
   return { referral, agencyUser }
 }

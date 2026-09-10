@@ -77,13 +77,25 @@ function shapeReferralListItem(record: any) {
   }
 }
 
+// Agency-facing referral visibility gates on the referring staff member's
+// membership being CONFIRMED by an agency admin. {Referring Staff Membership}
+// is a single-select lookup (Referring Staff Link → Agency Users → Membership
+// Status). Blank (the default, unconfirmed) is absent from the record payload,
+// so `= "Confirmed"` is inherently default-deny: an unconfirmed staffer, or a
+// referral with no staff link at all, never matches. Applied in the query
+// formula, not post-fetch, because the dashboard computes its counts from the
+// same fetch and must not see rows the lists hide.
+const MEMBERSHIP_CONFIRMED = `{Referring Staff Membership} = "Confirmed"`
+
 export async function getReferralsByAgencyId(agencyId: string) {
   // Match on the agency RECORD ID, not the name — Agency Name is not unique
   // (two offices of one organisation share it by design), so a name match
   // pooled their referrals. {Referring Agency ID} is a single-value lookup
   // (Referring Staff Link → Agency Users → Agency Record ID), populated on
   // every referral in the base.
-  const formula = encodeURIComponent(`{Referring Agency ID} = "${agencyId}"`)
+  const formula = encodeURIComponent(
+    `AND({Referring Agency ID} = "${agencyId}", ${MEMBERSHIP_CONFIRMED})`,
+  )
   const data = await airtableFetch(
     'Client Referrals',
     `?filterByFormula=${formula}&sort[0][field]=Referral%20Date&sort[0][direction]=desc`,
@@ -96,13 +108,48 @@ export async function getReferralsByStaffName(agencyId: string, staffName: strin
   // getReferralsByAgencyId); staff half stays on the {Referring Staff} name
   // lookup — that is a within-agency identity axis, out of scope here.
   const formula = encodeURIComponent(
-    `AND({Referring Agency ID} = "${agencyId}", {Referring Staff} = "${staffName}")`,
+    `AND({Referring Agency ID} = "${agencyId}", {Referring Staff} = "${staffName}", ${MEMBERSHIP_CONFIRMED})`,
   )
   const data = await airtableFetch(
     'Client Referrals',
     `?filterByFormula=${formula}&sort[0][field]=Referral%20Date&sort[0][direction]=desc`,
   )
   return data.records.map(shapeReferralListItem)
+}
+
+// The dashboard prompt: referrals at this agency whose referring staff member
+// is NOT confirmed — the rows the visibility gate above is hiding. Needs its
+// own read precisely because getReferralsByAgencyId now excludes them, so the
+// dashboard's own fetch can't see them.
+//
+// NOT({Referring Staff Membership} = "Confirmed") is true for blank
+// (unconfirmed, the default — the lookup is absent from the payload) AND for
+// 'Not At This Office'. A referral with no staff link has no {Referring
+// Agency ID} either, so it can't match the first clause — consistent with
+// everywhere else.
+//
+// Returns the referral count and the DISTINCT staff names behind them, for a
+// banner like "2 referrals from unconfirmed staff: Jane Smith, Bob Lee". Name
+// only — no client data on the dashboard. Single-page fetch (100 cap): an
+// agency with more than 100 pending-confirmation referrals is not a real
+// state, and the banner only needs "there are some, from whom".
+export async function getUnconfirmedStaffAtAgency(
+  agencyId: string,
+): Promise<{ referralCount: number; staffNames: string[] }> {
+  const formula = encodeURIComponent(
+    `AND({Referring Agency ID} = "${agencyId}", NOT(${MEMBERSHIP_CONFIRMED}))`,
+  )
+  const data = await airtableFetch(
+    'Client Referrals',
+    `?filterByFormula=${formula}&fields%5B%5D=Referring%20Staff`,
+  )
+  const records = (data.records ?? []) as { fields: Record<string, unknown> }[]
+  const names = new Set<string>()
+  for (const r of records) {
+    const n = safeLookupString(r.fields['Referring Staff'])
+    if (n) names.add(n)
+  }
+  return { referralCount: records.length, staffNames: [...names].sort() }
 }
 
 export async function getAllReferrals(filters?: {
@@ -434,6 +481,14 @@ export async function getReferralById(referralId: string) {
     agencyEmail: safeLookupString(f['Agency Email']),
     referringStaffLinkId,                             // for deep-link to Staff ID page
     referringAgencyId,                                // for deep-link to Agency detail page
+    // Membership Status of the referring staff member, looked up through
+    // Referring Staff Link → Agency Users. Single-select lookup: wrapped in an
+    // array, absent entirely when unconfirmed (blank) — safeLookupString
+    // unwraps both, same as the other lookups on this record. The agency
+    // referral-access guard denies anything that isn't 'Confirmed', mirroring
+    // the query-formula gate on the list reads above. Zero extra API calls —
+    // it rides on the record already fetched here.
+    referringStaffMembership: safeLookupString(f['Referring Staff Membership']),
     possibleDuplicate: (f['Possible Duplicate'] as boolean) ?? false,
     // Aug 2026: two plain Airtable checkboxes on Client Referrals.
     // Unchecked checkboxes come back as `undefined` from the API (not

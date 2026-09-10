@@ -1,12 +1,20 @@
 // app/api/admin/staff/[id]/status/route.ts
 //
-// PATCH — status / flag mutator. Accepts:
-//   { status: 'Active' | 'Inactive' }        → deactivate / reactivate + revoke/restore Clerk
-//   { portalInviteStatus: 'Wrong Agency' }   → "Not at this office" (Furniture Assist-facing)
+// PATCH — status / membership mutator. Accepts:
+//   { status: 'Active' | 'Inactive' }              → deactivate / reactivate + revoke/restore Clerk
+//   { membershipStatus: 'Confirmed' }              → vouch: this person works at our office
+//   { membershipStatus: 'Not At This Office' }     → they don't — hide their referrals + revoke Clerk
+//
+// Membership is a SEPARATE axis from the account lifecycle (Status) and the
+// invite lifecycle (Portal Invite Status). 'Confirmed' is what gates
+// agency-facing referral visibility; blank (the default) hides everything.
+// 'Not At This Office' is this branch's replacement for the old
+// Portal-Invite-Status 'Wrong Agency' flag.
 //
 // requireAgencyAdmin enforces: signed in, org:admin, and the target row is at
-// the caller's own agency. An admin can't deactivate or wrong-agency their own
-// row — that would lock the agency out of its own team page.
+// the caller's own agency. An admin can't deactivate their own row or flag
+// themselves 'Not At This Office' — either would lock the agency out of its
+// own team page.
 
 import { NextRequest, NextResponse } from 'next/server'
 import { clerkClient } from '@clerk/nextjs/server'
@@ -24,22 +32,40 @@ export async function PATCH(
 
   const body = await req.json().catch(() => ({}))
   const nextStatus = body.status as 'Active' | 'Inactive' | undefined
-  const nextInviteFlag = body.portalInviteStatus as 'Wrong Agency' | undefined
+  const nextMembership = body.membershipStatus as
+    | 'Confirmed'
+    | 'Not At This Office'
+    | undefined
 
-  if (!nextStatus && !nextInviteFlag) {
+  if (!nextStatus && !nextMembership) {
     return NextResponse.json({ error: 'No change specified' }, { status: 400 })
   }
 
   const isSelf = !!staff.clerkUserId && staff.clerkUserId === admin.clerkUserId
-  if (isSelf && (nextStatus === 'Inactive' || nextInviteFlag === 'Wrong Agency')) {
+  if (isSelf && (nextStatus === 'Inactive' || nextMembership === 'Not At This Office')) {
     return NextResponse.json(
       { error: "You can't remove your own access." },
       { status: 400 },
     )
   }
 
-  // --- Path 1: Wrong Agency flag ---
-  if (nextInviteFlag === 'Wrong Agency') {
+  // --- Path 1a: Confirm membership ---
+  // Pure assertion — no Clerk change, no Status change. This is what makes the
+  // person's referrals visible to the agency. Also the undo for 1b.
+  if (nextMembership === 'Confirmed') {
+    await updateAgencyUserPortalInvite(recordId, {
+      membershipStatus: 'Confirmed',
+      membershipDecidedBy: admin.name,
+      membershipDecidedAt: new Date().toISOString(),
+    })
+    return NextResponse.json({ ok: true })
+  }
+
+  // --- Path 1b: Not at this office ---
+  // Destructive: hides every past referral this person made from the agency's
+  // view (the visibility gate keys on Membership Status = 'Confirmed'). Revokes
+  // the Clerk org membership too. Recoverable via Path 1a.
+  if (nextMembership === 'Not At This Office') {
     if (staff.clerkUserId) {
       try {
         const client = await clerkClient()
@@ -51,7 +77,11 @@ export async function PATCH(
         // Not a member or already removed — fine
       }
     }
-    await updateAgencyUserPortalInvite(recordId, { portalInviteStatus: 'Wrong Agency' })
+    await updateAgencyUserPortalInvite(recordId, {
+      membershipStatus: 'Not At This Office',
+      membershipDecidedBy: admin.name,
+      membershipDecidedAt: new Date().toISOString(),
+    })
     return NextResponse.json({ ok: true })
   }
 

@@ -2,25 +2,23 @@
 
 // app/dawson/staff/wrong-agency/page.tsx
 //
-// Staff an agency admin has flagged as belonging to a different agency.
+// Staff an agency admin has flagged as not working at their office.
 //
-// Flagging somebody already did three things and surfaced none of them: their
-// Clerk org membership is deleted, Portal Invite Status is set to 'Wrong
-// Agency' in Airtable, and the agency's own Team page filters them out. So the
-// person vanished from the agency that flagged them and appeared nowhere on
-// this side — Ben had no way to see who had been flagged, let alone move them.
-// This page is the missing end of that flow.
+// Flagging somebody deletes their Clerk org membership, sets Membership Status
+// = 'Not At This Office' in Airtable (with a Membership Decided By / Decided At
+// stamp), moves them into the agency Team page's own "Not at this office"
+// section, and hides their past referrals from that agency's view. This page
+// is the internal view of who has been flagged.
 //
 // Deliberately read-only and deliberately plain, built to the same shape as
 // the four agency lists next to it: sticky white header with a count pill, one
 // search box, column headings, one card per row.
 //
-// ON THE "WHEN" COLUMN. There is no field on Agency Users that records when
-// the flag was raised, so nothing can honestly print that date. Invited and
-// Added are the two real dates the row carries and they are labelled as
-// themselves rather than dressed up as the flag date. A 'Wrong Agency Flagged
-// On' field in Airtable would let this page show the real thing; that is one
-// field and one line in PATCH /api/admin/staff/[id]/status.
+// The URL path keeps the old "wrong-agency" name so existing links and the
+// nav item don't break — the flag itself moved off Portal Invite Status
+// ('Wrong Agency') onto Membership Status on the membership-confirmation
+// branch, and now carries its own timestamp (Membership Decided At), which is
+// what the "Flagged" column dates it by.
 
 import { useState, useEffect } from 'react'
 import { matchesSearch } from '@/lib/search'
@@ -40,6 +38,8 @@ type FlaggedStaff = {
   invitedDate: string | null
   invitedBy: string | null
   addedDate: string | null
+  decidedAt: string | null
+  decidedBy: string | null
 }
 
 const NAME_COL_WIDTH = '300px'
@@ -142,10 +142,10 @@ function FlaggedCard({ staff }: { staff: FlaggedStaff }) {
 
         <div style={{ width: '160px', flexShrink: 0, padding: '0 20px 14px 0' }}>
           <div style={{ fontSize: '12px', fontWeight: 600, color: '#7A8899' }}>
-            {formatInstant(staff.invitedDate)}
+            {formatInstant(staff.decidedAt)}
           </div>
-          {staff.invitedBy && (
-            <div style={{ fontSize: '10px', color: '#A0A9B5' }}>by {staff.invitedBy}</div>
+          {staff.decidedBy && (
+            <div style={{ fontSize: '10px', color: '#A0A9B5' }}>by {staff.decidedBy}</div>
           )}
         </div>
 
@@ -199,11 +199,13 @@ export default function WrongAgencyStaffPage() {
 
       <div style={{ padding: '28px 32px' }}>
         <div style={{ fontSize: '12px', color: '#7A8899', lineHeight: 1.6, marginBottom: '16px', maxWidth: '760px' }}>
-          An agency admin flagged each of these people as belonging to a different
-          agency. Their portal access has already been revoked and they no longer
-          appear on their agency&apos;s team list. Moving somebody to the right
-          agency is still an Airtable edit: change the Agency link and clear
-          Portal Invite Status.
+          An agency admin flagged each of these people as not working at their
+          office. Their portal access has already been revoked, their past
+          referrals are hidden from that agency&apos;s view, and they sit in the
+          agency Team page&apos;s &ldquo;Not at this office&rdquo; section (the
+          admin can undo it there by confirming them again). Moving somebody to
+          the right agency is still an Airtable edit: change the Agency link and
+          clear Membership Status.
         </div>
 
         <input
@@ -220,7 +222,7 @@ export default function WrongAgencyStaffPage() {
             <div style={{ ...HEADER_CELL, width: NAME_COL_WIDTH, paddingLeft: '20px' }}>Staff Member</div>
             <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
               <div style={{ ...HEADER_CELL, width: AGENCY_COL_WIDTH }}>Agency</div>
-              <div style={{ ...HEADER_CELL, width: '160px' }}>Invited</div>
+              <div style={{ ...HEADER_CELL, width: '160px' }}>Flagged</div>
               <div style={{ ...HEADER_CELL, width: '140px' }}>Added</div>
             </div>
           </div>
@@ -234,7 +236,7 @@ export default function WrongAgencyStaffPage() {
           <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899', fontSize: '14px' }}>
             {search
               ? 'Nobody here matches your search.'
-              : 'Nobody has been flagged as being at the wrong agency.'}
+              : 'Nobody has been flagged as not working at their office.'}
           </div>
         ) : (
           filtered.map(s => <FlaggedCard key={s.id} staff={s} />)

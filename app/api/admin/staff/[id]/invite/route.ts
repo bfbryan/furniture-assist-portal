@@ -65,6 +65,18 @@ export async function POST(
     )
   }
 
+  // Membership must be CONFIRMED before an invite goes out. The Team page
+  // hides Send Invite for unconfirmed rows and offers "Confirm & Invite"
+  // instead — but that ordering has to hold server-side too. A stale tab or a
+  // direct POST must not be able to invite someone the agency has not vouched
+  // for, because their referrals would become visible the moment they sign in.
+  if (staff.membershipStatus !== 'Confirmed') {
+    return NextResponse.json(
+      { error: 'Confirm this person works at your office before inviting them.' },
+      { status: 400 }
+    )
+  }
+
   const invitedByName = admin.name ?? 'Portal Admin'
 
   const client = await clerkClient()

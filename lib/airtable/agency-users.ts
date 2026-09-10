@@ -29,6 +29,12 @@ export async function getAgencyUserByClerkId(clerkUserId: string) {
     lastName:  (record.fields['Last Name'] as string) ?? '',
     clerkUserId: (record.fields['Clerk User ID'] as string) ?? null,
     portalInviteStatus: (record.fields['Portal Invite Status'] as string) ?? 'Not Invited',
+    // Membership is a SEPARATE axis from the invite lifecycle: an agency admin
+    // asserting a person works at their office. Blank = unconfirmed (the
+    // default). Agency-facing referral visibility gates on 'Confirmed'.
+    membershipStatus: (record.fields['Membership Status'] as string) ?? null,
+    membershipDecidedBy: (record.fields['Membership Decided By'] as string) ?? null,
+    membershipDecidedAt: (record.fields['Membership Decided At'] as string) ?? null,
   }
 }
 /**
@@ -82,6 +88,9 @@ export async function getAgencyUserById(recordId: string) {
     invitedBy: (f['Invited By'] as string) ?? null,
     claimedDate: (f['Claimed Date'] as string) ?? null,
     clerkUserId: (f['Clerk User ID'] as string) ?? null,
+    membershipStatus: (f['Membership Status'] as string) ?? null,
+    membershipDecidedBy: (f['Membership Decided By'] as string) ?? null,
+    membershipDecidedAt: (f['Membership Decided At'] as string) ?? null,
     agencyId: agencyLink?.[0] ?? null,
     agencyName,
   }
@@ -299,6 +308,10 @@ export async function getAgencyUsersByAgencyId(agencyId: string) {
     portalInviteStatus: (r.fields['Portal Invite Status'] as string) ?? 'Not Invited',
     invitedBy:          (r.fields['Invited By'] as string) ?? null,
     claimedDate:        (r.fields['Claimed Date'] as string) ?? null,
+    // Membership axis — see getAgencyUserByClerkId. Blank = unconfirmed.
+    membershipStatus:     (r.fields['Membership Status'] as string) ?? null,
+    membershipDecidedBy:  (r.fields['Membership Decided By'] as string) ?? null,
+    membershipDecidedAt:  (r.fields['Membership Decided At'] as string) ?? null,
   }))
 }
 
@@ -361,12 +374,19 @@ export async function updateAgencyUserStatus(
 }
 
 /**
- * Update the portal-invite state on an Agency User row.
+ * Update account and/or membership state on an Agency User row in ONE PATCH.
+ *
+ * Two distinct axes, deliberately writable together so a caller that needs
+ * both (the Dawson agency-invite route, which invites the primary admin AND
+ * auto-confirms their membership) does it atomically:
+ *   - ACCOUNT:    status / portalInviteStatus / invited* / claimedDate / clerkUserId
+ *   - MEMBERSHIP: membershipStatus / membershipDecidedBy / membershipDecidedAt
  *
  * Used by:
- *   - POST /api/admin/staff/[id]/invite       → mark row as invited
+ *   - POST /api/admin/staff/[id]/invite        → mark row invited
  *   - POST /api/admin/staff/[id]/cancel-invite → revert to unclaimed
- *   - PATCH /api/admin/staff/[id]/status with body {portalInviteStatus:'Wrong Agency'}
+ *   - PATCH /api/admin/staff/[id]/status       → Confirm / Not at this office
+ *   - POST /api/dawson/agencies/[id]/invite    → invite admin + auto-confirm
  *
  * Any field can be omitted. Undefined fields are left unchanged; explicit
  * null clears the field.
@@ -375,11 +395,14 @@ export async function updateAgencyUserPortalInvite(
   recordId: string,
   update: {
     status?: 'Unclaimed' | 'Invited' | 'Active' | 'Inactive'
-    portalInviteStatus?: 'Not Invited' | 'Invite Sent' | 'Claimed' | 'Wrong Agency'
+    portalInviteStatus?: 'Not Invited' | 'Invite Sent' | 'Claimed'
     invitedDate?: string | null   // ISO date "YYYY-MM-DD" or null to clear
     invitedBy?: string | null      // admin's display name or null to clear
     claimedDate?: string | null    // ISO date or null to clear
     clerkUserId?: string | null    // Clerk user id or null to clear
+    membershipStatus?: 'Confirmed' | 'Not At This Office' | null
+    membershipDecidedBy?: string | null   // name string, like invitedBy
+    membershipDecidedAt?: string | null   // ISO timestamp or null to clear
   }
 ) {
   const fields: Record<string, unknown> = {}
@@ -389,6 +412,9 @@ export async function updateAgencyUserPortalInvite(
   if (update.invitedBy !== undefined)          fields['Invited By']            = update.invitedBy
   if (update.claimedDate !== undefined)        fields['Claimed Date']          = update.claimedDate
   if (update.clerkUserId !== undefined)        fields['Clerk User ID']         = update.clerkUserId
+  if (update.membershipStatus !== undefined)   fields['Membership Status']     = update.membershipStatus
+  if (update.membershipDecidedBy !== undefined) fields['Membership Decided By'] = update.membershipDecidedBy
+  if (update.membershipDecidedAt !== undefined) fields['Membership Decided At'] = update.membershipDecidedAt
 
   const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent('Agency Users')}/${recordId}`
   const res = await fetch(url, {
