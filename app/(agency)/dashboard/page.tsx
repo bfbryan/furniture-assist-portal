@@ -113,16 +113,20 @@ export default async function DashboardPage() {
   // because the staff member who made them has not been confirmed as working
   // here. The visibility gate (getReferralsByAgencyId) excludes them, so this
   // is a dedicated read — name only, no client data.
+  //
+  // Leads with the staff, not the referral count: mixing a referral count with
+  // a name list left a reader unable to tell whether there were three staff or
+  // three referrals from fewer. getUnconfirmedStaffAtAgency still returns
+  // referralCount, but nothing reads it any more — this was its only caller.
+  // Pluralisation and the gate both key on the staff list instead.
   const unconfirmed = isAdmin
     ? await getUnconfirmedStaffAtAgency(agencyUser.agencyId!)
     : { referralCount: 0, staffNames: [] as string[] }
-  const ucCount = unconfirmed.referralCount
   const ucNames = unconfirmed.staffNames
-  const ucFirst = ucNames[0]?.split(' ')[0] ?? 'they'
   const ucLine =
     ucNames.length === 1
-      ? `${ucCount} referral${ucCount === 1 ? '' : 's'} from an unconfirmed staff member: ${ucNames[0]} — is ${ucFirst} at your office?`
-      : `${ucCount} referral${ucCount === 1 ? '' : 's'} from unconfirmed staff members: ${ucNames.join(', ')} — confirm the ones who work at your office.`
+      ? `1 unconfirmed staff member: ${ucNames[0]}. Confirm them if they work at your office.`
+      : `${ucNames.length} unconfirmed staff members: ${ucNames.join(', ')}. Confirm the ones who work at your office.`
 
   // One Eastern "today" for the whole render.
   const todayISO = easternTodayISO()
@@ -198,8 +202,16 @@ export default async function DashboardPage() {
           {/* Unconfirmed-staff prompt. Admin only, shown only when referrals are
               actually being hidden by the membership gate. Links to the Team
               page, where the person can be confirmed (or flagged not-here).
-              Name only — no client data on the dashboard. */}
-          {isAdmin && ucCount > 0 && (
+              Name only — no client data on the dashboard.
+              Gated on the staff list, not the referral count — the copy is
+              staff-first, and an unresolvable staff name on a referral could
+              otherwise leave referralCount > 0 with nothing to list.
+              Same three-tier shape as the Announcement card beside it
+              (identical chrome, heading and body styles) — no eyebrow: an
+              "eyebrow" here would restate the heading rather than categorise
+              it, since this card has only ever had the one kind of thing to
+              say. */}
+          {isAdmin && ucNames.length > 0 && (
             <Link
               href="/team"
               style={{
@@ -212,9 +224,9 @@ export default async function DashboardPage() {
                 padding: '16px 18px 16px 15px',
               }}
             >
-              <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8B7724', marginBottom: '6px' }}>
-                Needs your confirmation
-              </div>
+              <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '14px', color: '#1B2B4B', margin: '0 0 6px' }}>
+                Team Members Need Confirmation
+              </h3>
               <p style={{ fontSize: '13px', color: '#2C3A4A', lineHeight: 1.55, margin: 0 }}>
                 {ucLine}
               </p>
