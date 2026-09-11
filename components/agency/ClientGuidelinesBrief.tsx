@@ -32,7 +32,7 @@ function Bullet({ children }: { children: React.ReactNode }) {
 export default function ClientGuidelinesBrief() {
   return (
     <section style={CARD}>
-      <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '15px', color: '#1B2B4B', margin: 0 }}>
+      <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '15px', color: '#1B2B4B', margin: 0 }}>
         What to tell your client
       </h3>
       <p style={{ fontSize: '12.5px', color: '#7A8899', lineHeight: 1.5, margin: '6px 0 14px' }}>

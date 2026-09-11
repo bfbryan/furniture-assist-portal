@@ -41,7 +41,7 @@ const LABEL: React.CSSProperties = {
   fontSize: '11px', fontWeight: 700, textTransform: 'uppercase',
   letterSpacing: '0.07em', color: '#1B2B4B', marginBottom: '6px', display: 'block',
 }
-const OPTIONAL: React.CSSProperties = { color: '#7A8899', fontWeight: 500, textTransform: 'none', letterSpacing: 0 }
+const OPTIONAL: React.CSSProperties = { color: '#7A8899', fontWeight: 400, textTransform: 'none', letterSpacing: 0 }
 
 const INPUT: React.CSSProperties = {
   width: '100%', padding: '9px 12px', borderRadius: '7px',
@@ -50,7 +50,8 @@ const INPUT: React.CSSProperties = {
 }
 
 const SECTION: React.CSSProperties = {
-  fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px',
+  // 700, not 800: Montserrat is loaded at 400/600/700 only.
+  fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px',
   color: '#2A7F6F', textTransform: 'uppercase', letterSpacing: '0.08em',
   marginBottom: '16px', marginTop: '32px',
 }
@@ -240,7 +241,7 @@ export default function NewReferralForm({ agencyName, staffName }: { agencyName:
             <polyline points="20 6 9 17 4 12" />
           </svg>
         </div>
-        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '20px', color: '#1B2B4B', marginBottom: '10px' }}>
+        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '20px', color: '#1B2B4B', marginBottom: '10px' }}>
           {converted ? 'Reschedule requested' : 'Referral submitted'}
         </h2>
         <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '28px', maxWidth: '420px', marginInline: 'auto' }}>
@@ -385,7 +386,7 @@ export default function NewReferralForm({ agencyName, staffName }: { agencyName:
               style={{
                 display: 'inline-flex', alignItems: 'center', gap: '8px',
                 padding: '7px 14px 7px 10px', borderRadius: '999px', cursor: 'pointer',
-                fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: on ? 700 : 500,
+                fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: on ? 700 : 400,
                 border: `1px solid ${on ? '#2A7F6F' : '#C7CED6'}`,
                 background: on ? '#2A7F6F' : 'white',
                 color: on ? 'white' : '#2C3A4A',
@@ -458,7 +459,7 @@ export default function NewReferralForm({ agencyName, staffName }: { agencyName:
         style={{
           width: '100%', padding: '14px', borderRadius: '8px', border: 'none', marginTop: '12px',
           background: loading || hardBlocked ? '#B8C1CC' : '#2A7F6F',
-          color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px',
+          color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '14px',
           letterSpacing: '0.02em', cursor: loading || hardBlocked ? 'not-allowed' : 'pointer',
         }}
       >

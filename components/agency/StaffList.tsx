@@ -117,7 +117,9 @@ const UNDO_ICON = (<><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0
 // ------------------------------------------------------------------ styling
 
 const SECTION_TITLE: React.CSSProperties = {
-  fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: 800,
+  // 700, not 800: Montserrat is loaded at 400/600/700 only, so 800 was
+  // synthesised / snapped by the browser.
+  fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: 700,
   letterSpacing: '0.10em', textTransform: 'uppercase',
 }
 const ACCENT: Record<GroupKey, { bar: string; heading: string }> = {
@@ -139,16 +141,34 @@ const EMPTY_BOX: React.CSSProperties = {
   textAlign: 'center', color: '#7A8899', fontSize: '14px', lineHeight: 1.6,
 }
 
+// The "Needs confirming" pill in the Needs confirmation section's 4th cell —
+// the same uppercase status-pill pattern the referral lists use (ReferralTable
+// / DashboardLastSaturday). #8B7724 on the amber tint: brand gold #C9A84C
+// fails contrast at 10px and the codebase already substitutes #8B7724 for
+// filled amber. This is the agency's own to-do, distinct from the dashboard's
+// gold "waiting on Furniture Assist". (The sibling pill on
+// /dawson/staff/wrong-agency uses #B8912F on the same tint — a Dawson-side
+// inconsistency left for a later pass.)
+const NEEDS_CONFIRM_PILL: React.CSSProperties = {
+  display: 'inline-block', padding: '2px 8px', borderRadius: '20px',
+  fontSize: '10px', fontWeight: 700, letterSpacing: '0.06em',
+  textTransform: 'uppercase', background: 'rgba(201,168,76,0.18)', color: '#8B7724',
+}
+
 // ------------------------------------------------------------------ card
 
 function GroupCard({
-  groupKey, title, count, columns, collapsible, children,
+  groupKey, title, count, columns, collapsible, note, children,
 }: {
   groupKey: GroupKey
   title: string
   count: number
   columns: string[]
   collapsible?: boolean
+  /** Optional one-liner shown between the section header and the column
+      labels — guidance that belongs next to the rows it describes rather
+      than in the page-level intro. */
+  note?: React.ReactNode
   children: React.ReactNode
 }) {
   const [open, setOpen] = useState(!collapsible)
@@ -168,12 +188,19 @@ function GroupCard({
         {/* No count on the open groups — the lists are short. Kept only while a
             collapsible group is closed, where it's the one signal of what's inside. */}
         {collapsible && !open && (
-          <span style={{ fontSize: '13px', color: '#9AA6B2', fontWeight: 600 }}>{count}</span>
+          <span style={{ fontSize: '13px', color: '#9AA6B2', fontWeight: 700 }}>{count}</span>
         )}
         {collapsible && (
           <span style={{ fontSize: '10px', color: '#9AA6B2', marginLeft: '2px' }}>{open ? '▲' : '▼'}</span>
         )}
       </button>
+      {/* #7A8899, not the #9AA6B2 of the section footers: directly under the
+          heavy uppercase header the paler grey reads as disabled. */}
+      {open && note && (
+        <div style={{ fontSize: '12px', color: '#7A8899', lineHeight: 1.55, margin: '2px 0 10px' }}>
+          {note}
+        </div>
+      )}
       {open && <ColumnHead columns={columns} className="fa-team-row fa-team-row--head" />}
       {open && children}
     </section>
@@ -186,8 +213,9 @@ function Row({
   m, context, items, menuOpen, onMenuOpen, onMenuClose,
 }: {
   m: Member
-  /** Sent / Last Login — always rendered so the column lines up across every
-      group; empty on Ready to invite and Inactive (the cell collapses on mobile). */
+  /** 4th column — section-specific: the confirmation pill, Invited date,
+      Last Login, or Flagged date. Empty on Inactive (the cell collapses on
+      mobile). Always rendered so the column lines up across every group. */
   context?: React.ReactNode
   items: MenuItem[]
   menuOpen: boolean
@@ -197,7 +225,7 @@ function Row({
   return (
     <div className="fa-team-row" style={{ borderTop: '1px solid #F3F0EA' }}>
       <div style={{ minWidth: 0 }}>
-        <div style={{ fontSize: '14px', fontWeight: 600, color: '#1B2B4B', overflowWrap: 'anywhere' }}>
+        <div style={{ fontSize: '14px', fontWeight: 700, color: '#1B2B4B', overflowWrap: 'anywhere' }}>
           {m.lastName}, {m.firstName}
         </div>
         {m.phone && <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '1px' }}>{m.phone}</div>}
@@ -499,12 +527,12 @@ export default function StaffList({
           <p style={{ color: '#7A8899', margin: 0 }}>
             Manage who at your agency has access to the Furniture Assist portal.
           </p>
-          {/* One step more muted than the line above — purpose vs. operational note.
-              #9AA6B2 is the same grey already used for the Inactive accent / counts.
-              The 6px top margin keeps the two sentences reading as distinct lines
-              rather than one wrapped paragraph, especially once the first wraps. */}
+          {/* The "already in our records / confirm the ones who work here"
+              instruction moved onto the Needs confirmation section itself, next
+              to the rows it applies to — this page-level line keeps only the
+              part that's true everywhere. */}
           <p style={{ color: '#9AA6B2', margin: '6px 0 0' }}>
-            People already in our records appear below — use Add Staff Member for anyone who isn&apos;t listed.
+            Use Add Staff Member for anyone who isn&apos;t listed.
           </p>
         </div>
         <button
@@ -528,7 +556,7 @@ export default function StaffList({
       {flash && (
         <div style={{
           borderRadius: '8px', padding: '12px 16px', marginBottom: '16px',
-          fontSize: '13px', fontWeight: 600,
+          fontSize: '13px', fontWeight: 700,
           background: flash.tone === 'ok' ? 'rgba(42,127,111,0.10)' : flash.tone === 'warn' ? '#FEF9EC' : '#FDF0EE',
           border: `1px solid ${flash.tone === 'ok' ? '#2A7F6F' : flash.tone === 'warn' ? '#E6D3A3' : '#C0392B'}`,
           color: flash.tone === 'ok' ? '#2A7F6F' : flash.tone === 'warn' ? '#6B5518' : '#C0392B',
@@ -554,7 +582,7 @@ export default function StaffList({
           onClick={e => e.target === e.currentTarget && !loading && setConfirm(null)}
         >
           <div style={{ background: 'white', borderRadius: '16px', padding: '32px', maxWidth: '420px', width: '100%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
-            <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '17px', color: '#1B2B4B', marginBottom: '10px' }}>{cc.title}</h3>
+            <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '17px', color: '#1B2B4B', marginBottom: '10px' }}>{cc.title}</h3>
             <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>{cc.body(confirm.name, { count: notHereCount })}</p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setConfirm(null)} disabled={loading}
@@ -578,16 +606,16 @@ export default function StaffList({
       ) : (
         <>
           {buckets.ready.length > 0 && (
-            <GroupCard groupKey="ready" title="Ready to invite" count={buckets.ready.length}
-              columns={['Name', 'Email', 'Role', 'Confirmation']}>
+            <GroupCard groupKey="ready" title="Needs confirmation" count={buckets.ready.length}
+              columns={['Name', 'Email', 'Role', '']}
+              note="These people are already in our records. Confirm the ones who work at your office — their referrals appear once you do, and you can send them a sign-in link at the same time.">
               {buckets.ready.map(m => (
                 <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'ready')}
                   context={
                     m.membershipStatus === 'Confirmed'
                       ? <><span className="fa-active-mobile-label">Confirmation </span>
                           <span style={{ color: '#2A7F6F' }}>Confirmed{m.membershipDecidedBy ? ` by ${m.membershipDecidedBy}` : ''}</span></>
-                      : <><span className="fa-active-mobile-label">Confirmation </span>
-                          <span style={{ color: '#9AA6B2' }}>Not yet confirmed</span></>
+                      : <span style={NEEDS_CONFIRM_PILL}>Needs confirming</span>
                   }
                 />
               ))}

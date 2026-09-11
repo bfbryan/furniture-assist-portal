@@ -132,9 +132,11 @@ export function OverflowMenu({
 // ---------------------------------------------------------------- column head
 
 // Last in the visual hierarchy — the section heading and the row data both
-// outrank it — so 10px, light weight, pale grey.
+// outrank it — so 10px, light weight, pale grey. Weight 400: Lato (the
+// inherited body face here) only ships 400 and 700, and 500 was silently
+// snapping to one of them.
 export const COL_HEADER: React.CSSProperties = {
-  fontSize: '10px', fontWeight: 500, letterSpacing: '0.08em',
+  fontSize: '10px', fontWeight: 400, letterSpacing: '0.08em',
   textTransform: 'uppercase', color: '#9AA6B2',
 }
 

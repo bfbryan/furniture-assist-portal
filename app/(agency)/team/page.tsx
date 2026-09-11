@@ -1,6 +1,6 @@
 // app/(agency)/team/page.tsx
 // Agency admin team page — 5-section layout
-// - Ready to Invite to Portal (Unclaimed + Not Invited)
+// - Needs confirmation (Not Invited rows the admin hasn't confirmed yet)
 // - Awaiting Claim  (Invited + Invite Sent)
 // - Active Staff    (Active + Claimed, admins excluded — admin lives in header)
 // - Inactive        (collapsed)

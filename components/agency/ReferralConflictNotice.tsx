@@ -59,7 +59,7 @@ const CARD: React.CSSProperties = {
 }
 const TITLE: React.CSSProperties = {
   fontFamily: 'var(--font-montserrat)',
-  fontWeight: 800,
+  fontWeight: 700, // Montserrat is loaded at 400/600/700 only
   fontSize: '13.5px',
   marginBottom: '5px',
 }
@@ -124,7 +124,7 @@ export default function ReferralConflictNotice({ result, armed, onArm, onDisarm 
             </button>
             <a
               href={`mailto:${AGENCY_CONTACT_EMAIL}`}
-              style={{ fontSize: '12.5px', color: '#8A6A00', fontWeight: 600, textDecoration: 'underline' }}
+              style={{ fontSize: '12.5px', color: '#8A6A00', fontWeight: 400, textDecoration: 'underline' }}
             >
               That&rsquo;s not right — contact us
             </a>

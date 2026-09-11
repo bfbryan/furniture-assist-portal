@@ -69,7 +69,7 @@ export default function AgencyPageBar({
     <div className="fa-pagebar">
       <span
         className="fa-pagebar-title"
-        style={{ color: 'white', fontSize: '14.5px', fontWeight: 500, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+        style={{ color: 'white', fontSize: '14.5px', fontWeight: 400, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
       >
         {title}
       </span>

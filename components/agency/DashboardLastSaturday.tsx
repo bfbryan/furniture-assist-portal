@@ -127,7 +127,7 @@ export default function DashboardLastSaturday({ rows, dateLabel, heading }: {
       {/* One block, not a flex row — the heading is plain inline text with the
           date after a middot, so nothing can collapse it. */}
       <div style={{ fontFamily: 'var(--font-montserrat)', marginBottom: empty ? '8px' : '4px' }}>
-        <span style={{ fontSize: '13px', fontWeight: 800, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#2A7F6F' }}>
+        <span style={{ fontSize: '13px', fontWeight: 700, letterSpacing: '0.10em', textTransform: 'uppercase', color: '#2A7F6F' }}>
           {heading}
         </span>
         <span style={{ fontSize: '12px', fontWeight: 600, color: '#9AA6B2', marginLeft: '8px' }}>
@@ -149,7 +149,7 @@ export default function DashboardLastSaturday({ rows, dateLabel, heading }: {
           return (
             <div key={r.id} className="fa-dash-lastsat-row" style={{ borderTop: '1px solid #F3F0EA' }}>
               <div style={{ minWidth: 0 }}>
-                <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 600, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
+                <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 700, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
                   {r.clientName}
                 </a>
                 <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '2px', overflowWrap: 'anywhere' }}>

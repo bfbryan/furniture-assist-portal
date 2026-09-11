@@ -84,7 +84,7 @@ export default function AgencyPortalShell({
     background: active ? 'rgba(255,255,255,0.08)' : 'transparent',
     color: active ? 'white' : 'rgba(255,255,255,0.6)',
     fontSize: '13.5px',
-    fontWeight: 500,
+    fontWeight: 400, // Lato (inherited body face) ships 400/700 only
     textDecoration: 'none',
   })
 
@@ -100,7 +100,7 @@ export default function AgencyPortalShell({
     // says why.
     color: 'rgba(255,255,255,0.4)',
     fontSize: '13.5px',
-    fontWeight: 500,
+    fontWeight: 400, // Lato ships 400/700 only
     cursor: 'not-allowed',
   }
 
@@ -171,7 +171,7 @@ export default function AgencyPortalShell({
                 style={{ width: '32px', height: '32px', objectFit: 'contain' }}
               />
             </div>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: 'white' }}>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: 'white' }}>
               Furniture <span style={{ color: '#3AA08D' }}>Assist</span>
             </div>
           </div>
@@ -215,7 +215,7 @@ export default function AgencyPortalShell({
             <div
               style={{
                 fontSize: '13px',
-                fontWeight: 600,
+                fontWeight: 700, // Lato ships 400/700 only; this line wants emphasis
                 color: 'white',
                 lineHeight: 1.35,
                 display: '-webkit-box',
@@ -348,7 +348,7 @@ export default function AgencyPortalShell({
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <span className="font-extrabold text-sm text-white tracking-wide">
+          <span className="font-bold text-sm text-white tracking-wide">
             Furniture Assist <span className="text-[#3AA08D]">| Agency Portal</span>
           </span>
           {/* Same custom avatar + menu as the page bar (Airtable identity,

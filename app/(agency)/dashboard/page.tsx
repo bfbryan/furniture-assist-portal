@@ -75,7 +75,7 @@ function CountCard({ accent, count, line, href }: {
         padding: '18px 18px 18px 15px',
       }}
     >
-      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '34px', color: '#1B2B4B', lineHeight: 1 }}>
+      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '34px', color: '#1B2B4B', lineHeight: 1 }}>
         {count}
       </div>
       <div style={{ fontSize: '12.5px', color: '#7A8899', marginTop: '8px', lineHeight: 1.45 }}>
@@ -274,7 +274,7 @@ export default async function DashboardPage() {
             <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.12em', textTransform: 'uppercase', color: '#8B7724', marginBottom: '6px' }}>
               Announcement
             </div>
-            <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '14px', color: '#1B2B4B', margin: '0 0 6px' }}>
+            <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '14px', color: '#1B2B4B', margin: '0 0 6px' }}>
               Welcome to the Furniture Assist Agency Portal
             </h3>
             <p style={{ fontSize: '13px', color: '#2C3A4A', lineHeight: 1.55, margin: 0 }}>

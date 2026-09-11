@@ -189,7 +189,7 @@ function HistoryRow({
       <div style={{ minWidth: 0 }}>
         {/* lineHeight 1.3 (Lato's default runs ~1.44) tightens the two-line
             client block — part of the density pass; nothing else changes. */}
-        <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 600, lineHeight: 1.3, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
+        <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 700, lineHeight: 1.3, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
           {r.clientName}
         </a>
         <div style={{ fontSize: '12px', lineHeight: 1.3, color: '#7A8899', marginTop: '1px', overflowWrap: 'anywhere' }}>
@@ -427,7 +427,7 @@ export default function HistoryClient({ isAdmin }: { isAdmin: boolean }) {
               style={{
                 display: 'inline-flex', alignItems: 'baseline', gap: '6px',
                 padding: '6px 12px', borderRadius: '999px', cursor: 'pointer',
-                fontFamily: 'inherit', fontSize: '12px', fontWeight: 600,
+                fontFamily: 'inherit', fontSize: '12px', fontWeight: 700,
                 border: `1px solid ${active ? '#1B2B4B' : '#EDE9E1'}`,
                 background: active ? '#1B2B4B' : 'white',
                 color: active ? 'white' : '#2C3A4A',
@@ -435,7 +435,7 @@ export default function HistoryClient({ isAdmin }: { isAdmin: boolean }) {
               }}
             >
               {p.label}
-              <span style={{ fontWeight: 500, opacity: 0.65 }}>{n}</span>
+              <span style={{ fontWeight: 400, opacity: 0.65 }}>{n}</span>
             </button>
           )
         })}
