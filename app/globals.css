@@ -806,6 +806,97 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
+/* ---------------------------------------------------------------------------
+   Saturday capacity grid — binary (agency) mode only, below 700px.
+   components/internal/SaturdayCapacityGrid.tsx.
+
+   The grid has no breakpoint of its own (its only size axis is the `dense`
+   prop, which no caller passes) — every surface rendered the same fixed
+   pixel values at every width, so a hard-coded 108px date column and 6px
+   gaps left five ~31px hour columns on a 390px screen: nowhere near the
+   ~50-55px "Current"/"Selected" needed, or even the ~25px "Full" needed.
+   Below the breakpoint:
+     - Open/Current/Selected's word goes invisible (.fa-cap-bin-word-hide) —
+       the checkmark (.fa-cap-bin-icon) stands in for Current/Selected; Open
+       shows nothing but its border.
+     - Every word, including "Full" (which is never hidden — see the
+       component for why), shrinks 13px → 10px (.fa-cap-bin-word) and the
+       cell's horizontal padding drops 8px → 2px (.fa-cap-bin-cell) — "Full"
+       alone still doesn't fit the ~29px mobile column at 13px/8px (measured:
+       a 13px word needs ~25px against a 13px content budget), so it needed
+       both the size and the padding, not just the padding by itself.
+     - Vertical padding is untouched at every width, on purpose: the loading
+       placeholder's reserved height (SaturdayCapacityGrid's
+       estimatedGridHeight) is computed once in JS from row-height constants
+       that assume today's vertical padding — shrinking it here too would
+       make that reservation wrong below the breakpoint.
+   Only elements the component marks `className="fa-cap-bin-*"` are affected,
+   and it only does that in binary mode — Dawson's counts mode (booked/cap,
+   the soft chip, the "current" sub-label, the Total column) never gets these
+   classes and is byte-for-byte unchanged at any width.
+
+   699.98px, not a number nearer the measured crossover: the tightest of the
+   two binary surfaces (the agency New Referral form's own page padding, not
+   the modal) stops clipping "Selected" — the longest word — at a measured
+   ~620px of grid width, which corresponds to roughly a 620px viewport. 700
+   leaves a margin against that measurement and sits nowhere near a tested
+   width (768 already has enough room, measured clean). ".98px" matches this
+   file's own convention (1279.98px, 1439.98px) for "up to but not including
+   the next round number".
+   --------------------------------------------------------------------------- */
+.fa-cap-bin-header {
+  font-size: 13px;
+  letter-spacing: 0.04em;
+  padding: 0 8px;
+}
+.fa-cap-bin-word {
+  /* Font-size only, on every binary word (Open/Current/Selected/Full alike)
+     — see .fa-cap-bin-word-hide for the separate visibility toggle that only
+     the first three get. No change above the breakpoint: 13px is the same
+     size every binary cell has always shown. */
+  font-size: 13px;
+}
+.fa-cap-bin-word-hide {
+  /* No change above the breakpoint. */
+}
+.fa-cap-bin-cell {
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.fa-cap-bin-icon {
+  display: none;
+  position: absolute;
+  inset: 0;
+  align-items: center;
+  justify-content: center;
+}
+
+@media (max-width: 699.98px) {
+  .fa-cap-bin-header {
+    font-size: 10px;
+    letter-spacing: 0;
+    padding: 0 2px;
+  }
+  .fa-cap-bin-word {
+    font-size: 10px;
+  }
+  .fa-cap-bin-word-hide {
+    /* Not display:none — the box has to stay so the row's height doesn't
+       change depending on which state a cell is in ("Full" sits right next
+       to a wordless "Open" in the same row). visibility:hidden also drops it
+       from the accessibility tree, which is why the button carries its own
+       aria-label. */
+    visibility: hidden;
+  }
+  .fa-cap-bin-cell {
+    padding-left: 2px;
+    padding-right: 2px;
+  }
+  .fa-cap-bin-icon {
+    display: flex;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .fa-shell-sidebar {
     transition: none;
