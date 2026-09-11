@@ -121,6 +121,17 @@ const BLACKOUT = { band: '#F0F0F0', text: '#7A8899' }
 const SOFT_TEXT = '#8A6D14'
 const WARN = { bg: '#FDF6E7', border: '#C9A84C', text: '#8A6D14' }
 
+// Reschedule-modal-mobile: binary (agency) mode below the breakpoint drops the
+// Open/Current/Selected word from a cell — nothing on a 390px screen has room
+// for "Current" or "Selected" (see the .fa-cap-bin-* rules in globals.css).
+// Current/Selected get this checkmark instead, same glyph and stroke pattern
+// as the "on" state of NewReferralForm's item chips, so it isn't a new
+// convention. "Full" is unaffected — it keeps its word at every width, it's
+// short and it's the one state that needs naming.
+const CHECK_ICON = (
+  <polyline points="20 6 9 17 4 12" />
+)
+
 // The +N chip on a cell that carries pending requests. Its vertical space is
 // reserved in EVERY slot cell (an invisible copy when soft === 0) so a row
 // with requests isn't taller than one without — a height difference that
@@ -151,6 +162,38 @@ function cellState(a: {
 
 function fmtDate(iso: string): string {
   return formatDateOnly(iso, { weekday: 'short', month: 'short', day: 'numeric' })
+}
+
+// Loading-state height reservation. The loading branch used to render one
+// ~32px line where the loaded grid renders ~217px (measured, non-dense
+// binary, 4 weeks) — the difference is what made a centred modal (the agency
+// Reschedule modal, Dawson's PickSlotModal — both `fixed inset-0 … flex
+// items-center justify-center`) grow around its own centre on every open, and
+// "Send Request" moved out from under a resting thumb.
+//
+// dense/capacityDisplay/weeks are all known from props before the fetch
+// resolves, so the placeholder can reserve roughly the right amount of space
+// instead of none. Not pixel-exact: it can't know yet whether a given row
+// will need the "current" sub-label or a soft-count chip reserved — those
+// depend on data that hasn't loaded. That's fine; it only needs to keep the
+// jump small and bounded, the same tolerance already accepted for the
+// ranShort note that can still land below the grid after it loads.
+//
+// Row/header pixel values below are measured (Chromium, real Lato/Montserrat
+// metrics), not estimated from the CSS alone:
+//   non-dense: header 13px, row 45px, gap 6px
+//   dense:     header 14px, row 31px, gap 4px  (no current caller is
+//              dense + binary; kept correct for when one is)
+//   + ~36px for counts mode's "+1 = requests…" legend line, which binary
+//     mode never renders.
+function estimatedGridHeight({
+  dense, binary, weeks,
+}: { dense: boolean; binary: boolean; weeks: number }): number {
+  const headerH = dense ? 14 : 13
+  const rowH = dense ? 31 : 45
+  const gap = dense ? 4 : 6
+  const legend = binary ? 0 : 36
+  return headerH + weeks * (rowH + gap) + legend
 }
 
 export default function SaturdayCapacityGrid({
@@ -249,6 +292,14 @@ export default function SaturdayCapacityGrid({
   // non-dense to make room for the Total column without shrinking the slot
   // cells — "Sat, Sep 12" needs ~88px.
   const cellPad = dense ? '6px 4px' : '12px 8px'
+  // Vertical only, for binary cells below the breakpoint: .fa-cap-bin-cell
+  // (globals.css) shrinks their horizontal padding, so it's left out of the
+  // inline style there — an inline value always beats a media query. Vertical
+  // stays inline and unconditional at every width: it's what
+  // estimatedGridHeight's row-height constant assumes, and shrinking it too
+  // would make that reservation wrong below the breakpoint. Counts mode keeps
+  // using the combined `cellPad` shorthand above, unaffected.
+  const cellPadV = dense ? '6px' : '12px'
   const dateColW = dense ? '96px' : '108px'
   const cellGap = dense ? '4px' : '6px'
   const numSize = dense ? '13px' : '16px'
@@ -263,7 +314,13 @@ export default function SaturdayCapacityGrid({
   const gridCols = `${dateColW} repeat(${binary ? 5 : 6}, minmax(0, 1fr))`
 
   if (loading) {
-    return <div style={shell}><div style={muted}>Loading Saturdays…</div></div>
+    return (
+      <div style={shell}>
+        <div style={{ ...muted, minHeight: estimatedGridHeight({ dense, binary, weeks }) }}>
+          Loading Saturdays…
+        </div>
+      </div>
+    )
   }
   if (error || !data) {
     // A failed fetch here means no date can be picked — say that, and give a
@@ -327,14 +384,26 @@ export default function SaturdayCapacityGrid({
       <div style={{ display: 'grid', gridTemplateColumns: gridCols, gap: cellGap }}>
         {/* Header */}
         <div />
+        {/* Binary mode's font-size/letter-spacing/padding move into
+            .fa-cap-bin-header (globals.css) instead of staying inline below
+            the breakpoint — an inline style always wins over a stylesheet
+            rule, so it has to physically leave the object to be shrunk by a
+            media query, same as every other responsive row in this codebase
+            (.fa-team-row, .fa-active-row). Counts mode never gets the class,
+            so Dawson's headers are untouched at any width. The base (above
+            the breakpoint) values in that class are the same 13px/0.04em/8px
+            this file used inline before — binary is never dense today, so
+            that's the only case the class needs to match exactly. */}
         {(binary ? TIME_ORDER : [...TIME_ORDER, 'Total']).map((t) => (
           <div
             key={`h-${t}`}
+            className={binary ? 'fa-cap-bin-header' : undefined}
             style={{
               textAlign: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 700,
-              fontSize: headSize, color: '#7A8899',
-              textTransform: 'uppercase', letterSpacing: '0.04em',
-              padding: `0 ${dense ? '4px' : '8px'}`,
+              color: '#7A8899', textTransform: 'uppercase',
+              ...(binary
+                ? {}
+                : { fontSize: headSize, letterSpacing: '0.04em', padding: `0 ${dense ? '4px' : '8px'}` }),
             }}
           >
             {t}
@@ -395,6 +464,13 @@ export default function SaturdayCapacityGrid({
                 })
                 const c = CELL[state]
                 const clickable = mode === 'select' && !disabled
+                // Binary only. Same precedence the label always used: selected
+                // beats current beats full beats open. "Full" is the one word
+                // that stays put at every width — binaryWordHides is false only
+                // for it, so it never gets the mobile-hide class below.
+                const binaryWord = isSelected ? 'Selected' : cell.current ? 'Current' : full ? 'Full' : 'Open'
+                const binaryWordHides = binaryWord !== 'Full'
+                const binaryIcon = isSelected || cell.current
 
                 return (
                   <button
@@ -402,23 +478,71 @@ export default function SaturdayCapacityGrid({
                     type="button"
                     disabled={!clickable}
                     onClick={clickable ? () => onChange?.({ date: row.date, time: t }) : undefined}
+                    // Below the breakpoint the visible word for Open/Current/
+                    // Selected is hidden (see .fa-cap-bin-word-hide) —
+                    // visibility:hidden also drops it from the accessibility
+                    // tree, so the state still needs to reach a screen reader
+                    // some other way.
+                    aria-label={binary ? `${fmtDate(row.date)} ${t}: ${binaryWord}` : undefined}
+                    className={binary ? 'fa-cap-bin-cell' : undefined}
                     style={{
-                      padding: cellPad, borderRadius: '8px', border: `1px solid ${c.border}`,
+                      position: 'relative',
+                      // Horizontal padding is binary-mode's to shrink below the
+                      // breakpoint (.fa-cap-bin-cell in globals.css), so it's
+                      // left out of the inline style there — an inline value
+                      // would always beat the media query. Vertical stays
+                      // inline and unconditional: it's what
+                      // estimatedGridHeight's row-height constant assumes, at
+                      // every width. Counts mode keeps the combined `cellPad`
+                      // shorthand exactly as before.
+                      ...(binary
+                        ? { paddingTop: cellPadV, paddingBottom: cellPadV }
+                        : { padding: cellPad }),
+                      borderRadius: '8px', border: `1px solid ${c.border}`,
                       background: c.bg, color: c.fg, cursor: clickable ? 'pointer' : 'default',
                       textAlign: 'center', font: 'inherit', lineHeight: 1.25,
                     }}
                   >
-                    <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: binary ? headSize : numSize }}>
-                      {/* Binary: the label carries the state, not just the fill —
-                          every cell says "Open" so the teal fill alone is easy
-                          to miss and fails on colour. "Current" (the held slot,
-                          when excludeReferralId is set) is a word here for the
-                          same reason "Selected" is; counts mode keeps its number
-                          and marks "current" in the sub-label below instead. */}
-                      {binary
-                        ? (isSelected ? 'Selected' : cell.current ? 'Current' : full ? 'Full' : 'Open')
-                        : `${cell.booked}/${cell.cap}`}
-                    </span>
+                    {binary ? (
+                      <>
+                        {/* The word: the label carries the state, not just the
+                            fill — every open cell says "Open" so the teal fill
+                            alone is easy to miss and fails on colour.
+                            .fa-cap-bin-word shrinks every binary word 13px →
+                            10px below the breakpoint (Full included — even at
+                            10px it needs the cell's horizontal padding to also
+                            drop, see .fa-cap-bin-cell). Open/Current/Selected
+                            additionally go visibility:hidden there
+                            (.fa-cap-bin-word-hide) — hidden, not removed, so
+                            the line still reserves the row's height and a cell
+                            showing "Full" next to one showing nothing stay the
+                            same height. "Full" doesn't get that second class,
+                            so it's never hidden, at any width. */}
+                        <span
+                          className={`fa-cap-bin-word${binaryWordHides ? ' fa-cap-bin-word-hide' : ''}`}
+                          style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800 }}
+                        >
+                          {binaryWord}
+                        </span>
+                        {/* The checkmark: Current/Selected only, shown ONLY
+                            below the breakpoint (.fa-cap-bin-icon is display:
+                            none above it) — absolutely centred over the same
+                            box the now-invisible word still reserves, so it
+                            doesn't add a second line. Same glyph as the "on"
+                            state of NewReferralForm's item chips. */}
+                        {binaryIcon && (
+                          <span className="fa-cap-bin-icon" aria-hidden="true">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round">
+                              {CHECK_ICON}
+                            </svg>
+                          </span>
+                        )}
+                      </>
+                    ) : (
+                      <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: numSize }}>
+                        {`${cell.booked}/${cell.cap}`}
+                      </span>
+                    )}
                     {/* Chip line — always present when soft counts are shown, so
                         every row is the same height. soft === 0 renders an
                         invisible copy (visibility:hidden keeps the box, drops it
