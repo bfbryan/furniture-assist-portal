@@ -166,7 +166,7 @@ const BTN_SECONDARY: React.CSSProperties = {
   background: 'white',
   color: '#2C3A4A',
   fontSize: '12px',
-  fontWeight: 600,
+  fontWeight: 700, // Lato ships 400/700; match BTN_PRIMARY's weight
   cursor: 'pointer',
   fontFamily: 'inherit',
 }

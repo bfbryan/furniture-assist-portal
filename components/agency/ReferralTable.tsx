@@ -107,7 +107,8 @@ function classify(r: Referral): GroupKey {
 // ---------------------------------------------------------------- UI atoms
 
 const SECTION_TITLE: React.CSSProperties = {
-  fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: 800,
+  // 700, not 800: Montserrat is loaded at 400/600/700 only.
+  fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: 700,
   letterSpacing: '0.10em', textTransform: 'uppercase', color: '#2A7F6F',
 }
 // Top margin sets the gap between one Saturday's last row and the next date
@@ -137,7 +138,7 @@ function Row({
   return (
     <div className="fa-active-row" style={{ borderTop: '1px solid #F3F0EA' }}>
       <div style={{ minWidth: 0 }}>
-        <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 600, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
+        <a href={`/referrals/${r.id}`} style={{ display: 'block', textDecoration: 'none', fontSize: '14px', fontWeight: 700, color: '#2A7F6F', overflowWrap: 'anywhere' }}>
           {r.clientName}
         </a>
         <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '2px', overflowWrap: 'anywhere' }}>

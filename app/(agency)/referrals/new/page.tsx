@@ -38,7 +38,7 @@ export default async function NewReferralPage() {
 
           {/* Instructions */}
           <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '15px', color: '#1B2B4B', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '15px', color: '#1B2B4B', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#2A7F6F" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
@@ -61,7 +61,7 @@ export default async function NewReferralPage() {
 
           {/* What happens next */}
           <div className="bg-white rounded-xl shadow-sm p-6">
-            <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '15px', color: '#1B2B4B', marginBottom: '16px' }}>
+            <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '15px', color: '#1B2B4B', marginBottom: '16px' }}>
               What Happens Next
             </h2>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
@@ -73,7 +73,7 @@ export default async function NewReferralPage() {
               ].map((step, i, arr) => (
                 <div key={i} style={{ display: 'flex', gap: '12px', paddingBottom: i < arr.length - 1 ? '16px' : 0 }}>
                   <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-                    <div style={{ width: '26px', height: '26px', background: '#2A7F6F', color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '11px', flexShrink: 0 }}>
+                    <div style={{ width: '26px', height: '26px', background: '#2A7F6F', color: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', flexShrink: 0 }}>
                       {step.num}
                     </div>
                     {i < arr.length - 1 && <div style={{ width: '2px', background: '#EDE9E1', flex: 1, marginTop: '4px', minHeight: '16px' }} />}

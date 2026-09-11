@@ -133,7 +133,7 @@ h1, h2, h3, h4, h5, h6 {
   background: rgba(255, 255, 255, 0.08);
   color: rgba(255, 255, 255, 0.45);
   font-size: 13px;
-  font-weight: 600;
+  font-weight: 400; /* Lato (inherited) ships 400/700; disabled + faint, no weight needed */
   font-family: inherit;
   cursor: not-allowed;
   white-space: nowrap;
@@ -152,7 +152,7 @@ h1, h2, h3, h4, h5, h6 {
   background: rgba(255, 255, 255, 0.18);
   color: white;
   font-family: var(--font-montserrat), sans-serif;
-  font-weight: 500;
+  font-weight: 400; /* Montserrat ships 400/600/700, no 500 */
   font-size: 11px;
   letter-spacing: 0.02em;
 }

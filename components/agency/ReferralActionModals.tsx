@@ -85,7 +85,7 @@ export function ConfirmModal({ modal, onConfirm, onClose, loading, error }: {
       onClick={(e) => e.target === e.currentTarget && onClose()}
     >
       <div style={{ background: 'white', borderRadius: '16px', padding: '36px', maxWidth: '440px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
-        <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
+        <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
           {isWithdraw ? 'Withdraw Referral' : 'Cancel Appointment'}
         </h3>
         <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: '24px' }}>
@@ -189,7 +189,7 @@ export function RescheduleModal({ modal, onConfirm, onClose, loading, submitErro
       style={{ background: 'rgba(27,43,75,0.55)', backdropFilter: 'blur(3px)' }}
       onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div style={{ background: 'white', borderRadius: '16px', padding: '32px', maxWidth: '600px', width: '100%', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
-        <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
+        <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '18px', color: '#1B2B4B', marginBottom: '10px' }}>
           Reschedule Appointment
         </h3>
         <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.7, marginBottom: (slot || deadline) ? '10px' : '20px' }}>

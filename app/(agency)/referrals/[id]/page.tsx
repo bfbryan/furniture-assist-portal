@@ -293,7 +293,7 @@ function Card({ accent, title, headerRight, children }: {
     <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
       {accent && <div style={{ background: accent, height: '4px' }} />}
       <div style={{ padding: '16px 24px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '10px' }}>
-        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>{title}</h2>
+        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>{title}</h2>
         {headerRight}
       </div>
       <div style={{ padding: '16px 24px' }}>{children}</div>
@@ -695,7 +695,7 @@ function ItemsRequestedCard({ referral, locked, showLockedBadge, onSaved }: {
                   </svg>
                 )}
               </div>
-              <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: on ? 600 : 400 }}>{item}</span>
+              <span style={{ fontSize: '13px', color: '#2C3A4A', fontWeight: on ? 700 : 400 }}>{item}</span>
             </label>
           )
         })}
@@ -1141,7 +1141,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="15 18 9 12 15 6"/></svg>
             Back
           </button>
-          <div className="fa-detail-header-name" style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, color: '#1B2B4B', minWidth: 0 }}>{referral.clientName}</div>
+          <div className="fa-detail-header-name" style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, color: '#1B2B4B', minWidth: 0 }}>{referral.clientName}</div>
         </div>
 
         <div className="fa-detail-header-actions" style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
@@ -1317,7 +1317,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
           {referral.possibleDuplicate && (
             <div style={{ background: 'rgba(192,57,43,0.06)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '12px', padding: '16px 20px' }}>
-              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#C0392B', marginBottom: '6px' }}>⚠ Possible Duplicate</div>
+              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', color: '#C0392B', marginBottom: '6px' }}>⚠ Possible Duplicate</div>
               <div style={{ fontSize: '12px', color: '#7A8899', lineHeight: 1.6 }}>Our team has flagged this as a possible duplicate and will review before processing.</div>
             </div>
           )}
