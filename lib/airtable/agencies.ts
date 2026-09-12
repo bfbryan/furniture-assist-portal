@@ -165,11 +165,21 @@ export async function getAgencyWithDetails(agencyId: string) {
     // route: only a reconciled agency with a primary admin + email can be
     // invited.
     reconciled: (af['Reconciled'] as boolean) ?? false,
+    // New per-agency gate (added to Airtable, not yet consumed anywhere —
+    // no referral-visibility read checks this field today). Surfaced here
+    // so the detail page can render and persist it; see the PR notes on
+    // agency-detail-rebuild for what still needs to happen before ticking
+    // this actually changes what an agency can see.
+    liveReferrals: (af['Live Referrals'] as boolean) ?? false,
     status: optionalString(af['Status']) ?? '',
     // FIXED: "Registration Date" → "Record Creation Date"
     registrationDate: optionalString(af['Record Creation Date']),
     approvalDate: optionalString(af['Approval Date']),
     invitedDate: optionalString(af['Invited Date']),
+    // Stamped by the claim cascade (lib/airtable/agency-users.ts,
+    // stampFirstLogin) the moment the Primary Admin first signs in — was
+    // never read anywhere on this page before agency-detail-rebuild.
+    claimedDate: optionalString(af['Claimed Date']),
     rejectedDate: optionalString(af['Rejected Date']),
     agencyNumber: optionalString(af['Agency #']),
     possibleDuplicate: (af['Possible Duplicate'] as boolean) ?? false,
@@ -193,6 +203,11 @@ export async function getAgencyWithDetails(agencyId: string) {
         optionalString(r.fields['Record Creation Date']),
       needsReview: (r.fields['Needs Review'] as boolean) ?? false,
       isPrimaryAdmin: primaryAdminId === r.id,
+      // Membership axis (membership-confirmation) — an agency admin's own
+      // assertion that this person works there. Blank = unconfirmed, the
+      // default. This fetch already pulls every field on the row (no
+      // `fields[]` restriction), so no extra read was needed to add this.
+      membershipStatus: optionalString(r.fields['Membership Status']),
     })),
     referralCount: referrals.records.length,
     referrals: referrals.records.map((r: any) => ({
@@ -206,6 +221,21 @@ export async function getAgencyWithDetails(agencyId: string) {
       referralReview: r.fields['Referral Review'] as string,
       appointmentStatus: r.fields['Appointment Status'] as string,
       referredBy: safeLookupString(r.fields['Referring Staff']),
+      // The date a referral should be FILED and GROUPED under — same formula
+      // field, same unwrap, as Dawson's referrals list
+      // (app/dawson/referrals/page.tsx, lib/airtable/referrals.ts:290-296):
+      // the live Appointment Date coalesced with the Original snapshot taken
+      // when a slot was released, so a cancelled referral still files under
+      // the month it was booked for rather than the month it was cancelled.
+      effectiveAppointmentDate:
+        (Array.isArray(r.fields['Effective Appointment Date'])
+          ? (r.fields['Effective Appointment Date'] as string[])[0]
+          : (r.fields['Effective Appointment Date'] as string)) ?? null,
+      // What the agency asked for — only meaningful for a request-status row
+      // (Pending Schedule / Reschedule), which holds no booked slot and so
+      // has no Effective Appointment Date either. Same field Dawson's
+      // referrals list files these rows under.
+      preferredDate: (r.fields['Preferred Date'] as string) ?? null,
     })),
   }
 }
@@ -217,6 +247,31 @@ export async function updateAgencyNotes(id: string, notes: string) {
       method: 'PATCH',
       headers: HEADERS,
       body: JSON.stringify({ fields: { Notes: notes } }),
+    },
+  )
+  if (!res.ok) throw new Error(await res.text())
+  return res.json()
+}
+
+// Reconciled and Live Referrals — the two checkboxes the agency detail page
+// (agency-detail-rebuild) edits directly. Neither had a write path before:
+// Reconciled was only ever ticked by hand in Airtable; Live Referrals is a
+// newer field nothing in the codebase has touched at all. Undefined fields
+// are left alone, matching updateAgencyUserPortalInvite's convention.
+export async function updateAgencyFlags(
+  id: string,
+  update: { reconciled?: boolean; liveReferrals?: boolean },
+) {
+  const fields: Record<string, unknown> = {}
+  if (update.reconciled !== undefined) fields['Reconciled'] = update.reconciled
+  if (update.liveReferrals !== undefined) fields['Live Referrals'] = update.liveReferrals
+
+  const res = await fetch(
+    `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Agencies')}/${id}`,
+    {
+      method: 'PATCH',
+      headers: HEADERS,
+      body: JSON.stringify({ fields }),
     },
   )
   if (!res.ok) throw new Error(await res.text())
