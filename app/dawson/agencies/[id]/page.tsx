@@ -891,6 +891,17 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
     )
   }
 
+  // Renders only while `key` is the one pending confirmation, right next to
+  // the button that armed it — never a fixed, separately-placed control.
+  // `confirm` is a single shared string, so only one of these is ever
+  // showing anywhere on the page at a time.
+  const cancelBtn = (key: string) => confirm === key && (
+    <button key={`cancel-${key}`} onClick={() => { setConfirm(null); setInviteNote(null) }}
+      style={{ padding: '9px 14px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
+      Cancel
+    </button>
+  )
+
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
 
@@ -966,20 +977,24 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
       </header>
 
       {/* ============ STATE OF THIS AGENCY — timeline, controls, and Mark Inactive in one row ============
-          Timeline far left — it's the narrative and reads first. Routine
-          controls (status-change buttons, invite, the Reconciled/Live
-          Referrals toggles) in the middle. Mark Inactive — the one
-          destructive action on this page — pulled out to the far right,
-          away from the routine controls, so it isn't reached for casually.
+          Left to right: timeline (the narrative, reads first) — Reconciled /
+          Live Referrals checkboxes — the primary action for this agency's
+          status (Approve/Reject, Reconsider, Reinstate, or Send/Resend
+          Invite, whichever applies) — Mark Inactive. The primary action and
+          Mark Inactive sit adjacent and are kept visually distinct by tone
+          alone: the primary action keeps confirmBtn's teal/red/gold, Mark
+          Inactive stays grey/muted — the same distinction that already told
+          them apart before they were neighbors. Mark Inactive is the one
+          destructive action on this page and stays rightmost, at the true
+          edge of the row, so it isn't reached for casually.
 
-          Note: the "Cancel" button that backs out of any pending confirm
-          (including a pending Mark Inactive) still lives with the routine
-          controls in the middle, not next to Mark Inactive itself — a
-          Mark-Inactive click that Dawson wants to back out of now means
-          looking across the row rather than right next to the button that
-          started it. Flagged, not fixed; moving Cancel next to Mark Inactive
-          would put a second control at the "far edge" this change is trying
-          to keep spare.
+          Cancel is not a fixed control anywhere on this row — it renders
+          only beside whichever action currently has a confirm pending (see
+          cancelBtn above), Mark Inactive included. It's never a permanent
+          second control at the far edge: it appears with the pending
+          action, the choice gets made, both disappear together. Elsewhere
+          in this portal a destructive action's confirm and cancel always
+          sit together; a single Cancel fixed in the middle broke that here.
 
           The only card in this page with an accent, and only conditionally —
           see needsAttention above for exactly what earns it. The other four
@@ -990,15 +1005,38 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
           <CompactTimeline agency={agency} />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: '#1B2B4B', cursor: 'pointer' }}>
+              <input type="checkbox" checked={agency.reconciled} onChange={e => handleFlagChange('reconciled', e.target.checked)} />
+              Reconciled
+            </label>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: '#1B2B4B', cursor: 'pointer' }}>
+              <input type="checkbox" checked={agency.liveReferrals} onChange={e => handleFlagChange('liveReferrals', e.target.checked)} />
+              Live Referrals
+            </label>
+          </div>
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {agency.status === 'Pending' && (
               <>
                 {confirmBtn('Approved', 'Approve', 'Confirm Approve', 'teal', () => handleStatusChange('Approved'))}
+                {cancelBtn('Approved')}
                 {confirmBtn('Rejected', 'Reject', 'Confirm Reject', 'red', () => handleStatusChange('Rejected'))}
+                {cancelBtn('Rejected')}
               </>
             )}
-            {agency.status === 'Rejected' && confirmBtn('Pending', 'Reconsider', 'Confirm', 'gold', () => handleStatusChange('Pending'))}
-            {agency.status === 'Inactive' && confirmBtn('Approved', 'Reinstate', 'Confirm', 'teal', () => handleStatusChange('Approved'))}
+            {agency.status === 'Rejected' && (
+              <>
+                {confirmBtn('Pending', 'Reconsider', 'Confirm', 'gold', () => handleStatusChange('Pending'))}
+                {cancelBtn('Pending')}
+              </>
+            )}
+            {agency.status === 'Inactive' && (
+              <>
+                {confirmBtn('Approved', 'Reinstate', 'Confirm', 'teal', () => handleStatusChange('Approved'))}
+                {cancelBtn('Approved')}
+              </>
+            )}
 
             {canInviteAgency && (
               <>
@@ -1012,6 +1050,7 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
                   }}>
                   {inviteLoading ? '…' : confirm === 'invite' ? (isResendInvite ? 'Confirm Resend' : 'Confirm Send Invite') : (isResendInvite ? 'Resend Invite' : 'Send Invite')}
                 </button>
+                {cancelBtn('invite')}
                 {inviteBlockReason && (
                   <span style={{ fontSize: '12px', color: '#7A8899', maxWidth: '220px', lineHeight: 1.35 }}>{inviteBlockReason}</span>
                 )}
@@ -1025,28 +1064,15 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
                 )}
               </>
             )}
-
-            {confirm && (
-              <button onClick={() => { setConfirm(null); setInviteNote(null) }}
-                style={{ padding: '9px 14px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
-                Cancel
-              </button>
-            )}
           </div>
 
-          <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: '#1B2B4B', cursor: 'pointer' }}>
-              <input type="checkbox" checked={agency.reconciled} onChange={e => handleFlagChange('reconciled', e.target.checked)} />
-              Reconciled
-            </label>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: '#1B2B4B', cursor: 'pointer' }}>
-              <input type="checkbox" checked={agency.liveReferrals} onChange={e => handleFlagChange('liveReferrals', e.target.checked)} />
-              Live Referrals
-            </label>
+          {canMarkInactive && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+              {confirmBtn('Inactive', 'Mark Inactive', 'Confirm Inactive', 'grey', () => handleStatusChange('Inactive'))}
+              {cancelBtn('Inactive')}
+            </div>
+          )}
           </div>
-          </div>
-
-          {canMarkInactive && confirmBtn('Inactive', 'Mark Inactive', 'Confirm Inactive', 'grey', () => handleStatusChange('Inactive'))}
           </div>
 
           {(confirm === 'invite' || inviteNote) && (
