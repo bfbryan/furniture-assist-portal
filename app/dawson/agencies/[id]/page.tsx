@@ -268,40 +268,52 @@ function buildTimeline(agency: Agency): TimelineSegment[] {
   ]
 }
 
-// Compact inline timeline: dot + label + short date per segment, no
-// connecting rules between them. The earlier version drew a stepper — dots
-// linked by rules, ~90px per segment, one wide row on its own line — which
-// read fine but was wider than the controls needed and forced the timeline
-// onto a line of its own below them. The connecting rules carried no
-// information a reader needs (adjacent-reached is implied by the dots
-// themselves being filled), so this drops them and lets each segment be a
-// self-contained chip.
+// Compact inline timeline: dot + label + short date per segment, joined by
+// small arrows to show progression. The earlier version drew a stepper —
+// dots linked by full-width connecting rules, ~90px per segment, one wide
+// row on its own line — which read fine but was wider than it needed to be
+// and forced the timeline onto a line of its own below the controls. Rules
+// carried no information a reader needs (adjacent-reached is implied by the
+// dots themselves being filled), so those were dropped; arrows are a
+// different, much cheaper mark that shows the same direction of travel
+// without a full rule's width.
 //
-// Measured (Playwright, real fonts, real stylesheet): five chips with short
-// "Mon DD" dates run 566.5px natural width — fits on one line beside the
-// controls at most viewport widths this page is used at. Below ~550px it
-// wraps via `flexWrap: wrap`; tested at 550/480/420/360px, each wraps
-// cleanly to two lines with every segment staying intact as one flex child
-// (no clipping, no mid-segment break).
+// Measured (Playwright, real fonts, real stylesheet, against this exact
+// markup): five chips with short "Mon DD" dates and no arrows run 612px
+// natural width; adding an arrow glyph in each of the four gaps between them
+// pushes that to 660px — close to what the original full-date, no-arrow
+// version needed (652px), same tradeoff the arrows were warned to risk.
+// Below ~660px the row wraps via `flexWrap: wrap`; tested with arrows at
+// 550/480/420/360px, each wraps cleanly to two lines (34px height, no
+// scrollWidth overflow) with every chip and arrow staying intact — the same
+// clean wrap the no-arrow version had, so the arrows were kept rather than
+// dropped.
 function CompactTimeline({ agency }: { agency: Agency }) {
   const segments = buildTimeline(agency)
+  const nodes: React.ReactNode[] = []
+  segments.forEach((s, i) => {
+    if (i > 0) {
+      nodes.push(<span key={`arrow-${i}`} style={{ fontSize: '10px', color: '#D8DEE6' }}>→</span>)
+    }
+    nodes.push(
+      <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+        <span style={{
+          width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
+          background: s.reached ? (s.tone === 'red' ? '#C0392B' : '#2A7F6F') : 'white',
+          border: `1.5px solid ${s.reached ? (s.tone === 'red' ? '#C0392B' : '#2A7F6F') : '#D8DEE6'}`,
+        }} />
+        <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11.5px', color: s.reached ? '#1B2B4B' : '#B8C1CC' }}>
+          {s.label}
+        </span>
+        <span style={{ fontSize: '11px', color: s.reached ? '#7A8899' : '#C7CFD7' }}>
+          {s.reached ? (s.date ?? 'Reached') : 'Not yet'}
+        </span>
+      </div>
+    )
+  })
   return (
-    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 18px' }}>
-      {segments.map(s => (
-        <div key={s.label} style={{ display: 'flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
-          <span style={{
-            width: '7px', height: '7px', borderRadius: '50%', flexShrink: 0,
-            background: s.reached ? (s.tone === 'red' ? '#C0392B' : '#2A7F6F') : 'white',
-            border: `1.5px solid ${s.reached ? (s.tone === 'red' ? '#C0392B' : '#2A7F6F') : '#D8DEE6'}`,
-          }} />
-          <span style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11.5px', color: s.reached ? '#1B2B4B' : '#B8C1CC' }}>
-            {s.label}
-          </span>
-          <span style={{ fontSize: '11px', color: s.reached ? '#7A8899' : '#C7CFD7' }}>
-            {s.reached ? (s.date ?? 'Reached') : 'Not yet'}
-          </span>
-        </div>
-      ))}
+    <div style={{ display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: '6px 10px' }}>
+      {nodes}
     </div>
   )
 }
@@ -926,15 +938,11 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
           </div>
         </div>
 
+        {/* Least to most significant, left to right, ending on Status — the
+            primary fact about the agency. Reconciled qualifies that fact;
+            "N unconfirmed", when present, qualifies the agency's staff
+            underneath both. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 0' }}>
-          <span style={{
-            padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700,
-            letterSpacing: '0.06em', textTransform: 'uppercase',
-            background: statusColors.badgeBg, color: statusColors.badgeText,
-          }}>
-            {agency.status}
-          </span>
-          <Pill label={agency.reconciled ? 'Reconciled' : 'Not Reconciled'} tone={agency.reconciled ? 'teal' : 'gold'} />
           {/* Exception pill: absent at zero, not muted — the normal case
               (everyone confirmed) needs no badge at all, same reasoning as
               hiding an empty group. */}
@@ -946,17 +954,32 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
               {unconfirmedStaff} unconfirmed
             </span>
           )}
+          <Pill label={agency.reconciled ? 'Reconciled' : 'Not Reconciled'} tone={agency.reconciled ? 'teal' : 'gold'} />
+          <span style={{
+            padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700,
+            letterSpacing: '0.06em', textTransform: 'uppercase',
+            background: statusColors.badgeBg, color: statusColors.badgeText,
+          }}>
+            {agency.status}
+          </span>
         </div>
       </header>
 
-      {/* ============ STATE OF THIS AGENCY — actions + lifecycle in one card ============
-          Controls left, timeline right, on the same row: the controls and
-          the timeline are both "state of this agency" at a glance, and
-          stacking them cost a whole extra row of card height for a timeline
-          that, compacted (see CompactTimeline), is no wider than the controls
-          typically are. Falls back to its own row below the controls, then
-          wraps internally to two lines, as the card narrows — see
-          CompactTimeline's own comment for what was measured.
+      {/* ============ STATE OF THIS AGENCY — timeline, controls, and Mark Inactive in one row ============
+          Timeline far left — it's the narrative and reads first. Routine
+          controls (status-change buttons, invite, the Reconciled/Live
+          Referrals toggles) in the middle. Mark Inactive — the one
+          destructive action on this page — pulled out to the far right,
+          away from the routine controls, so it isn't reached for casually.
+
+          Note: the "Cancel" button that backs out of any pending confirm
+          (including a pending Mark Inactive) still lives with the routine
+          controls in the middle, not next to Mark Inactive itself — a
+          Mark-Inactive click that Dawson wants to back out of now means
+          looking across the row rather than right next to the button that
+          started it. Flagged, not fixed; moving Cancel next to Mark Inactive
+          would put a second control at the "far edge" this change is trying
+          to keep spare.
 
           The only card in this page with an accent, and only conditionally —
           see needsAttention above for exactly what earns it. The other four
@@ -964,6 +987,8 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
       <div style={{ padding: '20px 32px 0' }}>
         <div style={{ ...CARD, borderLeft: `3px solid ${needsAttention ? '#C9A84C' : 'transparent'}` }}>
           <div style={{ padding: '16px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '14px 28px' }}>
+          <CompactTimeline agency={agency} />
+
           <div style={{ display: 'flex', alignItems: 'center', gap: '24px', flexWrap: 'wrap' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
             {agency.status === 'Pending' && (
@@ -1001,8 +1026,6 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
               </>
             )}
 
-            {canMarkInactive && confirmBtn('Inactive', 'Mark Inactive', 'Confirm Inactive', 'grey', () => handleStatusChange('Inactive'))}
-
             {confirm && (
               <button onClick={() => { setConfirm(null); setInviteNote(null) }}
                 style={{ padding: '9px 14px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
@@ -1023,7 +1046,7 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
           </div>
           </div>
 
-          <CompactTimeline agency={agency} />
+          {canMarkInactive && confirmBtn('Inactive', 'Mark Inactive', 'Confirm Inactive', 'grey', () => handleStatusChange('Inactive'))}
           </div>
 
           {(confirm === 'invite' || inviteNote) && (
