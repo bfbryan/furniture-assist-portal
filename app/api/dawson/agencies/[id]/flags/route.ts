@@ -29,6 +29,19 @@ export async function PATCH(
     return NextResponse.json({ error: 'No change specified' }, { status: 400 })
   }
 
-  await updateAgencyFlags(id, { reconciled, liveReferrals })
-  return NextResponse.json({ ok: true })
+  // updateAgencyFlags throws on a rejected Airtable write. Left uncaught,
+  // that becomes Next's generic 500 — the checkbox correctly reverts
+  // (client checks !res.ok), but the response carries no indication of WHAT
+  // Airtable rejected, so finding out means a code trace instead of reading
+  // the response. Caught here and surfaced instead.
+  try {
+    await updateAgencyFlags(id, { reconciled, liveReferrals })
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    console.error('updateAgencyFlags failed:', err)
+    return NextResponse.json(
+      { error: err instanceof Error ? err.message : 'Update failed' },
+      { status: 500 },
+    )
+  }
 }

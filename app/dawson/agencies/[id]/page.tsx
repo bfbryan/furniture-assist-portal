@@ -442,12 +442,33 @@ function ReferralsCard({ referrals }: { referrals: Referral[] }) {
 
   const todayISO = easternTodayISO()
 
+  // Filters on the same fileDateOf the grouping uses, not Referral Date
+  // (submission) — the two used to disagree, so a referral submitted four
+  // months ago for an appointment next week fell outside the default 90-day
+  // window and silently never appeared on a card whose whole purpose is
+  // "when is this family being served." Now both axes agree.
+  //
+  // fileDateOf can be in the future (an upcoming appointment) as well as the
+  // past, unlike Referral Date, which was always behind today — so "90
+  // days" here means a symmetric window, 90 days either side of today, not
+  // "the last 90 days." That's a judgment call, not a spec Ben gave; if he
+  // wants a forward-only or backward-only window instead, this is the one
+  // line to change.
+  //
+  // Rows with no file date at all ("No date yet" — not yet scheduled, no
+  // preferred date given) have nothing to measure against a range, so they
+  // are exempt from every range value, including 90 days — matching how
+  // they're already exempt from month grouping (their own pinned-last
+  // bucket, always shown). Filtering them out under the default range would
+  // be the exact silently-missing-row failure this change exists to close.
   const withinRange = (r: Referral): boolean => {
     if (range === 'all') return true
-    const days = differenceInDaysISO(r.referralDate, todayISO)
+    const fd = fileDateOf(r)
+    if (fd === null) return true
+    const days = differenceInDaysISO(fd, todayISO)
     if (days === null) return true
     const limit = range === '90' ? 90 : 365
-    return days <= limit
+    return Math.abs(days) <= limit
   }
 
   const counts = useMemo(() => {
