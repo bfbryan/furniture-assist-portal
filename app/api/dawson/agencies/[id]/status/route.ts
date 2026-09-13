@@ -4,6 +4,7 @@ import { clerkClient } from '@clerk/nextjs/server'
 import { NextRequest, NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
+import { easternTodayISO } from '@/lib/dates'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -53,6 +54,18 @@ export async function PATCH(
 
   // Update AT status
   const fields: Record<string, unknown> = { Status: status }
+
+  // agency-detail-rebuild: only the auto-claim cascade (stampFirstLogin)
+  // ever stamped Approval Date — this manual path (Dawson clicking Approve
+  // on a Pending agency) flipped Status without it, so the detail page's
+  // lifecycle timeline had no date for a segment it otherwise shows as
+  // reached. Stamp it here too, but only when transitioning TO Approved and
+  // it isn't already set — an agency that was Approved, went Inactive, and
+  // is now Reinstated keeps its original approval date rather than getting
+  // today's.
+  if (status === 'Approved' && !agencyData.fields['Approval Date']) {
+    fields['Approval Date'] = easternTodayISO()
+  }
 
   const res = await fetch(
     `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent('Agencies')}/${id}`,
