@@ -292,14 +292,15 @@ const SUBJECT: React.CSSProperties = { color: '#1B2B4B', fontWeight: 700 }
 // name, plus `extra.count` / `extra.upcoming` for 'not-here' — the number of
 // referrals about to be hidden, and how many of those still have a live,
 // future-dated appointment (fetched when the dialog opens, null while
-// loading; both come back from the same request).
+// loading; both come back from the same request) — and `extra.membershipStatus`,
+// the row's status at the moment the dialog opened.
 //
 // "No longer works here" (deactivate) and "Not at this office" (not-here) are
 // deliberately different: the first is routine and reversible with no data
 // consequence — the person's referral history stays visible to the agency.
 // The second hides everything they ever referred and is the rare, destructive
 // one, so it names the count and it alone.
-const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string, extra?: { count: number | null; upcoming?: number | null }) => React.ReactNode; button: string; danger?: boolean }>> = {
+const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string, extra?: { count: number | null; upcoming?: number | null; membershipStatus?: string | null }) => React.ReactNode; button: string; danger?: boolean }>> = {
   revoke: {
     title: 'Revoke invitation',
     body: n => <>Revoke the invitation for <strong style={SUBJECT}>{n}</strong>? Their invite link will stop working.</>,
@@ -310,6 +311,30 @@ const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string, extr
     body: (n, extra) => {
       const c = extra?.count
       const up = extra?.upcoming
+
+      // Unconfirmed: nothing is visible today regardless of what the count
+      // endpoint returns (it's scoped to Confirmed rows, so it would read 0
+      // here anyway) — but that's a different fact from "this person has no
+      // referrals", which may be false. The real number is deliberately not
+      // shown: revealing it would tell the admin someone they're declaring
+      // "not ours" has referrals on file under their agency, which is
+      // another office's business, not theirs. Consequence only, no count.
+      //
+      // This branch skips the routine "will be marked as not working at your
+      // office" lead-in the other branches share below — it's redundant with
+      // "marking them not at this office" in the sentence itself — but keeps
+      // the shared undo trailer, since the action is reversible the same way.
+      if (extra?.membershipStatus !== 'Confirmed') {
+        return (
+          <>
+            <strong style={SUBJECT}>{n}</strong> hasn&apos;t been confirmed, so nothing is
+            visible to hide. If they do have referrals with us, marking them not at this
+            office means those stay hidden from your agency. You can undo it by confirming{' '}
+            {n} again.
+          </>
+        )
+      }
+
       return (
         <>
           <strong style={SUBJECT}>{n}</strong> will be marked as not working at your
@@ -352,7 +377,12 @@ export default function StaffList({
   // 'warn' = the action succeeded but the invite email did not send. Styled
   // amber, and it does NOT auto-dismiss — it points at Resend Invite.
   const [flash, setFlash] = useState<{ tone: 'ok' | 'err' | 'warn'; text: string } | null>(null)
-  const [confirm, setConfirm] = useState<{ action: ActionKey; id: string; name: string } | null>(null)
+  // membershipStatus rides along from the row at the moment the dialog opens
+  // (not re-derived from `members` while it's open) — 'not-here' needs it to
+  // pick the right consequence sentence: an unconfirmed row has nothing
+  // visible to hide, which reads differently than a confirmed one with zero
+  // referrals. See CONFIRM['not-here'].body below.
+  const [confirm, setConfirm] = useState<{ action: ActionKey; id: string; name: string; membershipStatus: string | null } | null>(null)
   // Referrals about to be hidden by "Not at this office", and how many of
   // those still have a live, future-dated appointment. Fetched only while
   // that dialog is open; null = not yet loaded. The row itself never shows a
@@ -367,16 +397,22 @@ export default function StaffList({
     return () => document.removeEventListener('keydown', onKey)
   }, [confirm, loading])
 
-  // Load the referral count when the "Not at this office" dialog opens. At this
-  // point the row is still Confirmed, so the count is the real number that will
-  // disappear. Scoped + counted server-side (GET .../referral-count), which
-  // also splits out how many have a future appointment date — hiding a
-  // client with a Saturday still booked is a different decision from hiding
-  // closed history, and the dialog says so when it applies.
+  // Load the referral count when the "Not at this office" dialog opens on a
+  // Confirmed row — the count is the real number that will disappear. Scoped
+  // + counted server-side (GET .../referral-count), which also splits out
+  // how many have a future appointment date — hiding a client with a
+  // Saturday still booked is a different decision from hiding closed
+  // history, and the dialog says so when it applies.
+  //
+  // Skipped for an unconfirmed row: the endpoint's predicate requires
+  // Membership = Confirmed, so it would only ever read back 0 here — not a
+  // real "no referrals" answer, just this query's scope — and the dialog
+  // deliberately never shows a count for that case anyway (see
+  // CONFIRM['not-here'].body). No point in the request.
   useEffect(() => {
     setNotHereCount(null)
     setNotHereUpcoming(null)
-    if (!confirm || confirm.action !== 'not-here') return
+    if (!confirm || confirm.action !== 'not-here' || confirm.membershipStatus !== 'Confirmed') return
     let cancelled = false
     fetch(`/api/admin/staff/${confirm.id}/referral-count`)
       .then(r => (r.ok ? r.json() : { count: null, upcoming: null }))
@@ -480,7 +516,7 @@ export default function StaffList({
   // Fires directly (with a flash) or opens the confirm dialog first.
   const act = (action: ActionKey, m: Member) => {
     setOpenMenu(null)
-    if (CONFIRM[action]) setConfirm({ action, id: m.id, name: `${m.firstName} ${m.lastName}` })
+    if (CONFIRM[action]) setConfirm({ action, id: m.id, name: `${m.firstName} ${m.lastName}`, membershipStatus: m.membershipStatus })
     else run(action, m.id)
   }
 
@@ -663,7 +699,7 @@ export default function StaffList({
         >
           <div style={{ background: 'white', borderRadius: '16px', padding: '32px', maxWidth: '420px', width: '100%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
             <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '17px', color: '#1B2B4B', marginBottom: '10px' }}>{cc.title}</h3>
-            <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>{cc.body(confirm.name, { count: notHereCount, upcoming: notHereUpcoming })}</p>
+            <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>{cc.body(confirm.name, { count: notHereCount, upcoming: notHereUpcoming, membershipStatus: confirm.membershipStatus })}</p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setConfirm(null)} disabled={loading}
                 style={{ padding: '9px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
