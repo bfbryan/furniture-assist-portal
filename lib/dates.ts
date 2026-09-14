@@ -66,6 +66,31 @@ export function formatEasternTimestamp(
   return date.toLocaleDateString('en-US', { ...options, timeZone: EASTERN_TIME_ZONE })
 }
 
+/**
+ * "today" · "yesterday" · "5 days ago" · "3 weeks ago" · "4 months ago".
+ *
+ * Extracted from components/agency/StaffList.tsx (Sep 2026) when the Dawson
+ * agency detail page needed the same relative-time phrasing for a second
+ * "last login" reading — one shared formatter so the two surfaces can't
+ * drift on wording, even though they read the timestamp from different
+ * places (see the account-state column's own comment on that).
+ *
+ * Plain epoch-ms math, not an Eastern calendar day — a "how long ago" phrase
+ * doesn't have the date-only field's off-by-one trap this file otherwise
+ * guards against.
+ */
+export function formatRelativeTime(value: string | number | null | undefined): string | null {
+  if (value === null || value === undefined || value === '') return null
+  const then = typeof value === 'number' ? value : new Date(value).getTime()
+  if (Number.isNaN(then)) return null
+  const days = Math.floor((Date.now() - then) / 86_400_000)
+  if (days <= 0) return 'today'
+  if (days === 1) return 'yesterday'
+  if (days < 21) return `${days} days ago`
+  if (days < 60) return `${Math.round(days / 7)} weeks ago`
+  return `${Math.round(days / 30)} months ago`
+}
+
 // ---------- (2) date-only 'YYYY-MM-DD' values ----------
 
 /**

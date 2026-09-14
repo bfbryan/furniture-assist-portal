@@ -23,7 +23,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { DAWSON_PAGE_BAR_HEIGHT } from '@/components/internal/DawsonPageBar'
 import { cityStateZip } from '@/lib/address'
-import { formatEasternTimestamp, formatDateOnly, easternTodayISO, differenceInDaysISO } from '@/lib/dates'
+import { formatEasternTimestamp, formatDateOnly, formatRelativeTime, easternTodayISO, differenceInDaysISO } from '@/lib/dates'
 import { matchesSearch } from '@/lib/search'
 
 // ---------------------------------------------------------------------------
@@ -49,6 +49,11 @@ type AgencyUser = {
   membershipStatus: string | null
   // Ben's own hand-ticked check on a bounced send, not an automated flag.
   emailBounce: boolean
+  // Account-state axis — see AccountState below. Separate from
+  // membershipStatus on purpose.
+  portalInviteStatus: string
+  claimedDate: string | null
+  lastLogin: string | null
 }
 
 type Referral = {
@@ -168,6 +173,37 @@ function EmailBouncePill() {
       ⚠ Bounced
     </span>
   )
+}
+
+// Account state — does this person have a working portal login, as distinct
+// from MembershipPill's axis beside it (does this person work at the agency
+// at all). Deliberately plain text, not a second colored pill: the two
+// answer different questions, and giving them identical treatment is how
+// they'd start reading as agreeing with (or contradicting) each other.
+//
+// lastLogin here is Airtable's 'Last Login' field — stamped on every portal
+// sign-in — not Clerk's lastSignInAt, which is what the agency-side Team
+// page reads for the same fact. Two different sources for the same kind of
+// answer, on purpose (see the mapping in lib/airtable/agencies.ts); the two
+// can disagree without either being wrong.
+function AccountState({ portalInviteStatus, invitedDate, lastLogin }: {
+  portalInviteStatus: string
+  invitedDate: string | null
+  lastLogin: string | null
+}) {
+  const style: React.CSSProperties = { fontSize: '11px', color: '#7A8899', whiteSpace: 'nowrap' }
+  if (portalInviteStatus === 'Not Invited') {
+    return <span style={style}>Not invited</span>
+  }
+  if (portalInviteStatus === 'Invite Sent') {
+    return (
+      <span style={style}>
+        Invited {formatEasternTimestamp(invitedDate, { month: 'short', day: 'numeric', year: 'numeric' })}
+      </span>
+    )
+  }
+  // Claimed
+  return <span style={style}>{lastLogin ? `Last login ${formatRelativeTime(lastLogin)}` : 'Never signed in'}</span>
 }
 
 function Pill({ label, tone }: { label: string; tone: 'teal' | 'gold' | 'grey' | 'red' }) {
@@ -1171,11 +1207,23 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
                         )}
                       </div>
                       <div style={{ fontSize: '11.5px', color: '#7A8899', marginTop: '2px', overflowWrap: 'anywhere' }}>
-                        {formatPhoneDisplay(u.phone) ?? 'no phone on file'} · {u.email ?? <em>no email on file</em>}
+                        {formatPhoneDisplay(u.phone) ?? 'no phone on file'} ·{' '}
+                        {u.email ? (
+                          <a href={`mailto:${u.email}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{u.email}</a>
+                        ) : (
+                          <em>no email on file</em>
+                        )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                       {u.emailBounce && <EmailBouncePill />}
+                      {u.membershipStatus !== 'Not At This Office' && (
+                        <AccountState
+                          portalInviteStatus={u.portalInviteStatus}
+                          invitedDate={u.invitedDate}
+                          lastLogin={u.lastLogin}
+                        />
+                      )}
                       <MembershipPill status={u.membershipStatus} />
                     </div>
                   </div>

@@ -212,6 +212,22 @@ export async function getAgencyWithDetails(agencyId: string) {
       // flag. Same "already fetched, just not mapped" story as
       // membershipStatus above.
       emailBounce: (r.fields['Email Bounce'] as boolean) ?? false,
+      // Account-state axis (Dawson's Team card): does this person have a
+      // working portal login, as distinct from membershipStatus above (does
+      // this person work at the agency at all). Same "already fetched, just
+      // not mapped" story as membershipStatus and emailBounce.
+      portalInviteStatus: optionalString(r.fields['Portal Invite Status']) ?? 'Not Invited',
+      claimedDate: optionalString(r.fields['Claimed Date']),
+      // Airtable's 'Last Login' field, stamped by stampLastLogin() on every
+      // portal sign-in (lib/airtable/agency-users.ts) — deliberately NOT
+      // Clerk's lastSignInAt, which is what the agency-side Team page reads
+      // for the same fact. The two surfaces read two different sources for
+      // "when did this person last sign in" on purpose: this page has no
+      // Clerk client in its data path, and the Airtable field exists
+      // precisely so Dawson can see the answer without one. If the two ever
+      // disagree, that's the two sources drifting, not one of them being
+      // wrong — don't "fix" this by pointing both at Clerk.
+      lastLogin: optionalString(r.fields['Last Login']),
     })),
     referralCount: referrals.records.length,
     referrals: referrals.records.map((r: any) => ({
