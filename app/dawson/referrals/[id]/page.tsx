@@ -9,8 +9,9 @@ import {
   IconBtn, RescheduleIcon, CancelIcon, RESCHEDULE_COLOR, CANCEL_COLOR,
 } from '@/components/internal/IconBtn'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
-import { easternTodayISO, formatDob } from '@/lib/dates'
+import { easternTodayISO, formatDob, differenceInDaysISO } from '@/lib/dates'
 import { NO_SHOW_RESCHEDULE_WINDOW_DAYS } from '@/lib/referrals/no-show-window'
+import { getPortalStatus } from '@/lib/referrals/edit-window'
 
 
 type ItemsDisbursed = {
@@ -51,8 +52,31 @@ type Referral = {
   referralDate: string
   referralReview: string
   appointmentStatus: string
+  // Raw, live Appointment Date/Time — "is there a live booking right now."
+  // Empties on cancel/withdraw. Used for apptDatePassed / daysSinceNoShow,
+  // NOT for the meta strip's Appointment cell — see effectiveAppointmentDate.
   appointmentDate: string | null
   appointmentTime: string | null
+  // The live Appointment Date coalesced with the Original snapshot —
+  // "what slot is or was this referral for," the display question. Reads
+  // the same {Effective Appointment Date} formula the agency page and
+  // referrals list use, so a cancelled referral shows the slot it was
+  // booked for here instead of a blank cell.
+  effectiveAppointmentDate: string | null
+  // The slot this referral last held before a cancel/reschedule released
+  // it. Single-value, overwritten every time — see the "Previously"
+  // sub-line, which is the only honest way to show it.
+  originalAppointmentDate: string | null
+  originalAppointmentTime: string | null
+  // What the agency ASKED for, as opposed to what is currently booked.
+  // Only meaningful while Appointment Status is 'Reschedule'.
+  preferredDate: string | null
+  preferredTime: string | null
+  schedulingFlexibility: string | null
+  // Stamped when Appointment Status is set to 'Reschedule'. Single-value,
+  // overwritten on every new request — no history of past requests, only
+  // the current one if there is one.
+  rescheduleRequestedAt: string | null
   appointmentSlipUrl: string | null
   // The post-visit receipt PDF. getReferralById() has always returned this —
   // the field was simply missing from this type, so the page dropped it on the
@@ -64,10 +88,10 @@ type Referral = {
   // staff identity (Excel Branch c — no email, no name).
   referredBy: string | null
   referringAgency: string | null
-  referringAgencyId: string | null           // NEW: for link to Agency detail page
-  referredByPhone: string | null
+  referringAgencyId: string | null           // for link to Agency detail page
+  staffPhone: string | null
   agencyEmail: string | null
-  referringStaffLinkId: string | null        // link to Agency User — for future Staff ID deep-link
+  referringStaffId: string | null            // link to Agency User — for Staff ID deep-link
   possibleDuplicate: boolean
   // Aug 2026: back these with two Airtable checkbox fields on Client
   // Referrals — "Ready for Post-Appt Email" (Dawson flips this after
@@ -154,6 +178,21 @@ function formatDate(dateStr: string | null) {
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
+// "requested 6 days ago" / "requested today" — mirrors Needs Action's own
+// local daysAgo/agePhrase (app/dawson/needs-action/page.tsx) rather than a
+// shared helper, since neither is exported there; same voice, not a new
+// convention. rescheduleRequestedAt is a real instant (dateTime), not a
+// date-only value, so this slices to the date portion the same way
+// Needs Action's own daysAgo does before diffing.
+function requestAge(iso: string | null, todayISO: string): string | null {
+  if (!iso) return null
+  const days = differenceInDaysISO(iso.slice(0, 10), todayISO)
+  if (days === null) return null
+  if (days <= 0) return 'requested today'
+  if (days === 1) return 'requested yesterday'
+  return `requested ${days} days ago`
+}
+
 
 // DOB comes from AT in "M/D/YYYY" format (created by our toMDY helper).
 // The native <input type="date"> needs YYYY-MM-DD. These two convert both ways.
@@ -237,16 +276,15 @@ function twoColumn(count: number): React.CSSProperties {
 }
 
 
-function getPortalStatus(review: string, status: string) {
-  if (review === 'Rejected') return 'Rejected'
-  if (review === 'Withdrawn') return 'Withdrawn'
-  if (status === 'Cancelled') return 'Cancelled'
-  if (status === 'Completed') return 'Completed'
-  if (review === 'Pending') return 'Submitted'
-  if (status === 'Pending Schedule') return 'Scheduling'
-  if (status === 'Scheduled') return 'Scheduled'
-  return status
-}
+// getPortalStatus itself is imported from lib/referrals/edit-window.ts (the
+// agency portal's own copy) rather than kept as a local duplicate — the two
+// had drifted: the shared one checks Appointment Status === 'Reschedule'
+// before Referral Review === 'Pending', so a referral in that combination
+// resolves to 'Reschedule'; this page's old local copy checked review first
+// and would have resolved to 'Submitted' instead. Every case reachable
+// today produces the same output either way (checked live: zero referrals
+// currently hold that combination), but nothing prevented it recurring, and
+// importing removes the drift instead of documenting around it.
 
 
 const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText: string }> = {
@@ -299,7 +337,7 @@ function Card({
     <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', overflow: 'hidden' }}>
       <div style={{ background: accent, height: '4px' }} />
       <div style={{ padding: '14px 20px', borderBottom: '1px solid #EDE9E1', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>{title}</h2>
+        <h2 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', color: '#1B2B4B', margin: 0 }}>{title}</h2>
         {headerRight}
       </div>
       <div style={{ padding: '12px 20px' }}>
@@ -672,7 +710,7 @@ function ItemsDisbursedCard({
                     }}>
                       {i.label}
                       {changed && (
-                        <span style={{ fontSize: '10.5px', fontWeight: 600, color: '#B9C2CC', marginLeft: '6px' }}>
+                        <span style={{ fontSize: '10.5px', color: '#B9C2CC', marginLeft: '6px' }}>
                           was {baseline[i.field]}
                         </span>
                       )}
@@ -1429,7 +1467,7 @@ function EmailHistoryCard({ referral, entries }: {
           {noteworthy.map(e => (
             <div key={e.id} style={{ padding: '7px 0', borderBottom: '1px solid #F7F5F1' }}>
               <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '13px', fontWeight: 600, color: '#1B2B4B', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <span style={{ fontSize: '13px', fontWeight: 700, color: '#1B2B4B', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   {e.type ?? 'Unknown email'}
                 </span>
                 <EmailStatusPill status={e.status} />
@@ -1642,7 +1680,9 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             style={{ padding: '7px 16px', borderRadius: '6px', border: 'none', background: '#1B2B4B', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
             Retry
           </button>
-          <button onClick={() => router.push('/dawson/referrals/scheduled')}
+          {/* /dawson/referrals/scheduled was the pre-consolidation name — it
+              only works because next.config.ts still redirects it. */}
+          <button onClick={() => router.push('/dawson/referrals')}
             style={{ padding: '7px 16px', borderRadius: '6px', border: '1px solid #EDE9E1', background: 'white', color: '#7A8899', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}>
             Back to referrals
           </button>
@@ -1666,6 +1706,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // still "fresh" enough to act on / edit. Uses appointmentDate as the anchor
   // (that's the date the client didn't show up on). Falls back to null
   // silently if the date is missing/malformed.
+  //
+  // Deliberately raw appointmentDate, not effectiveAppointmentDate: this is
+  // "is there a live booking" logic (a No Show only exists relative to a
+  // date that actually happened), not the "what slot is this for" display
+  // question effectiveAppointmentDate answers. See the meta strip's
+  // Appointment cell below for the display side of that split.
   const daysSinceNoShow = (() => {
     if (referral.appointmentStatus !== 'No Show' || !referral.appointmentDate) return null
     const appt = new Date(referral.appointmentDate + 'T12:00:00')
@@ -1708,6 +1754,11 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // sides are 'YYYY-MM-DD' so a string compare is the whole test. On Vercel
   // (UTC) a naive new Date() would roll over at 8pm Eastern and flip every
   // Saturday's referrals to "receipt" four hours early.
+  //
+  // Deliberately raw appointmentDate, not effectiveAppointmentDate — same
+  // "is there a live booking" reasoning as daysSinceNoShow above. A
+  // cancelled referral has no live booking to compare against today, so
+  // this must stay on the field that actually empties on cancel.
   const apptDatePassed =
     !!referral.appointmentDate && referral.appointmentDate.slice(0, 10) <= easternTodayISO()
 
@@ -1745,16 +1796,16 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // without any staff identity at all).
   const agencyDisplay = referral.referringAgency
     ? (referral.referringAgencyId
-        ? <a href={`/dawson/agencies/${referral.referringAgencyId}`} style={{ color: '#2A7F6F', textDecoration: 'none', fontWeight: 600 }}>{referral.referringAgency}</a>
+        ? <a href={`/dawson/agencies/${referral.referringAgencyId}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{referral.referringAgency}</a>
         : referral.referringAgency)
     : null
 
 
   const staffDisplay = referral.referredBy
-    ? (referral.referringStaffLinkId
-        ? <a href={`/dawson/staff/${referral.referringStaffLinkId}`} style={{ color: '#2A7F6F', textDecoration: 'none', fontWeight: 600 }}>{referral.referredBy}</a>
+    ? (referral.referringStaffId
+        ? <a href={`/dawson/staff/${referral.referringStaffId}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{referral.referredBy}</a>
         : referral.referredBy)
-    : (!referral.referringStaffLinkId
+    : (!referral.referringStaffId
         ? <span style={{ color: '#C9A84C', fontStyle: 'italic' }}>No staff linked — fix at agency claim</span>
         : null)
 
@@ -1771,8 +1822,10 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           <button
             type="button"
             onClick={() => {
+              // /dawson/referrals/review was the pre-consolidation name — it
+              // only worked because next.config.ts still redirects it.
               if (window.history.length > 1) router.back()
-              else router.push('/dawson/referrals/review')
+              else router.push('/dawson/referrals')
             }}
             style={{ fontSize: '13px', fontWeight: 700, color: 'rgba(27,43,75,0.5)', background: 'none', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px' }}
           >
@@ -1780,7 +1833,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             Back
           </button>
           <span style={{ color: '#EDE9E1' }}>→</span>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '16px', color: '#1B2B4B' }}>{referral.clientName}</div>
+          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#1B2B4B' }}>{referral.clientName}</div>
           {referral.possibleDuplicate && (
             <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B' }}>⚠ Possible Duplicate</span>
           )}
@@ -1940,6 +1993,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
         <div style={{ display: 'flex', background: 'white', border: '1px solid #EDE9E1', borderRadius: '12px', boxShadow: '0 1px 2px rgba(27,43,75,0.04)' }}>
           <div style={{ width: '4px', background: colors.accent, flexShrink: 0, borderRadius: '12px 0 0 12px' }} />
 
+          {/* Column wrapper: the row of cells/actions, then the conditional
+              reschedule-request banner below it. The accent bar above spans
+              both — it's a sibling of this wrapper, not inside it. */}
+          <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'stretch' }}>
+
           <MetaCell label="Status">
             <span style={{ color: colors.badgeText }}>{referral.appointmentStatus || '—'}</span>
             {daysSinceNoShow !== null && (
@@ -1949,8 +2008,32 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             )}
           </MetaCell>
 
+          {/* effectiveAppointmentDate, not raw appointmentDate — this cell
+              answers "what slot is or was this referral for," the display
+              question. Raw appointmentDate empties on cancel/withdraw, which
+              used to leave this cell blank for a cancelled referral even
+              though the slot it was booked for is sitting in
+              originalAppointmentDate. apptDatePassed / daysSinceNoShow above
+              stay on raw appointmentDate on purpose — they ask "is there a
+              live booking," a different question. */}
           <MetaCell label="Appointment">
-            {referral.appointmentDate ? formatDate(referral.appointmentDate) : '—'}
+            {referral.effectiveAppointmentDate ? formatDate(referral.effectiveAppointmentDate) : '—'}
+            {/* "Previously X" — shown only when there's a genuinely
+                different past slot to report beyond what the line above
+                already says. originalAppointmentDate is single-value and
+                overwritten on every reschedule/cancel, so this can only ever
+                say what the record last held, never a count or a true first
+                date — "Previously Sep 26", never "Rescheduled once". On a
+                plain cancellation effectiveAppointmentDate already equals
+                originalAppointmentDate, so the two would just repeat each
+                other; this line exists for the otherwise-invisible case of
+                a referral that's currently scheduled but was rescheduled at
+                least once to get there. */}
+            {referral.originalAppointmentDate && referral.originalAppointmentDate !== referral.effectiveAppointmentDate && (
+              <div style={{ fontSize: '11px', color: '#9AA6B2', marginTop: '2px' }}>
+                Previously {formatDate(referral.originalAppointmentDate)}
+              </div>
+            )}
           </MetaCell>
 
           <MetaCell label="Time Slot">{referral.appointmentTime || '—'}</MetaCell>
@@ -2019,6 +2102,32 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               {referral.referralReview}
             </span>
           </MetaCell>
+          </div>
+
+          {/* What the agency asked for. Shown only while a reschedule is
+              pending — absent, not empty, the rest of the time. A referral
+              in this state opened from a bookmark or search used to show no
+              requested slot at all; Needs Action's own reschedule card
+              already shows this, this page didn't. Same wording as that
+              card: "Flexible — no date given" when no date was named, and
+              the age from rescheduleRequestedAt when it's known — both
+              single-value fields, so this can only ever describe the
+              CURRENT ask, never a history of past ones. */}
+          {referral.appointmentStatus === 'Reschedule' && (
+            <div style={{
+              margin: '0 24px 16px', padding: '10px 16px', borderRadius: '8px',
+              background: 'rgba(201,168,76,0.12)', fontSize: '13px', color: '#2C3A4A',
+            }}>
+              <strong style={{ color: '#8B7724' }}>Requested:</strong>{' '}
+              {referral.preferredDate
+                ? <>{formatDate(referral.preferredDate)}{referral.preferredTime ? ` · ${referral.preferredTime}` : ''}</>
+                : 'Flexible — no date given'}
+              {referral.rescheduleRequestedAt && (
+                <span style={{ color: '#7A8899' }}> · {requestAge(referral.rescheduleRequestedAt, easternTodayISO())}</span>
+              )}
+            </div>
+          )}
+          </div>
         </div>
       </div>
 
@@ -2068,7 +2177,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
             <InfoRow label="Agency" value={agencyDisplay} />
             <InfoRow label="Staff" value={staffDisplay} />
-            <InfoRow label="Staff Phone" value={referral.referredByPhone} />
+            <InfoRow label="Staff Phone" value={referral.staffPhone} />
             <InfoRow label="Agency Email" value={referral.agencyEmail ? <a href={`mailto:${referral.agencyEmail}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{referral.agencyEmail}</a> : null} />
           </Card>
 
@@ -2082,7 +2191,7 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
           {referral.possibleDuplicate && (
             <div style={{ background: 'rgba(192,57,43,0.06)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '12px', padding: '16px 20px' }}>
-              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 800, fontSize: '13px', color: '#C0392B', marginBottom: '6px' }}>⚠ Possible Duplicate</div>
+              <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', color: '#C0392B', marginBottom: '6px' }}>⚠ Possible Duplicate</div>
               <div style={{ fontSize: '12px', color: '#7A8899', lineHeight: 1.6 }}>This client may already be in the system. Review before approving.</div>
             </div>
           )}

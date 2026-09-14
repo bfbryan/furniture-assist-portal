@@ -7,6 +7,15 @@
 // (gold = reversible, red = destructive).
 //
 // If you add a third consumer, import from here. Do not re-inline.
+//
+// detail-pages-rebuild: Tooltip's label carried fontWeight: 600 with no
+// fontFamily override — unloaded Lato (the portal ships 400/700 only).
+// Fixed to 700 here rather than in the referral detail page, since this
+// component is shared with the referrals list (both are consumers of
+// IconBtn/Tooltip per the comment above). Pure subtraction — same label,
+// same layout, just the weight the browser was already synthesizing. If
+// the tooltip looks different on the referrals list after this, that's
+// the change; it shouldn't need rediscovering.
 
 'use client'
 
@@ -30,7 +39,7 @@ export function Tooltip({ label, children }: { label: string; children: React.Re
         <div style={{
           position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%',
           transform: 'translateX(-50%)', background: '#1B2B4B', color: 'white',
-          fontSize: '11px', fontWeight: 600, whiteSpace: 'nowrap',
+          fontSize: '11px', fontWeight: 700, whiteSpace: 'nowrap',
           padding: '4px 8px', borderRadius: '5px', pointerEvents: 'none', zIndex: 10,
         }}>
           {label}

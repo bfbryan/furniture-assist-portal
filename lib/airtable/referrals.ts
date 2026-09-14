@@ -425,9 +425,34 @@ export async function updateReferralReview(referralId: string, review: string) {
   return res.json()
 }
 
+// detail-pages-rebuild: getReferralById is not Dawson-only — it also backs
+// the AGENCY portal's own referral detail page (app/(agency)/referrals/[id]
+// /page.tsx) and the access guard (lib/auth/agency-referral-access.ts), so
+// it can't move wholly onto shapeDawsonReferral the way getStaffWithDetails
+// did. Forcing a list shaper to carry full client identity and disbursement
+// detail for every row would be the wrong shape for that shaper's other
+// callers (Needs Action, the referrals list). Instead: call the shaper for
+// the genuinely shared subset (dates, statuses, agency/staff identity,
+// document URLs — everything the agency page's own Referral type already
+// expects, under the same names), then extend with this function's own
+// detail-only fields, unchanged from before.
+//
+// Two fields ARE renamed here — referredByPhone -> staffPhone,
+// referringStaffLinkId -> referringStaffId, adopting shapeDawsonReferral's
+// names. Checked before renaming, not assumed: neither old name is read
+// anywhere outside this file and the Dawson referral page, INCLUDING
+// app/(agency)/referrals/[id]/page.tsx, which runs on this same function
+// and uses neither.
+//
+// Net effect: this function gains effectiveAppointmentDate and
+// rescheduleRequestedAt for free (the shaper already computes both), and
+// loses the extra API call it used to make chasing Referring Staff Link ->
+// Agency Users -> Agency for referringAgencyId — the shaper already reads
+// {Referring Agency ID} by direct lookup on the referral row itself.
 export async function getReferralById(referralId: string) {
   const data = await airtableFetch('Client Referrals', `/${referralId}`)
   const f = data.fields
+  const shared = shapeDawsonReferral(data)
 
   const item = (label: string, fieldName: string) => {
     const raw = f[fieldName]
@@ -436,7 +461,7 @@ export async function getReferralById(referralId: string) {
   }
   const compact = <T,>(arr: (T | null)[]) => arr.filter((x): x is T => x !== null)
 
-    // Built from the shared catalog in lib/catalog/items-disbursed.ts so the read shape,
+  // Built from the shared catalog in lib/catalog/items-disbursed.ts so the read shape,
   // the PATCH allowlist, and the edit UI can never drift apart. Adding an item
   // to the pickup sheet is now a one-line change there.
   const itemsDisbursed = {
@@ -450,54 +475,30 @@ export async function getReferralById(referralId: string) {
     distributionNotes: (f['Distribution Notes'] as string) ?? null,
   }
 
-  // Referring Staff Link is a single link to Agency Users. The plaintext
-  // counterparts (Referring Agency / Referring Staff / Agency Email /
-  // Staff Phone) are LOOKUPS through that link as of June 2026 and come
-  // back wrapped in arrays — unwrap them here. safeLookupString also
-  // guards against the field still being misconfigured as a link.
-  const referringStaffLinkId = (f['Referring Staff Link'] as string[])?.[0] ?? null
-
   // Client link — single rec ID pointing at Clients. Needed so the Client
   // Detail page can PATCH identity fields (First Name / DOB / Address /
-  // etc.) which live on Clients, not on Client Referrals.
+  // etc.) which live on Clients, not on Client Referrals. Detail-only —
+  // no list view needs it, so it's not on the shared shaper.
   const clientId = (f['Client'] as string[])?.[0] ?? null
 
-  // Referring Agency ID — derived from Referring Staff Link → Agency Users
-  // → Agency. Client Referrals doesn't have a direct link to Agencies,
-  // so we chase the chain through the linked Agency User. Cost: one extra
-  // API fetch per detail view, only when a staff link exists.
-  let referringAgencyId: string | null = null
-  if (referringStaffLinkId) {
-    try {
-      const user = await airtableFetch('Agency Users', `/${referringStaffLinkId}`)
-      referringAgencyId = (user.fields?.['Agency'] as string[])?.[0] ?? null
-    } catch {
-      // Non-fatal — the link will render as plain text if this fails.
-      referringAgencyId = null
-    }
-  }
-
-  // First Name / Last Name / DOB / Phone / Address / etc. became LOOKUPS
-  // through the Client link in June 2026, so they come back wrapped in
-  // arrays. safeLookupString handles the unwrap AND guards against a
-  // misconfigured link returning a rec ID string.
-  const firstName = safeLookupString(f['First Name']) ?? ''
-  const lastName  = safeLookupString(f['Last Name'])  ?? ''
-
   return {
-    id: data.id,
+    id: shared.id,
     clientId,                                         // for PATCH /api/dawson/clients/[id]
-    clientName: `${firstName} ${lastName}`.trim(),
-    firstName,
-    lastName,
+    clientName: shared.clientName,
+    firstName: shared.firstName,
+    lastName: shared.lastName,
+    // Detail-only client-identity fields below — First Name / Last Name /
+    // DOB / Phone / Address / etc. are LOOKUPS through the Client link
+    // (June 2026), arriving as arrays; safeLookupString unwraps them and
+    // guards against a misconfigured link returning a rec ID string.
     dob:       safeLookupString(f['DOB']),
-    phone:     safeLookupString(f['Phone']),
+    phone:     shared.phone,
     language:  safeLookupString(f['Preferred Language']),
-    address:   safeLookupString(f['Address']),
+    address:   shared.address,
     address2:  safeLookupString(f['Address 2']),
-    city:      safeLookupString(f['City']),
-    state:     safeLookupString(f['State']),
-    zip:       safeLookupString(f['Zip']),
+    city:      shared.city,
+    state:     shared.state,
+    zip:       shared.zip,
     county:    safeLookupString(f['County']),
     // # in HH / # Children are per-VISIT on Client Referrals (not on Clients)
     // — they're plain text on the referral row, not lookups. Coerce numbers
@@ -512,44 +513,59 @@ export async function getReferralById(referralId: string) {
       : (typeof f['Items Requested'] === 'string' ? (f['Items Requested'] as string) : null),
     externalNotes: safeLookupString(f['External Notes']),
     internalNotes: safeLookupString(f['Internal Notes']),
-    referralDate: f['Referral Date'] as string,
-    referredByPhone: safeLookupString(f['Staff Phone']),
-    referralReview: f['Referral Review'] as string,
-    appointmentStatus: f['Appointment Status'] as string,
-    appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
-    appointmentTime: (f['Appointment Time'] as string) ?? null,
-    // What the referral last held before a cancel/withdraw released the slot —
-    // written by lib/referrals/end-referral.ts. The live Appointment Date
-    // lookup goes empty once the Saturday Schedule link is cleared, so the
-    // agency Appointment card falls back to these to show the cancelled slot.
-    originalAppointmentDate: Array.isArray(f['Original Appointment Date'])
-      ? ((f['Original Appointment Date'] as string[])[0] ?? null)
-      : ((f['Original Appointment Date'] as string) ?? null),
-    originalAppointmentTime: (f['Original Appointment Time'] as string) ?? null,
-    // Same three fields the list shape carries, for the same reason: the
-    // agency detail page's Appointment card left Date and Time blank on a
-    // referral awaiting a reschedule. See lib/referrals/requested-slot.ts.
-    preferredDate: (f['Preferred Date'] as string) ?? null,
-    preferredTime: (f['Preferred Time'] as string) ?? null,
-    schedulingFlexibility: (f['Scheduling Flexibility'] as string) ?? null,
-    appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
+    referralDate: shared.referralDate,
+    staffPhone: shared.staffPhone,
+    referralReview: shared.referralReview,
+    appointmentStatus: shared.appointmentStatus,
+    // Raw, live Appointment Date/Time — answers "is there a live booking
+    // right now." Empties on cancel/withdraw. Kept separate from
+    // effectiveAppointmentDate below on purpose: apptDatePassed and
+    // daysSinceNoShow on the detail page both need the live-booking
+    // question, not the display one, and must keep reading this field.
+    appointmentDate: shared.appointmentDate,
+    appointmentTime: shared.appointmentTime,
+    // The live Appointment Date coalesced with the Original snapshot —
+    // answers "what slot is or was this referral for," which is the
+    // display question. Reads the same {Effective Appointment Date}
+    // formula field the agency page and referrals list use, via the
+    // shared shaper, so this page can't disagree with them about it.
+    effectiveAppointmentDate: shared.effectiveAppointmentDate,
+    // What the referral last held before a cancel/reschedule released the
+    // slot — written by lib/referrals/end-referral.ts (on cancel) and
+    // lib/referrals/reschedule.ts (on every reschedule, even one that
+    // lands on a new live slot). Single-value, overwritten each time — see
+    // the "Previously" sub-line on the Appointment cell for how this page
+    // uses it honestly.
+    originalAppointmentDate: shared.originalAppointmentDate,
+    originalAppointmentTime: shared.originalAppointmentTime,
+    // What the agency ASKED for, as opposed to what is currently booked.
+    // Only meaningful while Appointment Status is 'Reschedule'.
+    preferredDate: shared.preferredDate,
+    preferredTime: shared.preferredTime,
+    schedulingFlexibility: shared.schedulingFlexibility,
+    // UTC timestamp stamped when Appointment Status is set to 'Reschedule'.
+    // Single-value, overwritten on every new request — there is no history
+    // of past requests, only the current one if there is one.
+    rescheduleRequestedAt: shared.rescheduleRequestedAt,
+    appointmentSlipUrl: shared.appointmentSlipUrl,
     // Written by the client-receipt cron (lib/notifications/client-receipt.ts)
     // into the "Client Receipt" attachment field once the visit is done. Read
     // only — the portal surfaces the PDF, it never generates it.
-    clientReceiptUrl: attachmentUrl(f['Client Receipt']),
-    dataPageUrl: (f['Data Page URL'] as string) ?? null,
-    referredBy: safeLookupString(f['Referring Staff']),
-    referringAgency: safeLookupString(f['Referring Agency']),
+    clientReceiptUrl: shared.clientReceiptUrl,
+    dataPageUrl: shared.dataPageUrl,
+    referredBy: shared.referredBy,
+    referringAgency: shared.referringAgency,
     agencyEmail: safeLookupString(f['Agency Email']),
-    referringStaffLinkId,                             // for deep-link to Staff ID page
-    referringAgencyId,                                // for deep-link to Agency detail page
+    referringStaffId: shared.referringStaffId,        // for deep-link to Staff ID page
+    referringAgencyId: shared.referringAgencyId,       // for deep-link to Agency detail page
     // Membership Status of the referring staff member, looked up through
     // Referring Staff Link → Agency Users. Single-select lookup: wrapped in an
     // array, absent entirely when unconfirmed (blank) — safeLookupString
     // unwraps both, same as the other lookups on this record. The agency
     // referral-access guard denies anything that isn't 'Confirmed', mirroring
     // the query-formula gate on the list reads above. Zero extra API calls —
-    // it rides on the record already fetched here.
+    // it rides on the record already fetched here. Detail-only: no list view
+    // needs it, so it's not on the shared shaper.
     referringStaffMembership: safeLookupString(f['Referring Staff Membership']),
     possibleDuplicate: (f['Possible Duplicate'] as boolean) ?? false,
     // Aug 2026: two plain Airtable checkboxes on Client Referrals.
