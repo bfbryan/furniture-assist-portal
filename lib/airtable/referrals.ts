@@ -194,6 +194,110 @@ export async function getOrphanedReferralCounts(
   return { total: records.length, upcoming }
 }
 
+// detail-pages-rebuild: the Dawson-side referral shape, extracted verbatim
+// from getAllReferrals's own inline mapper (previously the only consumer)
+// so a second Dawson reader — getStaffWithDetails, for the staff detail
+// page — can share it rather than carrying its own thinner copy. Pure
+// extraction: every field name below, including the redundant aliases
+// (saturdayDate/staffName/agencyName duplicate appointmentDate/referredBy/
+// referringAgency), is unchanged from what getAllReferrals always returned,
+// so its existing callers (Needs Action, the referrals list) see no
+// behavior change. The aliases are kept only because those callers may
+// still read them under the old names — not proof they're needed, just
+// not this branch's job to chase down and rename.
+//
+// Distinct from shapeReferralListItem (agency-portal side, out of scope
+// here): that shaper's callers gate visibility on {Referring Staff
+// Membership} = "Confirmed" in their query formula, a concern this
+// function has nothing to do with. This is a superset of what that shaper
+// returns; whether it could replace it is a separate question for whenever
+// the agency-portal reads are next touched.
+export function shapeDawsonReferral(record: any) {
+  const f = record.fields
+  // First/Last Name and the address fields below are LOOKUPS through the
+  // Client link — arrays at runtime, not strings. safeLookupString unwraps
+  // them the same way shapeReferralListItem and getReferralById do.
+  const firstName = safeLookupString(f['First Name']) ?? ''
+  const lastName = safeLookupString(f['Last Name']) ?? ''
+
+  // Referring Agency / Staff / Phone are LOOKUPS post-migration.
+  const agencyName = safeLookupString(f['Referring Agency'])
+  const staffName = safeLookupString(f['Referring Staff'])
+  const staffPhone = safeLookupString(f['Staff Phone'])
+
+  // Agency record id, straight off the lookup — Referring Staff Link →
+  // Agency Users → Agency Record ID. Populated on every row that has a
+  // staff link (all 471 today); blank for the rare link-less import rows,
+  // exactly as the old name→id map also failed to resolve those.
+  const referringAgencyId = (f['Referring Agency ID'] as string[])?.[0] ?? null
+
+  // Referring Staff Link is a single link field; grab the linked user id
+  // so a list view can deep-link to a Staff ID page.
+  const referringStaffId = (f['Referring Staff Link'] as string[])?.[0] ?? null
+
+  return {
+    id: record.id,
+    firstName,
+    lastName,
+    clientName: `${firstName} ${lastName}`.trim(),
+    referralDate: f['Referral Date'] as string,
+    appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
+    saturdayDate: (f['Appointment Date'] as string[])?.[0] ?? null,
+    appointmentTime: (f['Appointment Time'] as string) ?? null,
+    // The live Appointment Date coalesced with the Original snapshot — the
+    // date a terminal (cancelled/withdrawn) referral should be filed under.
+    // Read from the same {Effective Appointment Date} formula the date
+    // filter in getAllReferrals uses, so the two can't disagree. See
+    // lib/referrals/effective-date.ts for the pre-field JS equivalent.
+    effectiveAppointmentDate:
+      (Array.isArray(f['Effective Appointment Date'])
+        ? (f['Effective Appointment Date'] as string[])[0]
+        : (f['Effective Appointment Date'] as string)) ?? null,
+    // What the agency ASKED for, as opposed to what is currently booked.
+    // Only meaningful while Appointment Status is 'Reschedule'; a reader can
+    // offer Dawson "accept as requested" off these.
+    // Preferred Time's select options are identical to Appointment Time's,
+    // so this value needs no translation on the way back out.
+    preferredDate: (f['Preferred Date'] as string) ?? null,
+    preferredTime: (f['Preferred Time'] as string) ?? null,
+    schedulingFlexibility: (f['Scheduling Flexibility'] as string) ?? null,
+    // UTC timestamp stamped when Appointment Status is set to 'Reschedule',
+    // by both writers of that status (agency reschedule request, and the OCR
+    // no-usable-date branch). Needs Action reads it for the "requested N
+    // days ago" age on a reschedule card; null on rows that pre-date the
+    // field, rendered there as "request date unknown".
+    rescheduleRequestedAt: (f['Reschedule Requested At'] as string) ?? null,
+    referralReview: f['Referral Review'] as string,
+    appointmentStatus: f['Appointment Status'] as string,
+    appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
+    // Same attachment field the detail shape already reads. In the list
+    // shape too so History can link straight to a completed client's
+    // receipt without opening the record.
+    clientReceiptUrl: attachmentUrl(f['Client Receipt']),
+    // The slot a terminal referral last held, snapshotted by
+    // end-referral.ts. The fallback for the Appointment column / month
+    // grouping once a reader falls back to it. Same defensive array unwrap
+    // shapeReferralListItem uses.
+    originalAppointmentDate: Array.isArray(f['Original Appointment Date'])
+      ? ((f['Original Appointment Date'] as string[])[0] ?? null)
+      : ((f['Original Appointment Date'] as string) ?? null),
+    originalAppointmentTime: (f['Original Appointment Time'] as string) ?? null,
+    referredBy: staffName,
+    staffName,
+    staffPhone,
+    referringAgency: agencyName,
+    referringAgencyId,                   // drives the teal-bold link in list view
+    referringStaffId,                    // resolved from Referring Staff Link
+    agencyName,
+    dataPageUrl: (f['Data Page URL'] as string) ?? null,
+    address: safeLookupString(f['Address']),
+    city: safeLookupString(f['City']),
+    state: safeLookupString(f['State']),
+    zip: safeLookupString(f['Zip']),
+    phone: safeLookupString(f['Phone']),
+  }
+}
+
 export async function getAllReferrals(filters?: {
   review?: string
   statuses?: string[]
@@ -295,91 +399,7 @@ export async function getAllReferrals(filters?: {
   // the entire Agencies table to build a name→id map on every call.
   const data = await airtableFetchAll('Client Referrals', params)
 
-  const records = data.records.map((record: any) => {
-    const f = record.fields
-    // First/Last Name and the address fields below are LOOKUPS through the
-    // Client link — arrays at runtime, not strings. safeLookupString unwraps
-    // them the same way shapeReferralListItem and getReferralById do.
-    const firstName = safeLookupString(f['First Name']) ?? ''
-    const lastName = safeLookupString(f['Last Name']) ?? ''
-
-    // Referring Agency / Staff / Phone are LOOKUPS post-migration.
-    const agencyName = safeLookupString(f['Referring Agency'])
-    const staffName = safeLookupString(f['Referring Staff'])
-    const staffPhone = safeLookupString(f['Staff Phone'])
-
-    // Agency record id, straight off the lookup — Referring Staff Link →
-    // Agency Users → Agency Record ID. Populated on every row that has a
-    // staff link (all 452 today); blank for the rare link-less import rows,
-    // exactly as the old name→id map also failed to resolve those.
-    const referringAgencyId = (f['Referring Agency ID'] as string[])?.[0] ?? null
-
-    // Referring Staff Link is a single link field; grab the linked user id
-    // so the list view can deep-link to a Staff ID page when we build it.
-    const referringStaffId = (f['Referring Staff Link'] as string[])?.[0] ?? null
-
-    return {
-      id: record.id,
-      firstName,
-      lastName,
-      clientName: `${firstName} ${lastName}`.trim(),
-      referralDate: f['Referral Date'] as string,
-      appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
-      saturdayDate: (f['Appointment Date'] as string[])?.[0] ?? null,
-      appointmentTime: (f['Appointment Time'] as string) ?? null,
-      // The live Appointment Date coalesced with the Original snapshot — the
-      // date a terminal (cancelled/withdrawn) referral should be filed under.
-      // Read from the same {Effective Appointment Date} formula the date
-      // filter above uses, so the two can't disagree. Additive; see
-      // lib/referrals/effective-date.ts for the pre-field JS equivalent.
-      effectiveAppointmentDate:
-        (Array.isArray(f['Effective Appointment Date'])
-          ? (f['Effective Appointment Date'] as string[])[0]
-          : (f['Effective Appointment Date'] as string)) ?? null,
-      // What the agency ASKED for, as opposed to what is currently booked.
-      // Only meaningful while Appointment Status is 'Reschedule'; the Awaiting
-      // Review page reads these to offer Dawson "accept as requested".
-      // Preferred Time's select options are identical to Appointment Time's,
-      // so this value needs no translation on the way back out.
-      preferredDate: (f['Preferred Date'] as string) ?? null,
-      preferredTime: (f['Preferred Time'] as string) ?? null,
-      schedulingFlexibility: (f['Scheduling Flexibility'] as string) ?? null,
-      // UTC timestamp stamped when Appointment Status is set to 'Reschedule',
-      // by both writers of that status (agency reschedule request, and the OCR
-      // no-usable-date branch). The Needs Action page reads it for the
-      // "requested N days ago" age on a reschedule card; null on rows that
-      // pre-date the field, rendered there as "request date unknown".
-      rescheduleRequestedAt: (f['Reschedule Requested At'] as string) ?? null,
-      referralReview: f['Referral Review'] as string,
-      appointmentStatus: f['Appointment Status'] as string,
-      appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
-      // Same attachment field the detail shape already reads. Added to the
-      // list shape so History can link straight to a completed client's
-      // receipt without opening the record.
-      clientReceiptUrl: attachmentUrl(f['Client Receipt']),
-      // The slot a terminal referral last held, snapshotted by
-      // end-referral.ts. History's fallback for the Appointment column /
-      // month grouping once it reads from here. Same defensive array unwrap
-      // shapeReferralListItem uses.
-      originalAppointmentDate: Array.isArray(f['Original Appointment Date'])
-        ? ((f['Original Appointment Date'] as string[])[0] ?? null)
-        : ((f['Original Appointment Date'] as string) ?? null),
-      originalAppointmentTime: (f['Original Appointment Time'] as string) ?? null,
-      referredBy: staffName,
-      staffName,
-      staffPhone,
-      referringAgency: agencyName,
-      referringAgencyId,                   // drives the teal-bold link in list view
-      referringStaffId,                    // resolved from Referring Staff Link
-      agencyName,
-      dataPageUrl: (f['Data Page URL'] as string) ?? null,
-      address: safeLookupString(f['Address']),
-      city: safeLookupString(f['City']),
-      state: safeLookupString(f['State']),
-      zip: safeLookupString(f['Zip']),
-      phone: safeLookupString(f['Phone']),
-    }
-  })
+  const records = data.records.map(shapeDawsonReferral)
 
   // Substring search — over the narrowed slice above, not the whole table.
   if (filters?.search) {
