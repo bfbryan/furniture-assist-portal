@@ -681,15 +681,21 @@ export default function StaffList({
         </div>
       )}
 
-      <InviteStaffModal
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        orgId={orgId}
-        agencyId={agencyId}
-        agencyName={agencyName}
-        invitedByName={invitedByName}
-        inviterEmail={inviterEmail}
-      />
+      {/* Conditionally rendered, not just hidden via `open` — closing this
+          unmounts InviteStaffModal so nothing (loading, form fields, error)
+          survives to the next open. See InviteStaffModal.tsx for the bug
+          that motivated this: `open` alone let the instance persist. */}
+      {inviteOpen && (
+        <InviteStaffModal
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          orgId={orgId}
+          agencyId={agencyId}
+          agencyName={agencyName}
+          invitedByName={invitedByName}
+          inviterEmail={inviterEmail}
+        />
+      )}
 
       {confirm && cc && (
         <div

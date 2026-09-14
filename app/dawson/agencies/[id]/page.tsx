@@ -226,7 +226,7 @@ function formatInstantShort(dateStr: string | null): string {
 // formatting is a display property of the field, not the stored value — the
 // API can and does return bare digits ("2019519465"). Used on all three phone
 // displays this page has (Agency card Main Phone, Primary Admin card Phone,
-// Staff card rows), so the same number doesn't format three different ways
+// Team card rows), so the same number doesn't format three different ways
 // on one page.
 //
 // Two `formatPhone` helpers already exist in the codebase
@@ -856,11 +856,11 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
   const locality = cityStateZip(agency.city, agency.state, agency.zip)
   const todayISO = easternTodayISO()
 
-  // Staff card / header count both exclude the primary admin — they have
+  // Team card / header count both exclude the primary admin — they have
   // their own card with their own status, and on any not-yet-invited agency
   // they are unconfirmed by construction (the auto-confirm fires inside the
   // invite route). Counting them here would make "N unconfirmed" disagree
-  // with what the Staff card actually lists below it.
+  // with what the Team card actually lists below it.
   const staff = agency.users.filter(u => u.id !== agency.primaryAdminId)
   const unconfirmedStaff = staff.filter(u => u.membershipStatus !== 'Confirmed').length
   const primaryAdmin = agency.users.find(u => u.id === agency.primaryAdminId) ?? null
@@ -1142,17 +1142,17 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
       {/* ============ TWO RAILS ============ */}
       <div style={{ padding: '20px 32px 28px', display: 'grid', gridTemplateColumns: '1.75fr 1fr', gap: '20px', alignItems: 'start' }}>
 
-        {/* LEFT — Staff, Referrals */}
+        {/* LEFT — Team, Referrals */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={CARD}>
             <div style={CARD_HEAD}>
-              <div style={CARD_TITLE}>Staff</div>
+              <div style={CARD_TITLE}>Team</div>
               <div style={{ fontSize: '11px', color: '#7A8899' }}>
-                {staff.length} staff — not counting the primary admin
+                {staff.length} team members — not counting the primary admin
               </div>
             </div>
             {staff.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', ...MUTED_EMPTY }}>No other staff yet.</div>
+              <div style={{ padding: '20px', textAlign: 'center', ...MUTED_EMPTY }}>No other team members yet.</div>
             ) : (
               staff.map(u => {
                 const displayName = u.name || `${u.firstName} ${u.lastName}`.trim() || '—'
