@@ -119,6 +119,12 @@ export default function InviteStaffModal({
     setError(null)
 
 
+    // `loading` is released in `finally` below — not only on a path that
+    // happens to remember to reset it — so a failed request can't leave the
+    // Send button stuck disabled either. (Belt and braces: with the modal
+    // now unmounted on close, a stuck flag can no longer survive to the next
+    // open regardless — this is what stops a future exit path from
+    // reintroducing the same bug some other way.)
     try {
       const res = await fetch('/api/admin/invite', {
         method: 'POST',
@@ -148,7 +154,6 @@ export default function InviteStaffModal({
             .filter(Boolean)
             .join(' — '),
         )
-        setLoading(false)
         return
       }
 
@@ -159,7 +164,6 @@ export default function InviteStaffModal({
         setNotice(
           'Staff member added, but the invite email didn’t send. Use Resend Invite, or contact Furniture Assist if it keeps failing.',
         )
-        setLoading(false)
         router.refresh()
         return
       }
@@ -169,6 +173,7 @@ export default function InviteStaffModal({
       router.refresh()
     } catch {
       setError('Network error. Please try again.')
+    } finally {
       setLoading(false)
     }
   }

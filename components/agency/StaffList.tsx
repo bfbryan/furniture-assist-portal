@@ -23,7 +23,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import InviteStaffModal from '../InviteStaffModal'
-import { formatEasternTimestamp } from '@/lib/dates'
+import { formatEasternTimestamp, formatRelativeTime } from '@/lib/dates'
 import { AGENCY_CONTACT_EMAIL } from '@/lib/contact'
 import { OverflowMenu, ColumnHead, type MenuItem } from './referral-list-ui'
 
@@ -111,18 +111,8 @@ function shortDate(iso: string | number | null | undefined): string {
   return formatEasternTimestamp(iso, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
-/** "today" · "yesterday" · "5 days ago" · "3 weeks ago" · "4 months ago". */
-function relative(value: string | number | null | undefined): string | null {
-  if (value === null || value === undefined || value === '') return null
-  const then = typeof value === 'number' ? value : new Date(value).getTime()
-  if (Number.isNaN(then)) return null
-  const days = Math.floor((Date.now() - then) / 86_400_000)
-  if (days <= 0) return 'today'
-  if (days === 1) return 'yesterday'
-  if (days < 21) return `${days} days ago`
-  if (days < 60) return `${Math.round(days / 7)} weeks ago`
-  return `${Math.round(days / 30)} months ago`
-}
+// relative() moved to lib/dates.ts as formatRelativeTime — the Dawson agency
+// detail page needed the same phrasing for its own "last login" reading.
 
 // ------------------------------------------------------------------ icons
 
@@ -681,15 +671,21 @@ export default function StaffList({
         </div>
       )}
 
-      <InviteStaffModal
-        open={inviteOpen}
-        onClose={() => setInviteOpen(false)}
-        orgId={orgId}
-        agencyId={agencyId}
-        agencyName={agencyName}
-        invitedByName={invitedByName}
-        inviterEmail={inviterEmail}
-      />
+      {/* Conditionally rendered, not just hidden via `open` — closing this
+          unmounts InviteStaffModal so nothing (loading, form fields, error)
+          survives to the next open. See InviteStaffModal.tsx for the bug
+          that motivated this: `open` alone let the instance persist. */}
+      {inviteOpen && (
+        <InviteStaffModal
+          open={inviteOpen}
+          onClose={() => setInviteOpen(false)}
+          orgId={orgId}
+          agencyId={agencyId}
+          agencyName={agencyName}
+          invitedByName={invitedByName}
+          inviterEmail={inviterEmail}
+        />
+      )}
 
       {confirm && cc && (
         <div
@@ -763,7 +759,7 @@ export default function StaffList({
                     <>
                       <span className="fa-active-mobile-label">Invited </span>
                       {m.invitedDate
-                        ? <>Sent {shortDate(m.invitedDate)}{relative(m.invitedDate) ? ` · ${relative(m.invitedDate)}` : ''}</>
+                        ? <>Sent {shortDate(m.invitedDate)}{formatRelativeTime(m.invitedDate) ? ` · ${formatRelativeTime(m.invitedDate)}` : ''}</>
                         : '—'}
                       {m.invitedBy && <div style={{ fontSize: '11px', color: '#9AA6B2', marginTop: '1px' }}>by {m.invitedBy}</div>}
                     </>
@@ -790,7 +786,7 @@ export default function StaffList({
                         <>
                           <span className="fa-active-mobile-label">Last login </span>
                           {m.lastSignInAt
-                            ? <span style={{ color: '#1B2B4B' }}>{relative(m.lastSignInAt)}</span>
+                            ? <span style={{ color: '#1B2B4B' }}>{formatRelativeTime(m.lastSignInAt)}</span>
                             : <span style={{ color: '#9AA6B2' }}>Never</span>}
                         </>
                       ) : (
@@ -826,7 +822,7 @@ export default function StaffList({
                     <>
                       <span className="fa-active-mobile-label">Flagged </span>
                       {m.membershipDecidedAt
-                        ? <>{shortDate(m.membershipDecidedAt)}{relative(m.membershipDecidedAt) ? ` · ${relative(m.membershipDecidedAt)}` : ''}</>
+                        ? <>{shortDate(m.membershipDecidedAt)}{formatRelativeTime(m.membershipDecidedAt) ? ` · ${formatRelativeTime(m.membershipDecidedAt)}` : ''}</>
                         : '—'}
                       {m.membershipDecidedBy && <div style={{ fontSize: '11px', color: '#9AA6B2', marginTop: '1px' }}>by {m.membershipDecidedBy}</div>}
                     </>

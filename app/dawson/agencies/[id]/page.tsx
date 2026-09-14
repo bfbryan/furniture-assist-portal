@@ -23,7 +23,7 @@ import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { DAWSON_PAGE_BAR_HEIGHT } from '@/components/internal/DawsonPageBar'
 import { cityStateZip } from '@/lib/address'
-import { formatEasternTimestamp, formatDateOnly, easternTodayISO, differenceInDaysISO } from '@/lib/dates'
+import { formatEasternTimestamp, formatDateOnly, formatRelativeTime, easternTodayISO, differenceInDaysISO } from '@/lib/dates'
 import { matchesSearch } from '@/lib/search'
 
 // ---------------------------------------------------------------------------
@@ -49,6 +49,11 @@ type AgencyUser = {
   membershipStatus: string | null
   // Ben's own hand-ticked check on a bounced send, not an automated flag.
   emailBounce: boolean
+  // Account-state axis — see AccountState below. Separate from
+  // membershipStatus on purpose.
+  portalInviteStatus: string
+  claimedDate: string | null
+  lastLogin: string | null
 }
 
 type Referral = {
@@ -170,6 +175,37 @@ function EmailBouncePill() {
   )
 }
 
+// Account state — does this person have a working portal login, as distinct
+// from MembershipPill's axis beside it (does this person work at the agency
+// at all). Deliberately plain text, not a second colored pill: the two
+// answer different questions, and giving them identical treatment is how
+// they'd start reading as agreeing with (or contradicting) each other.
+//
+// lastLogin here is Airtable's 'Last Login' field — stamped on every portal
+// sign-in — not Clerk's lastSignInAt, which is what the agency-side Team
+// page reads for the same fact. Two different sources for the same kind of
+// answer, on purpose (see the mapping in lib/airtable/agencies.ts); the two
+// can disagree without either being wrong.
+function AccountState({ portalInviteStatus, invitedDate, lastLogin }: {
+  portalInviteStatus: string
+  invitedDate: string | null
+  lastLogin: string | null
+}) {
+  const style: React.CSSProperties = { fontSize: '11px', color: '#7A8899', whiteSpace: 'nowrap' }
+  if (portalInviteStatus === 'Not Invited') {
+    return <span style={style}>Not invited</span>
+  }
+  if (portalInviteStatus === 'Invite Sent') {
+    return (
+      <span style={style}>
+        Invited {formatEasternTimestamp(invitedDate, { month: 'short', day: 'numeric', year: 'numeric' })}
+      </span>
+    )
+  }
+  // Claimed
+  return <span style={style}>{lastLogin ? `Last login ${formatRelativeTime(lastLogin)}` : 'Never signed in'}</span>
+}
+
 function Pill({ label, tone }: { label: string; tone: 'teal' | 'gold' | 'grey' | 'red' }) {
   const styles = {
     teal: { bg: 'rgba(42,127,111,0.12)', fg: '#2A7F6F' },
@@ -226,7 +262,7 @@ function formatInstantShort(dateStr: string | null): string {
 // formatting is a display property of the field, not the stored value — the
 // API can and does return bare digits ("2019519465"). Used on all three phone
 // displays this page has (Agency card Main Phone, Primary Admin card Phone,
-// Staff card rows), so the same number doesn't format three different ways
+// Team card rows), so the same number doesn't format three different ways
 // on one page.
 //
 // Two `formatPhone` helpers already exist in the codebase
@@ -856,11 +892,11 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
   const locality = cityStateZip(agency.city, agency.state, agency.zip)
   const todayISO = easternTodayISO()
 
-  // Staff card / header count both exclude the primary admin — they have
+  // Team card / header count both exclude the primary admin — they have
   // their own card with their own status, and on any not-yet-invited agency
   // they are unconfirmed by construction (the auto-confirm fires inside the
   // invite route). Counting them here would make "N unconfirmed" disagree
-  // with what the Staff card actually lists below it.
+  // with what the Team card actually lists below it.
   const staff = agency.users.filter(u => u.id !== agency.primaryAdminId)
   const unconfirmedStaff = staff.filter(u => u.membershipStatus !== 'Confirmed').length
   const primaryAdmin = agency.users.find(u => u.id === agency.primaryAdminId) ?? null
@@ -1142,17 +1178,17 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
       {/* ============ TWO RAILS ============ */}
       <div style={{ padding: '20px 32px 28px', display: 'grid', gridTemplateColumns: '1.75fr 1fr', gap: '20px', alignItems: 'start' }}>
 
-        {/* LEFT — Staff, Referrals */}
+        {/* LEFT — Team, Referrals */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={CARD}>
             <div style={CARD_HEAD}>
-              <div style={CARD_TITLE}>Staff</div>
+              <div style={CARD_TITLE}>Team</div>
               <div style={{ fontSize: '11px', color: '#7A8899' }}>
-                {staff.length} staff — not counting the primary admin
+                {staff.length} team members — not counting the primary admin
               </div>
             </div>
             {staff.length === 0 ? (
-              <div style={{ padding: '20px', textAlign: 'center', ...MUTED_EMPTY }}>No other staff yet.</div>
+              <div style={{ padding: '20px', textAlign: 'center', ...MUTED_EMPTY }}>No other team members yet.</div>
             ) : (
               staff.map(u => {
                 const displayName = u.name || `${u.firstName} ${u.lastName}`.trim() || '—'
@@ -1171,11 +1207,23 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
                         )}
                       </div>
                       <div style={{ fontSize: '11.5px', color: '#7A8899', marginTop: '2px', overflowWrap: 'anywhere' }}>
-                        {formatPhoneDisplay(u.phone) ?? 'no phone on file'} · {u.email ?? <em>no email on file</em>}
+                        {formatPhoneDisplay(u.phone) ?? 'no phone on file'} ·{' '}
+                        {u.email ? (
+                          <a href={`mailto:${u.email}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{u.email}</a>
+                        ) : (
+                          <em>no email on file</em>
+                        )}
                       </div>
                     </div>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexShrink: 0 }}>
                       {u.emailBounce && <EmailBouncePill />}
+                      {u.membershipStatus !== 'Not At This Office' && (
+                        <AccountState
+                          portalInviteStatus={u.portalInviteStatus}
+                          invitedDate={u.invitedDate}
+                          lastLogin={u.lastLogin}
+                        />
+                      )}
                       <MembershipPill status={u.membershipStatus} />
                     </div>
                   </div>
