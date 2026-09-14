@@ -9,6 +9,7 @@
 
 import { CATALOG } from '@/lib/catalog/items-disbursed'
 import { matchesSearch } from '@/lib/search'
+import { easternTodayISO } from '@/lib/dates'
 import {
   airtableFetch,
   airtableFetchAll,
@@ -150,6 +151,47 @@ export async function getUnconfirmedStaffAtAgency(
     if (n) names.add(n)
   }
   return { referralCount: records.length, staffNames: [...names].sort() }
+}
+
+// membership-followups: counts for /dawson/staff/wrong-agency — a staff
+// member flagged 'Not At This Office' has their referrals hidden from the
+// flagging agency's view, but nothing else stamps those referrals to any
+// other agency, so a client with a Saturday appointment can end up visible
+// to nobody. This is the Dawson-side count that surfaces that.
+//
+// Deliberately NOT getReferralsByStaffName — that query requires
+// {Referring Staff Membership} = "Confirmed", which a flagged row can never
+// satisfy by definition, so it would always return zero here. Same
+// agencyId + staffName match, no membership clause.
+//
+// "Upcoming" reads the LIVE Appointment Date, same reasoning as
+// referral-count/route.ts on the agency side: the effective/coalesced date
+// (fileDateOf's convention) is deliberately built to survive cancellation so
+// a cancelled referral still files under the right month, which makes it
+// exactly wrong for "does this family still have a booking" — a cancelled
+// referral's effective date can still read as future-dated with nothing
+// behind it. Do not "fix" this toward fileDateOf.
+export async function getOrphanedReferralCounts(
+  agencyId: string | null,
+  staffName: string,
+): Promise<{ total: number; upcoming: number }> {
+  if (!agencyId || !staffName) return { total: 0, upcoming: 0 }
+  const formula = encodeURIComponent(
+    `AND({Referring Agency ID} = "${agencyId}", {Referring Staff} = "${staffName}")`,
+  )
+  const data = await airtableFetch(
+    'Client Referrals',
+    `?filterByFormula=${formula}&fields%5B%5D=Appointment%20Date`,
+  )
+  const records = (data.records ?? []) as { fields: Record<string, unknown> }[]
+  const todayISO = easternTodayISO()
+  let upcoming = 0
+  for (const r of records) {
+    const raw = r.fields['Appointment Date']
+    const d = Array.isArray(raw) ? raw[0] : raw
+    if (typeof d === 'string' && d >= todayISO) upcoming++
+  }
+  return { total: records.length, upcoming }
 }
 
 export async function getAllReferrals(filters?: {

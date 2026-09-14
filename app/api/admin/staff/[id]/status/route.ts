@@ -4,6 +4,10 @@
 //   { status: 'Active' | 'Inactive' }              → deactivate / reactivate + revoke/restore Clerk
 //   { membershipStatus: 'Confirmed' }              → vouch: this person works at our office
 //   { membershipStatus: 'Not At This Office' }     → they don't — hide their referrals + revoke Clerk
+//   { membershipStatus: 'Confirmed', status: 'Inactive' } → "Worked here, has
+//     left": both in one write. Confirmed makes their past referrals visible;
+//     Inactive means no login, no invite. For an unconfirmed roster row
+//     Dawson created who has since left — see the branch below.
 //
 // Membership is a SEPARATE axis from the account lifecycle (Status) and the
 // invite lifecycle (Portal Invite Status). 'Confirmed' is what gates
@@ -47,6 +51,45 @@ export async function PATCH(
       { error: "You can't remove your own access." },
       { status: 400 },
     )
+  }
+
+  // --- Path 1a-and-2 combined: "Worked here, has left" ---
+  // membership-followups: an unconfirmed roster row that Dawson created and
+  // who has since left had no truthful option before this — confirming
+  // asserts they still work here, and 'Not At This Office' hides referrals
+  // that legitimately belong to the agency. This does both writes this
+  // person needs at once: Confirmed (their past referrals become visible)
+  // and Inactive (no login, no invite). Checked BEFORE the plain "Confirmed"
+  // branch below — if it were checked after, that branch would return before
+  // this one ever ran and silently drop the Inactive half.
+  //
+  // One request, one Airtable write (updateAgencyUserPortalInvite already
+  // accepts membershipStatus and status together), not two sequential calls
+  // like the client's 'confirm-invite' pattern — a partial failure here
+  // (confirmed but still active, or deactivated but unconfirmed) is a worse
+  // in-between state than anything that pattern tolerates.
+  if (nextMembership === 'Confirmed' && nextStatus === 'Inactive') {
+    // Defensive: a never-invited row shouldn't have a Clerk membership to
+    // revoke, but this mirrors the Inactive and 'Not At This Office' paths
+    // below in case this is ever reached from a row that does.
+    if (staff.clerkUserId) {
+      try {
+        const client = await clerkClient()
+        await client.organizations.deleteOrganizationMembership({
+          organizationId: orgId,
+          userId: staff.clerkUserId,
+        })
+      } catch {
+        // Not a member or already removed — fine
+      }
+    }
+    await updateAgencyUserPortalInvite(recordId, {
+      membershipStatus: 'Confirmed',
+      membershipDecidedBy: admin.name,
+      membershipDecidedAt: new Date().toISOString(),
+      status: 'Inactive',
+    })
+    return NextResponse.json({ ok: true })
   }
 
   // --- Path 1a: Confirm membership ---

@@ -17,9 +17,15 @@
 //
 // Static segment, so it does not collide with the [id] route beside it: Next
 // matches a literal path segment ahead of a dynamic one.
+//
+// membership-followups: each row also carries referralCount / upcomingCount
+// — flagging hides these referrals from the flagging agency and stamps
+// nothing else to any other agency, so a client with a Saturday appointment
+// can end up visible to nobody. See getOrphanedReferralCounts.
 
 import { NextResponse } from 'next/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
+import { getOrphanedReferralCounts } from '@/lib/airtable'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -116,5 +122,18 @@ export async function GET() {
     (b.decidedAt ?? b.addedDate ?? '').localeCompare(a.decidedAt ?? a.addedDate ?? ''),
   )
 
-  return NextResponse.json(staff)
+  // Flagging hides these referrals from the flagging agency's view and stamps
+  // nothing else — a client with a Saturday appointment can end up visible to
+  // nobody. One Airtable call per flagged row, in parallel; this list is small
+  // in practice (every row here required a human to flag it), so this is not
+  // pre-optimized into a single joined query. Worth revisiting if this list
+  // ever grows into the hundreds.
+  const withCounts = await Promise.all(
+    staff.map(async s => {
+      const { total, upcoming } = await getOrphanedReferralCounts(s.agencyId, s.name)
+      return { ...s, referralCount: total, upcomingCount: upcoming }
+    }),
+  )
+
+  return NextResponse.json(withCounts)
 }
