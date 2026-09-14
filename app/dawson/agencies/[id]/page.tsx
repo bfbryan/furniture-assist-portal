@@ -47,6 +47,8 @@ type AgencyUser = {
   // Membership axis (membership-confirmation) — an agency admin's own
   // assertion this person works there. null = unconfirmed, the default.
   membershipStatus: string | null
+  // Ben's own hand-ticked check on a bounced send, not an automated flag.
+  emailBounce: boolean
 }
 
 type Referral = {
@@ -146,6 +148,24 @@ function MembershipPill({ status }: { status: string | null }) {
       color: confirmed ? '#2A7F6F' : '#7A8899',
     }}>
       {confirmed ? 'Confirmed' : 'Not yet confirmed'}
+    </span>
+  )
+}
+
+// Same treatment as MembershipPill, red for the same reason the rest of
+// this page uses red — a genuine exception, not a routine state. Hidden
+// entirely at its normal (false) value, like every other exception pill
+// here — the caller checks emailBounce, not this component. Sits beside
+// Send Invite on purpose: a bounced address is what Dawson needs to see
+// before he clicks, not after.
+function EmailBouncePill() {
+  return (
+    <span style={{
+      display: 'inline-block', padding: '2px 8px', borderRadius: '20px',
+      fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase',
+      background: 'rgba(192,57,43,0.1)', color: '#C0392B',
+    }}>
+      ⚠ Bounced
     </span>
   )
 }
@@ -1154,7 +1174,10 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
                         {formatPhoneDisplay(u.phone) ?? 'no phone on file'} · {u.email ?? <em>no email on file</em>}
                       </div>
                     </div>
-                    <MembershipPill status={u.membershipStatus} />
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0 }}>
+                      {u.emailBounce && <EmailBouncePill />}
+                      <MembershipPill status={u.membershipStatus} />
+                    </div>
                   </div>
                 )
               })
@@ -1197,12 +1220,15 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
           <div style={CARD}>
             <div style={CARD_HEAD}>
               <div style={CARD_TITLE}>Primary Admin</div>
-              {/* Confirmed is the normal case and gets no badge — only the
-                  unconfirmed state (expected on any not-yet-invited agency,
-                  see the MembershipPill note) is worth a pill here. */}
-              {agency.primaryAdminId && primaryAdmin?.membershipStatus !== 'Confirmed' && (
-                <MembershipPill status={primaryAdmin?.membershipStatus ?? null} />
-              )}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                {agency.primaryAdminId && primaryAdmin?.emailBounce && <EmailBouncePill />}
+                {/* Confirmed is the normal case and gets no badge — only the
+                    unconfirmed state (expected on any not-yet-invited agency,
+                    see the MembershipPill note) is worth a pill here. */}
+                {agency.primaryAdminId && primaryAdmin?.membershipStatus !== 'Confirmed' && (
+                  <MembershipPill status={primaryAdmin?.membershipStatus ?? null} />
+                )}
+              </div>
             </div>
             <div style={{ padding: '4px 24px 8px' }}>
               {agency.primaryAdminId ? (

@@ -208,6 +208,10 @@ export async function getAgencyWithDetails(agencyId: string) {
       // default. This fetch already pulls every field on the row (no
       // `fields[]` restriction), so no extra read was needed to add this.
       membershipStatus: optionalString(r.fields['Membership Status']),
+      // Ben's own hand-ticked check on a bounced send, not an automated
+      // flag. Same "already fetched, just not mapped" story as
+      // membershipStatus above.
+      emailBounce: (r.fields['Email Bounce'] as boolean) ?? false,
     })),
     referralCount: referrals.records.length,
     referrals: referrals.records.map((r: any) => ({
