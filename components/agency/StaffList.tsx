@@ -62,7 +62,7 @@ type Props = {
   inviterEmail: string
 }
 
-type GroupKey = 'ready' | 'invited' | 'active' | 'inactive' | 'notHere'
+type GroupKey = 'needsConfirm' | 'needsInvite' | 'invited' | 'active' | 'inactive' | 'notHere'
 
 // Membership Status 'Not At This Office' wins over everything — the row goes to
 // the 'notHere' section regardless of where its account lifecycle would place
@@ -70,16 +70,36 @@ type GroupKey = 'ready' | 'invited' | 'active' | 'inactive' | 'notHere'
 // Status 'Unclaimed' / 'Invited' are vestigial here and ignored. Anything
 // matching nothing is dropped rather than guessed at.
 //
+// A never-invited row splits on membership — 'needsConfirm' (unconfirmed) vs
+// 'needsInvite' (confirmed, just missing an invite). These used to be one
+// 'ready' bucket keyed on the invite lifecycle alone, which caught unconfirmed
+// people only because unconfirmed and uninvited happened to overlap; the
+// undo path (Confirm on a 'Not At This Office' row) breaks that overlap on
+// purpose, and a confirmed-but-uninvited row would otherwise sit under a
+// "Needs confirmation" header having already been confirmed.
+//
 // A Claimed row groups as 'active' whatever its Status (Inactive is already
 // handled above). The claim handler stamps Portal Status = Claimed and flips
 // Status to Active in two separate writes; if the second fails, the row is
 // briefly Claimed + Invited. Keying only on Claimed here means that window —
 // and any later drift between the two fields — still renders instead of
 // vanishing from the page. The Status→Active retry on the next sign-in stands.
+//
+// Reactivating a row out of Inactive (see 'has-left' in menuFor) lands it
+// back in 'needsInvite', not 'needsConfirm', when membership survived the
+// round trip — Status flips back to Active/Unclaimed, but Membership Status
+// was never touched by Reactivate, so a person marked "worked here, has
+// left" and then un-departed is still vouched for and only needs a link, not
+// a second confirmation. That's correct, and it falls out of this function
+// with no special case for it — which is exactly why a later pass could
+// "simplify" it into always routing through 'needsConfirm' and quietly
+// reintroduce a confirmed row under a "needs confirmation" header.
 function classify(m: Member): GroupKey | null {
   if (m.membershipStatus === 'Not At This Office') return 'notHere'
   if (m.status === 'Inactive') return 'inactive'
-  if (m.portalInviteStatus === 'Not Invited') return 'ready'
+  if (m.portalInviteStatus === 'Not Invited') {
+    return m.membershipStatus === 'Confirmed' ? 'needsInvite' : 'needsConfirm'
+  }
   if (m.portalInviteStatus === 'Invite Sent') return 'invited'
   if (m.portalInviteStatus === 'Claimed') return 'active'
   return null
@@ -123,7 +143,8 @@ const SECTION_TITLE: React.CSSProperties = {
   letterSpacing: '0.10em', textTransform: 'uppercase',
 }
 const ACCENT: Record<GroupKey, { bar: string; heading: string }> = {
-  ready:    { bar: '#C9A84C', heading: '#8B7724' },
+  needsConfirm: { bar: '#C9A84C', heading: '#8B7724' },
+  needsInvite:  { bar: '#C9A84C', heading: '#8B7724' },
   invited:  { bar: '#C9A84C', heading: '#8B7724' },
   active:   { bar: '#2A7F6F', heading: '#2A7F6F' },
   inactive: { bar: '#9AA6B2', heading: '#7A8899' },
@@ -260,7 +281,7 @@ function Row({
 
 type ActionKey =
   | 'send-invite' | 'resend' | 'revoke' | 'not-here'
-  | 'confirm' | 'confirm-invite'
+  | 'confirm' | 'confirm-invite' | 'has-left'
   | 'make-admin' | 'remove-admin' | 'deactivate' | 'reactivate'
 
 // The subject — the name the reader scans before confirming — is bold navy so
@@ -268,15 +289,17 @@ type ActionKey =
 const SUBJECT: React.CSSProperties = { color: '#1B2B4B', fontWeight: 700 }
 
 // Actions that stop for a confirm; the rest fire and flash. `body` gets the
-// name, plus `extra.count` for 'not-here' (the number of past referrals about
-// to be hidden — fetched when the dialog opens, null while loading).
+// name, plus `extra.count` / `extra.upcoming` for 'not-here' — the number of
+// referrals about to be hidden, and how many of those still have a live,
+// future-dated appointment (fetched when the dialog opens, null while
+// loading; both come back from the same request).
 //
 // "No longer works here" (deactivate) and "Not at this office" (not-here) are
 // deliberately different: the first is routine and reversible with no data
 // consequence — the person's referral history stays visible to the agency.
 // The second hides everything they ever referred and is the rare, destructive
 // one, so it names the count and it alone.
-const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string, extra?: { count: number | null }) => React.ReactNode; button: string; danger?: boolean }>> = {
+const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string, extra?: { count: number | null; upcoming?: number | null }) => React.ReactNode; button: string; danger?: boolean }>> = {
   revoke: {
     title: 'Revoke invitation',
     body: n => <>Revoke the invitation for <strong style={SUBJECT}>{n}</strong>? Their invite link will stop working.</>,
@@ -286,6 +309,7 @@ const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string, extr
     title: 'Not at this office',
     body: (n, extra) => {
       const c = extra?.count
+      const up = extra?.upcoming
       return (
         <>
           <strong style={SUBJECT}>{n}</strong> will be marked as not working at your
@@ -294,12 +318,20 @@ const CONFIRM: Partial<Record<ActionKey, { title: string; body: (n: string, extr
             ? 'Any past referrals they made will be hidden from your agency’s view.'
             : c === 0
               ? 'They have no past referrals in your agency’s view.'
-              : <>This will hide <strong style={SUBJECT}>{c} past referral{c === 1 ? '' : 's'}</strong> from your agency&apos;s view.</>}
+              : up
+                ? <>This hides <strong style={SUBJECT}>{c} referral{c === 1 ? '' : 's'}</strong>, including{' '}
+                    <strong style={SUBJECT}>{up} with an upcoming appointment{up === 1 ? '' : 's'}</strong>.</>
+                : <>This will hide <strong style={SUBJECT}>{c} past referral{c === 1 ? '' : 's'}</strong> from your agency&apos;s view.</>}
           {' '}You can undo it by confirming {n} again.
         </>
       )
     },
     button: 'Mark not at this office', danger: true,
+  },
+  'has-left': {
+    title: 'Worked here, has left',
+    body: n => <>Mark <strong style={SUBJECT}>{n}</strong> as having worked at your office, but no longer? Their past referrals become visible to your agency. No invite is sent and no portal account is created.</>,
+    button: 'Mark as left', danger: true,
   },
   deactivate: {
     title: 'No longer works here',
@@ -321,10 +353,12 @@ export default function StaffList({
   // amber, and it does NOT auto-dismiss — it points at Resend Invite.
   const [flash, setFlash] = useState<{ tone: 'ok' | 'err' | 'warn'; text: string } | null>(null)
   const [confirm, setConfirm] = useState<{ action: ActionKey; id: string; name: string } | null>(null)
-  // Referrals about to be hidden by "Not at this office". Fetched only while
+  // Referrals about to be hidden by "Not at this office", and how many of
+  // those still have a live, future-dated appointment. Fetched only while
   // that dialog is open; null = not yet loaded. The row itself never shows a
   // count.
   const [notHereCount, setNotHereCount] = useState<number | null>(null)
+  const [notHereUpcoming, setNotHereUpcoming] = useState<number | null>(null)
 
   useEffect(() => {
     if (!confirm) return
@@ -335,26 +369,35 @@ export default function StaffList({
 
   // Load the referral count when the "Not at this office" dialog opens. At this
   // point the row is still Confirmed, so the count is the real number that will
-  // disappear. Scoped + counted server-side (GET .../referral-count).
+  // disappear. Scoped + counted server-side (GET .../referral-count), which
+  // also splits out how many have a future appointment date — hiding a
+  // client with a Saturday still booked is a different decision from hiding
+  // closed history, and the dialog says so when it applies.
   useEffect(() => {
     setNotHereCount(null)
+    setNotHereUpcoming(null)
     if (!confirm || confirm.action !== 'not-here') return
     let cancelled = false
     fetch(`/api/admin/staff/${confirm.id}/referral-count`)
-      .then(r => (r.ok ? r.json() : { count: null }))
-      .then(d => { if (!cancelled) setNotHereCount(typeof d.count === 'number' ? d.count : null) })
-      .catch(() => { if (!cancelled) setNotHereCount(null) })
+      .then(r => (r.ok ? r.json() : { count: null, upcoming: null }))
+      .then(d => {
+        if (cancelled) return
+        setNotHereCount(typeof d.count === 'number' ? d.count : null)
+        setNotHereUpcoming(typeof d.upcoming === 'number' ? d.upcoming : null)
+      })
+      .catch(() => { if (!cancelled) { setNotHereCount(null); setNotHereUpcoming(null) } })
     return () => { cancelled = true }
   }, [confirm])
 
   const buckets = useMemo(() => {
-    const b: Record<GroupKey, Member[]> = { ready: [], invited: [], active: [], inactive: [], notHere: [] }
+    const b: Record<GroupKey, Member[]> = { needsConfirm: [], needsInvite: [], invited: [], active: [], inactive: [], notHere: [] }
     for (const m of members) {
       const k = classify(m)
       if (k) b[k].push(m)
     }
     const byName = (a: Member, z: Member) => a.lastName.localeCompare(z.lastName)
-    b.ready.sort(byName)
+    b.needsConfirm.sort(byName)
+    b.needsInvite.sort(byName)
     b.inactive.sort(byName)
     b.active.sort(byName)
     b.notHere.sort(byName)
@@ -385,6 +428,14 @@ export default function StaffList({
           if (!r1.ok) return r1
           return fetch(`/api/admin/staff/${id}/invite`, { method: 'POST' })
         },
+        // One request, one Airtable write — updateAgencyUserPortalInvite
+        // already accepts membershipStatus and status together. Deliberately
+        // NOT two sequential calls like 'confirm-invite': a partial failure
+        // here (confirmed but still active, or deactivated but unconfirmed)
+        // is a worse in-between state than anything the invite retry above
+        // tolerates, since the second half is what makes the referrals
+        // visible and the person's account inactive at the same time.
+        'has-left': () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ membershipStatus: 'Confirmed', status: 'Inactive' }) }),
         deactivate: () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Inactive' }) }),
         reactivate: () => fetch(`/api/admin/staff/${id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Active' }) }),
         'make-admin': () => fetch(`/api/admin/staff/${id}/role`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: 'Admin' }) }),
@@ -399,7 +450,7 @@ export default function StaffList({
       const ok: Record<ActionKey, string> = {
         'send-invite': 'Invite sent', resend: 'Invite re-sent', revoke: 'Invitation revoked',
         'not-here': 'Marked not at this office', confirm: 'Confirmed', 'confirm-invite': 'Confirmed & invited',
-        deactivate: 'Access removed', reactivate: 'Access restored',
+        'has-left': 'Marked as having left', deactivate: 'Access removed', reactivate: 'Access restored',
         'make-admin': 'Now an admin', 'remove-admin': 'Now staff',
       }
       // The invite routes return 200 with emailSent:false when the row was
@@ -450,20 +501,37 @@ export default function StaffList({
     const confirmItem: MenuItem = {
       label: 'Confirm', color: '#2A7F6F', icon: UNDO_ICON, onClick: () => act('confirm', m),
     }
+    // Same family as "No longer works here" — ends future involvement, not a
+    // rare data-hiding action — so it gets that item's treatment (red, no
+    // divider), not notHereItem's. Scoped to 'needsConfirm' only: an 'invited'
+    // row that hasn't claimed yet already has Revoke as its escape hatch, and
+    // a 'needsInvite' row is already confirmed, so this doesn't apply.
+    const hasLeftItem: MenuItem = {
+      label: 'Worked here, has left', color: '#C0392B', icon: X_ICON, onClick: () => act('has-left', m),
+    }
     const confirmed = m.membershipStatus === 'Confirmed'
 
-    if (g === 'ready') {
-      if (confirmed) return [
-        { label: 'Send Invite', color: '#2A7F6F', icon: MAIL_ICON, onClick: () => act('send-invite', m) },
-        notHereItem,
-      ]
-      // Unconfirmed roster row: confirming is the gate for the invite (the
-      // route refuses it server-side otherwise). "Confirm & Invite" is the
-      // primary path and does both, one request then the other; "Confirm
-      // only" vouches without sending the invite yet.
+    if (g === 'needsConfirm') {
+      // Every row here is unconfirmed by construction (see classify). Two
+      // choices, not three: "Confirm only" (vouch without inviting yet) was
+      // dropped — every staff member who submits referrals is meant to end up
+      // on the portal, so confirm-without-invite was already the rare path,
+      // and "Worked here, has left" now covers the main reason anyone reached
+      // for it (a person Dawson created who's since gone). The Confirm write
+      // path itself is untouched — Change 3's self-confirm and the
+      // 'notHere' undo both still call it directly.
       return [
         { label: 'Confirm & Invite', color: '#2A7F6F', icon: MAIL_ICON, onClick: () => act('confirm-invite', m) },
-        { label: 'Confirm only', color: '#2A7F6F', icon: UNDO_ICON, onClick: () => act('confirm', m) },
+        hasLeftItem,
+        notHereItem,
+      ]
+    }
+
+    if (g === 'needsInvite') {
+      // Confirmed, just missing an invite — Send Invite, not Confirm &
+      // Invite, because there's nothing left to confirm.
+      return [
+        { label: 'Send Invite', color: '#2A7F6F', icon: MAIL_ICON, onClick: () => act('send-invite', m) },
         notHereItem,
       ]
     }
@@ -480,14 +548,26 @@ export default function StaffList({
     }
 
     if (g === 'active') {
-      // The signed-in admin's own row carries no menu — you can't deactivate
-      // yourself and lock the agency out.
+      // The signed-in admin's own row: Deactivate and Not at this office stay
+      // blocked — you can't lock the agency out of its own team page or hide
+      // your own referrals. But if the auto-confirm ever leaves your own row
+      // unconfirmed (see the header pill on this row, Change 4), you'd
+      // otherwise have no action anywhere in the product to fix it — your own
+      // portal shows nothing to click either. Confirm is safe for a person to
+      // do to themselves and the server guard already allows it (only
+      // Inactive / Not At This Office are blocked on your own row), so this is
+      // a missing menu item, not a permission change. It's a recovery path
+      // that appears only once something's already gone wrong — the working
+      // auto-confirm makes an unconfirmed own-row never happen in the normal
+      // flow — not a step anyone takes routinely.
       //
       // Make / Remove Admin were removed: role changes are handled by Furniture
       // Assist directly for now. The 'make-admin' / 'remove-admin' actions and
       // /api/admin/staff/[id]/role are left intact for when self-service role
       // management is added back.
-      if (m.clerkUserId && m.clerkUserId === currentUserId) return []
+      if (m.clerkUserId && m.clerkUserId === currentUserId) {
+        return confirmed ? [] : [confirmItem]
+      }
       const items: MenuItem[] = []
       if (!confirmed) items.push(confirmItem)
       items.push({ label: 'No longer works here', color: '#C0392B', icon: X_ICON, onClick: () => act('deactivate', m) })
@@ -506,8 +586,8 @@ export default function StaffList({
   }
 
   const total =
-    buckets.ready.length + buckets.invited.length + buckets.active.length +
-    buckets.inactive.length + buckets.notHere.length
+    buckets.needsConfirm.length + buckets.needsInvite.length + buckets.invited.length +
+    buckets.active.length + buckets.inactive.length + buckets.notHere.length
 
   const cc = confirm ? CONFIRM[confirm.action] : null
 
@@ -583,7 +663,7 @@ export default function StaffList({
         >
           <div style={{ background: 'white', borderRadius: '16px', padding: '32px', maxWidth: '420px', width: '100%', boxShadow: '0 20px 60px rgba(27,43,75,0.2)' }}>
             <h3 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '17px', color: '#1B2B4B', marginBottom: '10px' }}>{cc.title}</h3>
-            <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>{cc.body(confirm.name, { count: notHereCount })}</p>
+            <p style={{ fontSize: '14px', color: '#7A8899', lineHeight: 1.6, marginBottom: '22px' }}>{cc.body(confirm.name, { count: notHereCount, upcoming: notHereUpcoming })}</p>
             <div style={{ display: 'flex', gap: '10px', justifyContent: 'flex-end' }}>
               <button type="button" onClick={() => setConfirm(null)} disabled={loading}
                 style={{ padding: '9px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
@@ -605,17 +685,33 @@ export default function StaffList({
         </div>
       ) : (
         <>
-          {buckets.ready.length > 0 && (
-            <GroupCard groupKey="ready" title="Needs confirmation" count={buckets.ready.length}
+          {buckets.needsConfirm.length > 0 && (
+            <GroupCard groupKey="needsConfirm" title="Needs confirmation" count={buckets.needsConfirm.length}
               columns={['Name', 'Email', 'Role', '']}
               note="These people are already in our records. Confirm the ones who work at your office — their referrals appear once you do, and you can send them a sign-in link at the same time.">
-              {buckets.ready.map(m => (
-                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'ready')}
+              {buckets.needsConfirm.map(m => (
+                // Every row here is unconfirmed by construction (classify), so
+                // the context cell is always the pill — no ternary needed.
+                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'needsConfirm')}
+                  context={<span style={NEEDS_CONFIRM_PILL}>Needs confirming</span>}
+                />
+              ))}
+            </GroupCard>
+          )}
+
+          {buckets.needsInvite.length > 0 && (
+            <GroupCard groupKey="needsInvite" title="Needs invite" count={buckets.needsInvite.length}
+              columns={['Name', 'Email', 'Role', 'Confirmation']}
+              note="These people are confirmed to work at your office. Send them a sign-in link to give them portal access.">
+              {buckets.needsInvite.map(m => (
+                // Every row here is confirmed by construction — the opposite
+                // certainty from the section above.
+                <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'needsInvite')}
                   context={
-                    m.membershipStatus === 'Confirmed'
-                      ? <><span className="fa-active-mobile-label">Confirmation </span>
-                          <span style={{ color: '#2A7F6F' }}>Confirmed{m.membershipDecidedBy ? ` by ${m.membershipDecidedBy}` : ''}</span></>
-                      : <span style={NEEDS_CONFIRM_PILL}>Needs confirming</span>
+                    <>
+                      <span className="fa-active-mobile-label">Confirmation </span>
+                      <span style={{ color: '#2A7F6F' }}>Confirmed{m.membershipDecidedBy ? ` by ${m.membershipDecidedBy}` : ''}</span>
+                    </>
                   }
                 />
               ))}
@@ -648,10 +744,22 @@ export default function StaffList({
                 <Row key={m.id} {...rowProps(m)} items={menuFor(m, 'active')}
                   context={
                     <>
-                      <span className="fa-active-mobile-label">Last login </span>
-                      {m.lastSignInAt
-                        ? <span style={{ color: '#1B2B4B' }}>{relative(m.lastSignInAt)}</span>
-                        : <span style={{ color: '#9AA6B2' }}>Never</span>}
+                      {/* Without this, a confirmed and an unconfirmed active
+                          member look identical here — the absence of a pill
+                          elsewhere on this page means confirmed, so an
+                          unconfirmed active row silently read the same way an
+                          admin couldn't audit. Same either/or as the two
+                          sections above: pill or Last Login, never both. */}
+                      {m.membershipStatus === 'Confirmed' ? (
+                        <>
+                          <span className="fa-active-mobile-label">Last login </span>
+                          {m.lastSignInAt
+                            ? <span style={{ color: '#1B2B4B' }}>{relative(m.lastSignInAt)}</span>
+                            : <span style={{ color: '#9AA6B2' }}>Never</span>}
+                        </>
+                      ) : (
+                        <span style={NEEDS_CONFIRM_PILL}>Needs confirming</span>
+                      )}
                       {m.clerkUserId === currentUserId && <span style={{ color: '#9AA6B2' }}> · you</span>}
                     </>
                   }

@@ -40,10 +40,21 @@ type FlaggedStaff = {
   addedDate: string | null
   decidedAt: string | null
   decidedBy: string | null
+  // How many of this person's referrals are hidden from the flagging
+  // agency's view with nowhere else stamped to them, and how many of those
+  // still have a live, future-dated appointment — see
+  // getOrphanedReferralCounts (lib/airtable/referrals.ts).
+  referralCount: number
+  upcomingCount: number
 }
 
 const NAME_COL_WIDTH = '300px'
 const AGENCY_COL_WIDTH = '280px'
+const REFERRALS_COL_WIDTH = '100px'
+// Trimmed from 140px to make room for the Referrals column without widening
+// the row — "Sep 30, 2026" (the longest realistic value) only needs ~89px;
+// 120px keeps headroom without carrying 51px of dead space forward.
+const ADDED_COL_WIDTH = '120px'
 
 // Two date fields, two different kinds of value, so two different helpers —
 // see the header of lib/dates.ts. Invited Date is a dateTime (a real instant,
@@ -140,6 +151,20 @@ function FlaggedCard({ staff }: { staff: FlaggedStaff }) {
           )}
         </div>
 
+        <div style={{ width: REFERRALS_COL_WIDTH, flexShrink: 0, padding: '0 20px 14px 0' }}>
+          <div style={{ fontSize: '12px', fontWeight: 600, color: '#7A8899' }}>
+            {staff.referralCount} referral{staff.referralCount === 1 ? '' : 's'}
+          </div>
+          {/* Absent at zero, not muted — the alarming case is the one worth a
+              mark at all: a client with a Saturday appointment, hidden from
+              the flagging agency and stamped to nobody else. */}
+          {staff.upcomingCount > 0 && (
+            <div style={{ fontSize: '10px', fontWeight: 700, color: '#C0392B' }}>
+              {staff.upcomingCount} upcoming
+            </div>
+          )}
+        </div>
+
         <div style={{ width: '160px', flexShrink: 0, padding: '0 20px 14px 0' }}>
           <div style={{ fontSize: '12px', fontWeight: 600, color: '#7A8899' }}>
             {formatInstant(staff.decidedAt)}
@@ -149,7 +174,7 @@ function FlaggedCard({ staff }: { staff: FlaggedStaff }) {
           )}
         </div>
 
-        <div style={{ width: '140px', flexShrink: 0, padding: '0 20px 14px 0' }}>
+        <div style={{ width: ADDED_COL_WIDTH, flexShrink: 0, padding: '0 20px 14px 0' }}>
           <div style={{ fontSize: '12px', fontWeight: 600, color: '#7A8899' }}>
             {formatDay(staff.addedDate)}
           </div>
@@ -203,9 +228,12 @@ export default function WrongAgencyStaffPage() {
           office. Their portal access has already been revoked, their past
           referrals are hidden from that agency&apos;s view, and they sit in the
           agency Team page&apos;s &ldquo;Not at this office&rdquo; section (the
-          admin can undo it there by confirming them again). Moving somebody to
-          the right agency is still an Airtable edit: change the Agency link and
-          clear Membership Status.
+          admin can undo it there by confirming them again). Nothing stamps
+          those referrals to any other agency, so the Referrals column below
+          is the only place they&apos;re still visible — an upcoming count
+          above zero means a client with a Saturday appointment nobody can
+          currently see. Moving somebody to the right agency is still an
+          Airtable edit: change the Agency link and clear Membership Status.
         </div>
 
         <input
@@ -222,8 +250,9 @@ export default function WrongAgencyStaffPage() {
             <div style={{ ...HEADER_CELL, width: NAME_COL_WIDTH, paddingLeft: '20px' }}>Staff Member</div>
             <div style={{ display: 'flex', alignItems: 'center', flex: 1 }}>
               <div style={{ ...HEADER_CELL, width: AGENCY_COL_WIDTH }}>Agency</div>
+              <div style={{ ...HEADER_CELL, width: REFERRALS_COL_WIDTH }}>Referrals</div>
               <div style={{ ...HEADER_CELL, width: '160px' }}>Flagged</div>
-              <div style={{ ...HEADER_CELL, width: '140px' }}>Added</div>
+              <div style={{ ...HEADER_CELL, width: ADDED_COL_WIDTH }}>Added</div>
             </div>
           </div>
         )}
