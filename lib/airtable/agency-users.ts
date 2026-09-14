@@ -6,8 +6,9 @@
 // June 2026: "Full Name" (formula = {First Name} & " " & {Last Name}) is the
 // primary field, and Status gained 'Invited' / 'Unclaimed'.
 
-import { airtableFetch, safeLookupString, BASE_ID, HEADERS } from './client'
+import { airtableFetch, BASE_ID, HEADERS } from './client'
 import { easternTodayISO } from '@/lib/dates'
+import { shapeDawsonReferral } from './referrals'
 
 export async function getAgencyUserByClerkId(clerkUserId: string) {
   const formula = encodeURIComponent(`{Clerk User ID} = "${clerkUserId}"`)
@@ -216,44 +217,37 @@ export async function getStaffWithDetails(staffId: string) {
   // Agency is a single-link field on Agency Users — grab the first id.
   const agencyId = (uf['Agency'] as string[])?.[0] ?? null
 
-  // Fetch the linked agency (for name + status) and this staff's referrals
-  // in parallel. Skip the agency fetch cleanly if the staff has no Agency.
-  //
-  // Referrals filter uses {Referring Staff} — the lookup field on Client
-  // Referrals that pulls the linked staff's display name through
-  // Referring Staff Link. Filtering by the raw link field's record id
-  // (either ARRAYJOIN or & "" serialization) does not work reliably here,
-  // so we mirror the pattern getAgencyWithDetails uses for its own filter
-  // against the {Referring Agency} lookup, which is proven in production.
-  // Trade-off: two staff members with the exact same full name would show
-  // each other's referrals. Acceptable for now — revisit once we hit a
-  // real collision.
+  // detail-pages-rebuild: referrals were previously matched by {Referring
+  // Staff} = fullName, a text match with no agency scoping — two staff at
+  // different agencies sharing a full name would see each other's
+  // referrals. Client Referrals is Agency Users' own REVERSE link
+  // (Referring Staff Link, the other direction), so it can't drift the way
+  // a lookup or formula could and it's identity-based, not text-based.
+  // Checked live before switching: 471 of 471 Client Referrals rows have
+  // Referring Staff Link set, so this reverse link is complete, not a
+  // partial index.
+  const referralIds = (uf['Client Referrals'] as string[]) ?? []
+
+  // Fetch the linked agency (for Status only now — Name comes off the
+  // lookup below) and this staff's referrals in parallel. Skip the agency
+  // fetch cleanly if the staff has no Agency; skip the referrals fetch
+  // entirely if the reverse link is empty rather than sending an OR() with
+  // no clauses.
   const [agency, referralData] = await Promise.all([
     agencyId
       ? airtableFetch('Agencies', `/${agencyId}`).catch(() => null)
       : Promise.resolve(null),
-    fullName
+    referralIds.length > 0
       ? airtableFetch(
           'Client Referrals',
           `?filterByFormula=${encodeURIComponent(
-            `{Referring Staff} = "${fullName.replace(/"/g, '\\"')}"`,
+            `OR(${referralIds.map(id => `RECORD_ID()="${id}"`).join(',')})`,
           )}&sort[0][field]=Referral%20Date&sort[0][direction]=desc`,
         )
       : Promise.resolve({ records: [] }),
   ])
 
-  const referrals = (referralData.records ?? []).map((r: any) => {
-    const f = r.fields
-    return {
-      id: r.id,
-      clientName: `${f['First Name'] ?? ''} ${f['Last Name'] ?? ''}`.trim(),
-      referralDate: f['Referral Date'] as string,
-      appointmentDate: (f['Appointment Date'] as string[])?.[0] ?? null,
-      referralReview: f['Referral Review'] as string,
-      appointmentStatus: f['Appointment Status'] as string,
-      referredBy: safeLookupString(f['Referring Staff']),
-    }
-  })
+  const referrals = (referralData.records ?? []).map(shapeDawsonReferral)
 
   return {
     id: user.id,
@@ -265,14 +259,39 @@ export async function getStaffWithDetails(staffId: string) {
     role:   (uf['Role']   as string) ?? null,
     status: (uf['Status'] as string) ?? null,
     invitedDate:         (uf['Invited Date']         as string) ?? null,
+    // Who sent the invite — parallels the same field on the agency detail
+    // page's staff rows.
+    invitedBy: (uf['Invited By'] as string) ?? null,
     recordCreationDate:  (uf['Record Creation Date'] as string) ?? null,
     // June 2026 flag from Excel-import placeholders.
     needsReview: (uf['Needs Review'] as boolean) ?? false,
     clerkUserId: (uf['Clerk User ID'] as string) ?? null,
+    // Membership is a SEPARATE axis from Status / Portal Invite Status — an
+    // agency admin's own assertion that this person works there. Blank
+    // (the default) means unconfirmed; this is the entire axis the
+    // membership-confirmation work is built around, previously invisible
+    // on this page entirely.
+    membershipStatus: (uf['Membership Status'] as string) ?? null,
+    membershipDecidedBy: (uf['Membership Decided By'] as string) ?? null,
+    membershipDecidedAt: (uf['Membership Decided At'] as string) ?? null,
+    // The portal claim — stamped once, by stampFirstLogin, on this
+    // person's first Clerk sign-in. NOT the same fact as the older
+    // agency-data-reconciliation claim-token flow (Claim Token Used At,
+    // served by app/agency/claim/[token]) — that flow is about agency
+    // profile data, not portal access, and its fields don't belong here.
+    claimedDate: (uf['Claimed Date'] as string) ?? null,
+    lastLogin: (uf['Last Login'] as string) ?? null,
+    portalInviteStatus: (uf['Portal Invite Status'] as string) ?? null,
+    // Ben's own hand-ticked check on a bounced send, not import noise or an
+    // automated flag — see the checkbox's own field description.
+    emailBounce: (uf['Email Bounce'] as boolean) ?? false,
     // Agency link — null for placeholder / orphaned staff records.
     agencyId,
-    agencyName:   agency ? ((agency.fields['Agency Name'] as string) ?? null) : null,
-    agencyStatus: agency ? ((agency.fields['Status']      as string) ?? null) : null,
+    // Name comes off the lookup already sitting on this record — no longer
+    // dependent on the separate Agencies fetch succeeding. Status has no
+    // equivalent lookup, so it still needs that fetch.
+    agencyName: (uf['Agency Name (from Agency)'] as string[])?.[0] ?? null,
+    agencyStatus: agency ? ((agency.fields['Status'] as string) ?? null) : null,
     referrals,
     referralCount: referrals.length,
   }
