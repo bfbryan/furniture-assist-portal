@@ -17,6 +17,7 @@ export async function GET(req: NextRequest) {
     ?? searchParams.get('dateFrom')
     ?? undefined
   const appointmentDateTo = searchParams.get('appointmentDateTo') ?? undefined
+  const effectiveDateBlank = searchParams.get('effectiveDateBlank') === 'true'
   const agency = searchParams.get('agency') ?? undefined
   const limitRaw = searchParams.get('limit')
   const limit = limitRaw && /^\d+$/.test(limitRaw) ? Number(limitRaw) : undefined
@@ -26,6 +27,7 @@ export async function GET(req: NextRequest) {
     statuses: statuses.length > 0 ? statuses : undefined,
     appointmentDateFrom,
     appointmentDateTo,
+    effectiveDateBlank: effectiveDateBlank || undefined,
     agency,
     limit,
   })

@@ -58,7 +58,13 @@ type Referral = {
 
 // Statuses whose grouping/label date IS the effective appointment date — these
 // come back from a server date-bounded query.
-const DATED_STATUSES = ['Scheduled', 'Completed', 'No Show', 'Cancelled', 'Withdrawn']
+//
+// 'Withdrawn' was dropped from this list (Sep 2026, undated-terminal-
+// referrals): it is not a valid {Appointment Status} option on this base —
+// withdrawing writes 'Cancelled' there and puts 'Withdrawn' only in
+// {Referral Review} (see end-referral.ts). The entry could never match
+// anything; it just sat here looking like coverage that wasn't real.
+const DATED_STATUSES = ['Scheduled', 'Completed', 'No Show', 'Cancelled']
 
 // Statuses that hold no confirmed slot, so Effective Appointment Date is blank
 // and a date-bounded query never returns them. Fetched unbounded (a small,
@@ -70,6 +76,20 @@ const REQUEST_STATUSES = ['Pending Schedule', 'Unscheduled', 'Reschedule']
 function isRequestStatus(s: string): boolean {
   return s === 'Reschedule' || s === 'Pending Schedule' || s === 'Unscheduled'
 }
+
+// The one DATED_STATUSES status that can end up with a blank effective
+// date: a referral cancelled or withdrawn before it was ever scheduled has
+// no {Appointment Date} (no slot booked) and no {Original Appointment Date}
+// (that snapshot is written only when a slot is released — there wasn't
+// one). Scheduled/Completed/No Show can't have this problem; each requires
+// having had a real appointment to reach that status at all.
+//
+// Deliberately NOT folded into isRequestStatus()/REQUEST_STATUSES — those
+// are a name-based rule for a different reason (Reschedule rows usually
+// DO have a live effective date and are filed by what was asked for
+// anyway, not by what's missing). This is a data-based rule for an
+// unrelated gap: additive, not a replacement.
+const UNDATED_TERMINAL_STATUSES = ['Cancelled']
 
 // '7d' was added for the dashboard's "Cancelled, last 7 days" card, which links
 // here as ?pill=cancelled&range=7d so the number lands on the actual records.
@@ -91,7 +111,7 @@ const RANGE_DAYS: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '180
 const DEFAULTS = { q: '', range: '90d', date: '', pill: 'all', open: '' }
 
 type DerivedStatus =
-  | 'pending' | 'reschedule' | 'scheduled' | 'awaiting'
+  | 'pending' | 'rejected' | 'reschedule' | 'scheduled' | 'awaiting'
   | 'completed' | 'missed' | 'cancelled' | 'withdrawn'
 type PillKey = 'all' | DerivedStatus
 
@@ -101,6 +121,7 @@ type PillKey = 'all' | DerivedStatus
 const PILLS: { key: PillKey; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'pending', label: 'Pending' },
+  { key: 'rejected', label: 'Rejected' },
   { key: 'reschedule', label: 'Reschedule' },
   { key: 'scheduled', label: 'Scheduled' },
   { key: 'awaiting', label: 'Awaiting' },
@@ -117,8 +138,12 @@ const PILL_KEYS = PILLS.map(p => p.key) as PillKey[]
 // detail). The `missed` derived status is labelled 'No Show' here — the
 // internal term, matching the Airtable value. The agency portal deliberately
 // shows the same status as "Missed Appointment"; different audience.
+// `rejected` reuses the Cancelled red rather than spending a new palette
+// entry on a fourth terminal state nobody needs distinguished by colour —
+// the label already says which one it is.
 const STATUS_UI: Record<DerivedStatus, { label: string; bg: string; color: string }> = {
   pending: { label: 'Pending', bg: 'rgba(122,136,153,0.14)', color: '#5A6878' },
+  rejected: { label: 'Rejected', bg: 'rgba(192,57,43,0.10)', color: '#C0392B' },
   reschedule: { label: 'Reschedule requested', bg: 'rgba(201,168,76,0.18)', color: '#8A6D14' },
   scheduled: { label: 'Scheduled', bg: 'rgba(42,127,111,0.12)', color: '#2A7F6F' },
   awaiting: { label: 'Awaiting outcome', bg: '#EDEBE7', color: '#7A8899' },
@@ -168,19 +193,34 @@ function displayLastFirst(name: string): string {
 
 // The date a row is filed under and printed against. For a request-status row
 // that's the PREFERRED date (it holds no booked slot); otherwise the effective
-// appointment date. Falls back to the effective date for the rare reschedule
-// asked for with no specific Saturday.
+// appointment date, falling back to Preferred Date for a row that has neither
+// a booked slot nor a released-slot snapshot — cancelled or withdrawn before
+// it was ever scheduled (undated-terminal-referrals). Additive, not a
+// replacement for isRequestStatus(): a Reschedule row usually DOES have an
+// effective date and still files by Preferred Date regardless, on purpose —
+// this fallback only ever fires when effectiveAppointmentDate is genuinely
+// absent.
 function fileDateOf(r: Referral): string | null {
   if (isRequestStatus(r.appointmentStatus)) {
     return r.preferredDate || r.effectiveAppointmentDate || null
   }
-  return r.effectiveAppointmentDate || null
+  return r.effectiveAppointmentDate || r.preferredDate || null
 }
 
 // Derived status — the single source for both the pill counts and the row
 // pill, so the two can't disagree. 'awaiting' is a Scheduled referral whose
 // Saturday has passed with no outcome recorded (isAwaitingOutcome, the same
 // helper and the same raw-status key the agency side uses).
+//
+// 'Cancelled' splits on {Referral Review} rather than {Appointment Status}
+// because withdrawing writes 'Cancelled' there too — 'Withdrawn' is not a
+// valid Appointment Status option on this base (see end-referral.ts). A
+// prior `if (s === 'Withdrawn')` branch here could never fire; removed
+// rather than left as coverage that wasn't real.
+//
+// 'Rejected' is read the same way: rejecting only touches Referral Review
+// and leaves Appointment Status at 'Pending Schedule', so it has to be
+// checked before the 'pending' catch-all or it merges into it invisibly.
 function deriveStatus(r: Referral, todayISO: string): DerivedStatus {
   const s = r.appointmentStatus
   if (s === 'Scheduled') {
@@ -189,8 +229,8 @@ function deriveStatus(r: Referral, todayISO: string): DerivedStatus {
   if (s === 'Reschedule') return 'reschedule'
   if (s === 'Completed') return 'completed'
   if (s === 'No Show') return 'missed'
-  if (s === 'Cancelled') return 'cancelled'
-  if (s === 'Withdrawn') return 'withdrawn'
+  if (s === 'Cancelled') return r.referralReview === 'Withdrawn' ? 'withdrawn' : 'cancelled'
+  if (r.referralReview === 'Rejected') return 'rejected'
   return 'pending' // Pending Schedule / Unscheduled / anything unbooked
 }
 
@@ -424,10 +464,15 @@ function ReferralsView() {
   const [actionLoading, setActionLoading] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
 
-  // Two fetches. The dated statuses are bounded server-side on Effective
+  // Three fetches. The dated statuses are bounded server-side on Effective
   // Appointment Date; the request statuses have no such date, so they come
   // back unbounded (a small set — Dawson books them within a week or two) and
-  // are windowed by Preferred Date in the merge below.
+  // are windowed by Preferred Date in the merge below. The third — a
+  // DATED_STATUSES status with Effective Appointment Date genuinely blank,
+  // e.g. cancelled or withdrawn before it was ever scheduled — gets the same
+  // unbounded-and-windowed treatment as the request statuses, into the same
+  // `requests` array, since once it's fetched it needs exactly the same
+  // Preferred-Date handling they already get (undated-terminal-referrals).
   const lowerBound = rangeDays > 0 ? addDaysISO(todayISO, -rangeDays) : ''
   useEffect(() => {
     let cancelled = false
@@ -445,14 +490,19 @@ function ReferralsView() {
     const reqParams = new URLSearchParams()
     REQUEST_STATUSES.forEach(s => reqParams.append('status', s))
 
+    const undatedTerminalParams = new URLSearchParams()
+    UNDATED_TERMINAL_STATUSES.forEach(s => undatedTerminalParams.append('status', s))
+    undatedTerminalParams.set('effectiveDateBlank', 'true')
+
     Promise.all([
       fetch(`/api/dawson/referrals?${datedParams.toString()}`, { cache: 'no-store' }).then(r => r.json()),
       fetch(`/api/dawson/referrals?${reqParams.toString()}`, { cache: 'no-store' }).then(r => r.json()),
+      fetch(`/api/dawson/referrals?${undatedTerminalParams.toString()}`, { cache: 'no-store' }).then(r => r.json()),
     ])
-      .then(([a, b]) => {
+      .then(([a, b, c]) => {
         if (cancelled) return
         setDated(Array.isArray(a) ? a : [])
-        setRequests(Array.isArray(b) ? b : [])
+        setRequests([...(Array.isArray(b) ? b : []), ...(Array.isArray(c) ? c : [])])
         setLoading(false)
       })
       .catch(() => { if (!cancelled) setLoading(false) })
@@ -508,7 +558,7 @@ function ReferralsView() {
   // rule as the Agencies page).
   const pillCounts = useMemo(() => {
     const c: Record<PillKey, number> = {
-      all: withStatus.length, pending: 0, reschedule: 0, scheduled: 0, awaiting: 0,
+      all: withStatus.length, pending: 0, rejected: 0, reschedule: 0, scheduled: 0, awaiting: 0,
       completed: 0, missed: 0, cancelled: 0, withdrawn: 0,
     }
     for (const { st } of withStatus) c[st] += 1
