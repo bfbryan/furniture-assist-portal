@@ -23,6 +23,7 @@ import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { DAWSON_PAGE_BAR_HEIGHT } from '@/components/internal/DawsonPageBar'
 import { formatEasternTimestamp, formatDateOnly } from '@/lib/dates'
+import { fileDateOf } from '@/lib/referrals/effective-date'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -218,20 +219,13 @@ function monthLabel(yearMonthKey: string): string {
   return formatDateOnly(`${yearMonthKey}-01`, { month: 'long', year: 'numeric' })
 }
 
-// Same convention as agencies/[id] — not invented here. A request-status row
-// files under what was asked for; everything else files under the live
-// appointment date, coalesced with the snapshot taken when a slot was
-// released, so a cancelled referral still groups into the month it was
-// booked for.
-function isRequestStatus(appointmentStatus: string): boolean {
-  return appointmentStatus === 'Reschedule' || appointmentStatus === 'Pending Schedule'
-}
-function fileDateOf(r: Referral): string | null {
-  if (isRequestStatus(r.appointmentStatus)) {
-    return r.preferredDate || r.effectiveAppointmentDate || null
-  }
-  return r.effectiveAppointmentDate || null
-}
+// fileDateOf: shared from lib/referrals/effective-date.ts
+// (consolidate-file-date) — was its own local copy here, diverged from
+// Dawson's referrals list in one way (no Preferred Date fallback for a
+// cancelled-or-withdrawn-before-scheduled row), which left that referral
+// sitting in the "no date" group below instead of filed under what it was
+// asked for. Not invisible — this page has no date-range control, every
+// referral always renders — just misfiled.
 
 // No search / filter / date-range controls — this is one person's referral
 // list, not an agency's aggregate; the agency page's controls earn their

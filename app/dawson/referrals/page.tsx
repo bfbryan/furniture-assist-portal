@@ -23,6 +23,7 @@ import { Suspense, useEffect, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { addDaysISO, easternTodayISO, formatDateOnly } from '@/lib/dates'
 import { isAwaitingOutcome, withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
+import { fileDateOf, isRequestStatus } from '@/lib/referrals/effective-date'
 import { formatSlot } from '@/lib/referrals/slot-display'
 import { matchesSearch } from '@/lib/search'
 import { useListUrlState } from '@/components/internal/useListUrlState'
@@ -68,14 +69,15 @@ const DATED_STATUSES = ['Scheduled', 'Completed', 'No Show', 'Cancelled']
 
 // Statuses that hold no confirmed slot, so Effective Appointment Date is blank
 // and a date-bounded query never returns them. Fetched unbounded (a small,
-// fast-draining set) and windowed here by Preferred Date instead. 'Unscheduled'
-// is the legacy synonym for 'Pending Schedule' — no live rows today, kept so
-// the pill can't silently miss one. See the consolidation plan.
-const REQUEST_STATUSES = ['Pending Schedule', 'Unscheduled', 'Reschedule']
-
-function isRequestStatus(s: string): boolean {
-  return s === 'Reschedule' || s === 'Pending Schedule' || s === 'Unscheduled'
-}
+// fast-draining set) and windowed here by Preferred Date instead (see
+// isRequestStatus/fileDateOf, shared from lib/referrals/effective-date.ts).
+//
+// 'Unscheduled' dropped (Sep 2026, consolidate-file-date): reconfirmed
+// against the live base, not just the schema — zero records hold it, and
+// it is not a valid {Appointment Status} option. The legacy-synonym theory
+// this entry existed for isn't live anywhere; the consolidation plan this
+// comment used to point at is this change.
+const REQUEST_STATUSES = ['Pending Schedule', 'Reschedule']
 
 // The one DATED_STATUSES status that can end up with a blank effective
 // date: a referral cancelled or withdrawn before it was ever scheduled has
@@ -191,21 +193,9 @@ function displayLastFirst(name: string): string {
   return `${parts[parts.length - 1]}, ${parts.slice(0, -1).join(' ')}`
 }
 
-// The date a row is filed under and printed against. For a request-status row
-// that's the PREFERRED date (it holds no booked slot); otherwise the effective
-// appointment date, falling back to Preferred Date for a row that has neither
-// a booked slot nor a released-slot snapshot — cancelled or withdrawn before
-// it was ever scheduled (undated-terminal-referrals). Additive, not a
-// replacement for isRequestStatus(): a Reschedule row usually DOES have an
-// effective date and still files by Preferred Date regardless, on purpose —
-// this fallback only ever fires when effectiveAppointmentDate is genuinely
-// absent.
-function fileDateOf(r: Referral): string | null {
-  if (isRequestStatus(r.appointmentStatus)) {
-    return r.preferredDate || r.effectiveAppointmentDate || null
-  }
-  return r.effectiveAppointmentDate || r.preferredDate || null
-}
+// fileDateOf/isRequestStatus: shared from lib/referrals/effective-date.ts
+// (consolidate-file-date) — this page's own post-fix version is what's now
+// exported from there, so this is an import, not a re-implementation.
 
 // Derived status — the single source for both the pill counts and the row
 // pill, so the two can't disagree. 'awaiting' is a Scheduled referral whose
