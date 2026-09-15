@@ -6,6 +6,13 @@
 // Called by the agency New Referral form before submit. Returns ONE outcome,
 // carrying only the fields that outcome needs.
 //
+// Gated the same way as POST /api/referrals/submit (live-referrals-
+// foundation) — canAgencySubmit(), global check first and alone so it can
+// 403 without Airtable, then the per-agency check once agencyUser is
+// resolved. This endpoint creates nothing and already enforces the privacy
+// rule below regardless of gate, but "a stale tab must not get through"
+// stops being true the moment one agency-side endpoint is exempt from it.
+//
 // ============================================================
 // THE PRIVACY RULE
 // ============================================================
@@ -41,10 +48,11 @@
 
 import { NextResponse } from 'next/server'
 import { auth } from '@clerk/nextjs/server'
-import { getAgencyUserByClerkId } from '@/lib/airtable'
+import { getAgencyUserByClerkId, getAgencyById } from '@/lib/airtable'
 import { findClientByIdentity } from '@/lib/referrals/match'
 import { isDoNotServeStatus } from '@/lib/clients/do-not-serve'
 import { withinNoShowRescheduleWindow } from '@/lib/referrals/no-show-window'
+import { AGENCY_SUBMISSION_ENABLED, canAgencySubmit } from '@/lib/flags'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -204,9 +212,29 @@ function classify(rows: ReferralRow[], clientFields: Record<string, unknown>): C
 export async function POST(req: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  // Global half of the gate, checked first and alone — see the matching
+  // comment in POST /api/referrals/submit.
+  if (!AGENCY_SUBMISSION_ENABLED) {
+    return NextResponse.json(
+      { error: 'Online referral submission is not available yet.' },
+      { status: 403 },
+    )
+  }
+
   const agencyUser = await getAgencyUserByClerkId(userId)
   if (!agencyUser) return NextResponse.json({ error: 'No agency linked' }, { status: 403 })
   const callerAgencyId = agencyUser.agencyId
+  if (!callerAgencyId) return NextResponse.json({ error: 'No agency linked' }, { status: 403 })
+
+  // Per-agency half — needs agencyId, so can't run any earlier than here.
+  const agency = await getAgencyById(callerAgencyId)
+  if (!canAgencySubmit(agency)) {
+    return NextResponse.json(
+      { error: 'Online referral submission is not available yet.' },
+      { status: 403 },
+    )
+  }
 
   const body = await req.json().catch(() => ({}))
   const firstName = typeof body.firstName === 'string' ? body.firstName.trim() : ''

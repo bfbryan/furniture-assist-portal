@@ -2,6 +2,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import { getAgencyUserByClerkId, getAgencyById } from '@/lib/airtable'
+import { canAgencySubmit } from '@/lib/flags'
 import AgencyPortalShell from '@/components/agency/AgencyPortalShell'
 
 export default async function AgencyLayout({
@@ -42,6 +43,7 @@ export default async function AgencyLayout({
       agencyName={agency.name}
       userName={agencyUser.name || agencyUser.email}
       isAdmin={isAdmin}
+      canSubmitReferrals={canAgencySubmit(agency)}
     >
       {children}
     </AgencyPortalShell>

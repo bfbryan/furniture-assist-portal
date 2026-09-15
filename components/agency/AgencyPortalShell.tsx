@@ -12,6 +12,10 @@ type Props = {
   agencyName: string
   userName: string
   isAdmin: boolean
+  // canAgencySubmit(agency) result, computed once in the layout (the one
+  // place that already fetches the agency record for every page) and
+  // threaded down here rather than re-derived — see lib/flags.ts.
+  canSubmitReferrals: boolean
 }
 
 export default function AgencyPortalShell({
@@ -19,6 +23,7 @@ export default function AgencyPortalShell({
   agencyName,
   userName,
   isAdmin,
+  canSubmitReferrals,
 }: Props) {
   const pathname = usePathname()
 
@@ -263,29 +268,43 @@ export default function AgencyPortalShell({
             </svg>
             History
           </Link>
-          <div style={disabledLinkStyle} title="Coming soon">
-            <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          {/* An agency without access keeps seeing this exactly as it always
+              has — badge and all. Hidden entirely reads as "the item
+              appeared one day with no explanation" to whichever agency was
+              gated the whole time; this stays a promise, not a surprise. */}
+          {canSubmitReferrals ? (
+            <Link href="/referrals/new" style={linkStyle(isActive('/referrals/new'))}>
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19" />
                 <line x1="5" y1="12" x2="19" y2="12" />
               </svg>
               New Referral
-            </span>
-            <span
-              style={{
-                fontSize: '9px',
-                fontWeight: 700,
-                letterSpacing: '0.05em',
-                textTransform: 'uppercase',
-                background: 'rgba(255,255,255,0.08)',
-                color: 'rgba(255,255,255,0.5)',
-                padding: '2px 6px',
-                borderRadius: '4px',
-              }}
-            >
-              Soon
-            </span>
-          </div>
+            </Link>
+          ) : (
+            <div style={disabledLinkStyle} title="Coming soon">
+              <span style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <line x1="12" y1="5" x2="12" y2="19" />
+                  <line x1="5" y1="12" x2="19" y2="12" />
+                </svg>
+                New Referral
+              </span>
+              <span
+                style={{
+                  fontSize: '9px',
+                  fontWeight: 700,
+                  letterSpacing: '0.05em',
+                  textTransform: 'uppercase',
+                  background: 'rgba(255,255,255,0.08)',
+                  color: 'rgba(255,255,255,0.5)',
+                  padding: '2px 6px',
+                  borderRadius: '4px',
+                }}
+              >
+                Soon
+              </span>
+            </div>
+          )}
 
           {/* Profile, Team and Help sit outside the REFERRALS group. This 18px
               top margin closes that group with space rather than another
@@ -372,7 +391,7 @@ export default function AgencyPortalShell({
 
         {/* Slim page bar — every page. Below the mobile top bar on a phone,
             at the top of <main> on desktop. */}
-        <AgencyPageBar userName={userName} agencyName={agencyName} />
+        <AgencyPageBar userName={userName} agencyName={agencyName} canSubmitReferrals={canSubmitReferrals} />
 
         {children}
       </main>

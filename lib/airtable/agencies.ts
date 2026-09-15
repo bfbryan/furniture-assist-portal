@@ -48,6 +48,10 @@ export async function getAgencyById(agencyId: string) {
     adminPhone: safeLookupString(f['Admin Phone']) ?? null,
     status: optionalString(f['Status']) ?? '',
     clerkOrgId: optionalString(f['Clerk Org ID']),
+    // Per-agency half of the agency-submission gate — see lib/flags.ts'
+    // canAgencySubmit(). Already coming back on this fetch (no `fields[]`
+    // restriction above), just not mapped until now.
+    liveReferrals: (f['Live Referrals'] as boolean) ?? false,
   }
 }
 

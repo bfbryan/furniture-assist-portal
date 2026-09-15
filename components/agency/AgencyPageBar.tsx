@@ -17,15 +17,16 @@
 // shell, which made the same change earlier.
 //   - Desktop (>=1280): sticky at top: 0, z-index 50.
 //   - Below 1280: sticky at top: 64px, directly under the shell's mobile top
-//     bar (z-index 30, below that bar's 40). The disabled New Referral button
-//     and the avatar slot both hide there — the mobile top bar carries the
-//     visible avatar and sign-out.
+//     bar (z-index 30, below that bar's 40). The New Referral button — either
+//     state — and the avatar slot both hide there; the mobile top bar carries
+//     the visible avatar and sign-out.
 //
 // The referral detail page has its own sub-header (Reschedule / Cancel / the
 // status pill). On desktop it sticks at top: AGENCY_PAGE_BAR_HEIGHT, directly
 // below this bar; below 1280 it is position: static and scrolls with the page.
 
 import { usePathname } from 'next/navigation'
+import Link from 'next/link'
 import AgencyAvatarMenu from './AgencyAvatarMenu'
 
 // The bar's rendered desktop height in px. Mirrors `min-height: 60px` on
@@ -58,9 +59,11 @@ function titleFor(pathname: string): string {
 export default function AgencyPageBar({
   userName,
   agencyName,
+  canSubmitReferrals,
 }: {
   userName: string
   agencyName: string
+  canSubmitReferrals: boolean
 }) {
   const pathname = usePathname()
   const title = titleFor(pathname)
@@ -76,18 +79,28 @@ export default function AgencyPageBar({
 
       <span style={{ flex: 1 }} />
 
-      {/* Disabled until the New Referral flow ships — it returns to the filled
-          teal primary then. Rendered muted (not a filled teal button) so the
-          most prominent control on the page isn't a dead one; no SOON badge,
-          the rail nav item already carries that signal. `disabled` also keeps
-          it out of the tab order. All styling — including the display, so the
-          below-1280 `display: none` can win — is in globals.css. */}
-      <button type="button" className="fa-pagebar-newref" disabled title="New Referral — coming soon">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-          <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
-        </svg>
-        New Referral
-      </button>
+      {/* Muted until the agency has access, filled teal primary once it does
+          — canSubmitReferrals is the same composed flag the rail nav item
+          gates on (AgencyPortalShell), threaded down from the layout. No
+          SOON badge either way; the rail nav item already carries that
+          signal. All layout — including the display, so the below-1280
+          `display: none` can win — stays in globals.css; only the
+          enabled/disabled modifier class differs. */}
+      {canSubmitReferrals ? (
+        <Link href="/referrals/new" className="fa-pagebar-newref fa-pagebar-newref--active">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          New Referral
+        </Link>
+      ) : (
+        <button type="button" className="fa-pagebar-newref" disabled title="New Referral — coming soon">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          New Referral
+        </button>
+      )}
 
       <AgencyAvatarMenu userName={userName} agencyName={agencyName} className="fa-pagebar-avatar-slot" />
     </div>

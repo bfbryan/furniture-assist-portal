@@ -46,7 +46,7 @@
 
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { getAgencyUserByClerkId, updateClient } from '@/lib/airtable'
+import { getAgencyUserByClerkId, getAgencyById, updateClient } from '@/lib/airtable'
 import { REC_ID_RE } from '@/lib/airtable/client'
 import {
   assertClientMayBeReferred,
@@ -66,7 +66,7 @@ import {
   NO_SHOW_RESCHEDULE_WINDOW_DAYS,
 } from '@/lib/referrals/no-show-window'
 import { requireAgencyReferralAccess } from '@/lib/auth/agency-referral-access'
-import { AGENCY_SUBMISSION_ENABLED } from '@/lib/flags'
+import { AGENCY_SUBMISSION_ENABLED, canAgencySubmit } from '@/lib/flags'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -93,12 +93,15 @@ export async function POST(req: Request) {
   const { userId, orgId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  // Phase 1 gate — agency submission is closed in production until launch.
-  // Covers BOTH branches below (a normal create and the rescheduleReferralId
-  // convert), since both are the agency New Referral form. The reschedule
-  // REQUEST endpoint POST /api/referrals/[id]/reschedule is separate and stays
-  // open. The page at /referrals/new redirects for the same reason. Flip
-  // AGENCY_SUBMISSION_ENABLED in lib/flags.ts to open both.
+  // Global half of the gate — the emergency override (see lib/flags.ts).
+  // Checked first and alone, before agencyUser is even resolved, so it can
+  // 403 without depending on Airtable being reachable. The per-agency half
+  // (canAgencySubmit, below) needs agencyId and so can't run this early.
+  // Both cover BOTH branches below (a normal create and the
+  // rescheduleReferralId convert), since both are the agency New Referral
+  // form. The reschedule REQUEST endpoint POST /api/referrals/[id]/reschedule
+  // is separate and stays open. The page at /referrals/new redirects for the
+  // same reason.
   if (!AGENCY_SUBMISSION_ENABLED) {
     return NextResponse.json(
       { error: 'Online referral submission is not available yet.' },
@@ -117,6 +120,22 @@ export async function POST(req: Request) {
 
   const agencyUser = await getAgencyUserByClerkId(userId)
   if (!agencyUser) return NextResponse.json({ error: 'No agency linked' }, { status: 403 })
+
+  // Per-agency half of the gate (live-referrals-foundation) — canAgencySubmit
+  // re-checks AGENCY_SUBMISSION_ENABLED too, which is redundant with the
+  // early-return above but deliberately so: that first check is what lets
+  // the emergency override 403 without needing agencyUser resolved or
+  // Airtable reachable at all. This one needs agencyId, which only exists
+  // once agencyUser does, so it can't move any earlier than here. Same
+  // composition the nav item and page bar button use — covers both the
+  // create and convert branches below, same as the check above it.
+  const agency = await getAgencyById(agencyUser.agencyId!)
+  if (!canAgencySubmit(agency)) {
+    return NextResponse.json(
+      { error: 'Online referral submission is not available yet.' },
+      { status: 403 },
+    )
+  }
 
   const body = await req.json().catch(() => ({}))
 
