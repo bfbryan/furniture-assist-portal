@@ -325,6 +325,17 @@ export async function getAllReferrals(filters?: {
   // before the field was un-misspelled (2026-08-14) never match — correct, not
   // a lookup failure.
   cancellationFrom?: string      // inclusive lower bound, ISO date
+  // Sep 2026, undated-terminal-referrals: a referral cancelled or withdrawn
+  // before it was ever scheduled has nothing for {Effective Appointment
+  // Date} to coalesce — no {Appointment Date} (no slot booked) and no
+  // {Original Appointment Date} (that snapshot is written only when a slot
+  // is released, and there was none). Filtering DATED_STATUSES on that
+  // field, as appointmentDateFrom/To above does, silently drops those rows
+  // out of every bounded range. This is how Dawson's referrals list fetches
+  // them instead — unbounded, alongside the request-status fetch it already
+  // runs the same way — so they can be windowed by Preferred Date in code
+  // rather than lost at the query.
+  effectiveDateBlank?: boolean
   agency?: string                // Agencies record id — matched against {Referring Agency ID}
   limit?: number                 // cap total rows (server-side maxRecords, applied after sort)
   // Substring match on client name / agency / staff, applied in JS AFTER the
@@ -365,6 +376,10 @@ export async function getAllReferrals(filters?: {
     conditions.push(
       `OR(IS_BEFORE({Effective Appointment Date}, "${filters.appointmentDateTo}"), IS_SAME({Effective Appointment Date}, "${filters.appointmentDateTo}", 'day'))`
     )
+  }
+
+  if (filters?.effectiveDateBlank) {
+    conditions.push(`{Effective Appointment Date} = ""`)
   }
 
   if (filters?.cancellationFrom) {
