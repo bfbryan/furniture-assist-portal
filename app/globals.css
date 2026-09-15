@@ -120,8 +120,12 @@ h1, h2, h3, h4, h5, h6 {
   flex: 1 1 120px;
 }
 
-/* Disabled New Referral placeholder. Styled here (not inline) so the
-   below-1280 `display: none` can override it — an inline display would win. */
+/* New Referral, page bar. Base rule is the disabled placeholder; styled here
+   (not inline) so the below-1280 `display: none` can override it — an inline
+   display would win. --active is the enabled state (live-referrals-
+   foundation), the "filled teal primary" this comment used to only promise —
+   same teal/white/Montserrat-700 treatment as the portal's other primary
+   buttons (e.g. Team page's Add Staff Member). */
 .fa-pagebar-newref {
   display: inline-flex;
   align-items: center;
@@ -137,6 +141,15 @@ h1, h2, h3, h4, h5, h6 {
   font-family: inherit;
   cursor: not-allowed;
   white-space: nowrap;
+}
+
+.fa-pagebar-newref--active {
+  background: #2A7F6F;
+  color: white;
+  font-family: var(--font-montserrat);
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none; /* base rule targets a <button>; this variant is an <a> */
 }
 
 .fa-pagebar-avatar {
