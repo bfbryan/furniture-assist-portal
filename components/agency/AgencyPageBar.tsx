@@ -56,6 +56,28 @@ function titleFor(pathname: string): string {
   return ''
 }
 
+// New Referral, cosmetic properties — inline, not a CSS class. See the
+// comment on .fa-pagebar-newref in globals.css for why: a class modifier
+// here lost to the base rule's disabled look in a live test despite
+// textually overriding it, root cause not pinned down, and inline style
+// can't fail that way regardless. .fa-pagebar-newref (still a class, for the
+// below-1280 display:none) supplies layout only now.
+const newReferralActiveStyle: React.CSSProperties = {
+  background: '#2A7F6F',
+  color: 'white',
+  fontFamily: 'var(--font-montserrat)',
+  fontWeight: 700,
+  cursor: 'pointer',
+  textDecoration: 'none',
+}
+const newReferralDisabledStyle: React.CSSProperties = {
+  background: 'rgba(255, 255, 255, 0.08)',
+  color: 'rgba(255, 255, 255, 0.45)',
+  fontFamily: 'inherit',
+  fontWeight: 400, // Lato (inherited) ships 400/700; disabled + faint, no weight needed
+  cursor: 'not-allowed',
+}
+
 export default function AgencyPageBar({
   userName,
   agencyName,
@@ -83,18 +105,17 @@ export default function AgencyPageBar({
           — canSubmitReferrals is the same composed flag the rail nav item
           gates on (AgencyPortalShell), threaded down from the layout. No
           SOON badge either way; the rail nav item already carries that
-          signal. All layout — including the display, so the below-1280
-          `display: none` can win — stays in globals.css; only the
-          enabled/disabled modifier class differs. */}
+          signal. className carries layout only; the two style objects above
+          carry everything that differs between states. */}
       {canSubmitReferrals ? (
-        <Link href="/referrals/new" className="fa-pagebar-newref fa-pagebar-newref--active">
+        <Link href="/referrals/new" className="fa-pagebar-newref" style={newReferralActiveStyle}>
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>
           New Referral
         </Link>
       ) : (
-        <button type="button" className="fa-pagebar-newref" disabled title="New Referral — coming soon">
+        <button type="button" className="fa-pagebar-newref" style={newReferralDisabledStyle} disabled title="New Referral — coming soon">
           <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
             <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
           </svg>

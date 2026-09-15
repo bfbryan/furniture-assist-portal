@@ -120,12 +120,18 @@ h1, h2, h3, h4, h5, h6 {
   flex: 1 1 120px;
 }
 
-/* New Referral, page bar. Base rule is the disabled placeholder; styled here
-   (not inline) so the below-1280 `display: none` can override it — an inline
-   display would win. --active is the enabled state (live-referrals-
-   foundation), the "filled teal primary" this comment used to only promise —
-   same teal/white/Montserrat-700 treatment as the portal's other primary
-   buttons (e.g. Team page's Add Staff Member). */
+/* New Referral, page bar — LAYOUT ONLY. Colour, weight, font-family and
+   cursor are inline in AgencyPageBar.tsx (one object per state), not here —
+   a `.fa-pagebar-newref--active` modifier class used to carry them and lost
+   to the base rule's cursor/background/color in a live test even though it
+   listed overrides for all three; never fully diagnosed (no browser this
+   session to read computed styles), so removed rather than patched. Inline
+   style can't lose that way — it's also the only mechanism every OTHER
+   primary teal button in this app already uses (Add Staff Member, Send
+   Invitation, the nav item beside this one), so this isn't a new pattern,
+   it's this button finally matching the rest of them.
+   Stays a class for one reason: the below-1280 `display: none` override
+   below needs to win, and an inline `display` would always beat it. */
 .fa-pagebar-newref {
   display: inline-flex;
   align-items: center;
@@ -134,22 +140,8 @@ h1, h2, h3, h4, h5, h6 {
   padding: 7px 13px;
   border: none;
   border-radius: 8px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.45);
   font-size: 13px;
-  font-weight: 400; /* Lato (inherited) ships 400/700; disabled + faint, no weight needed */
-  font-family: inherit;
-  cursor: not-allowed;
   white-space: nowrap;
-}
-
-.fa-pagebar-newref--active {
-  background: #2A7F6F;
-  color: white;
-  font-family: var(--font-montserrat);
-  font-weight: 700;
-  cursor: pointer;
-  text-decoration: none; /* base rule targets a <button>; this variant is an <a> */
 }
 
 .fa-pagebar-avatar {
