@@ -25,6 +25,7 @@ import { DAWSON_PAGE_BAR_HEIGHT } from '@/components/internal/DawsonPageBar'
 import { cityStateZip } from '@/lib/address'
 import { formatEasternTimestamp, formatDateOnly, formatRelativeTime, easternTodayISO, differenceInDaysISO } from '@/lib/dates'
 import { matchesSearch } from '@/lib/search'
+import { fileDateOf } from '@/lib/referrals/effective-date'
 
 // ---------------------------------------------------------------------------
 // Types — optional Airtable fields are string | null, honestly (Airtable
@@ -464,13 +465,13 @@ function monthLabel(yearMonthKey: string): string {
   return formatDateOnly(`${yearMonthKey}-01`, { month: 'long', year: 'numeric' })
 }
 
-// The date a referral is FILED and GROUPED under — not invented here, the
-// same convention Dawson's referrals list already uses (fileDateOf /
-// isRequestStatus in app/dawson/referrals/page.tsx). A request-status row
-// (no booked slot) files under what the agency asked for; everything else
-// files under the live appointment date, coalesced with the snapshot taken
-// when a slot was released, so a cancelled referral still groups into the
-// month it was booked for rather than the month it was cancelled.
+// fileDateOf: shared from lib/referrals/effective-date.ts
+// (consolidate-file-date) — was its own local copy here, diverged from
+// Dawson's referrals list in one way (no Preferred Date fallback for a
+// cancelled-or-withdrawn-before-scheduled row). withinRange() below already
+// exempts a null-file-date row from every range rather than dropping it, so
+// that referral wasn't invisible — it sat in the "No date yet" group
+// instead of the month it was actually asked for.
 //
 // Deliberately NOT Referral Date (submission): grouping and the displayed
 // date used to read Referral Date while the row's own text showed the
@@ -478,15 +479,6 @@ function monthLabel(yearMonthKey: string): string {
 // appointment appeared under "August 2026" with "Sep 12" printed on it — the
 // header and the row it contained disagreed. This card answers "when is a
 // family being served," which is the appointment side, not the paperwork side.
-function isRequestStatus(appointmentStatus: string): boolean {
-  return appointmentStatus === 'Reschedule' || appointmentStatus === 'Pending Schedule'
-}
-function fileDateOf(r: Referral): string | null {
-  if (isRequestStatus(r.appointmentStatus)) {
-    return r.preferredDate || r.effectiveAppointmentDate || null
-  }
-  return r.effectiveAppointmentDate || null
-}
 
 function ReferralsCard({ referrals }: { referrals: Referral[] }) {
   const [search, setSearch] = useState('')
