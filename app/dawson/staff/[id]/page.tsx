@@ -2,16 +2,19 @@
 
 // app/dawson/staff/[id]/page.tsx
 //
-// detail-pages-rebuild. Fed entirely by GET /api/dawson/staff/[id]
+// detail-pages-rebuild, reshaped (staff-detail-reshape) to match
+// app/dawson/agencies/[id]/page.tsx's structure — header pills, compact
+// lifecycle timeline, filterable/grouped referrals card, right-rail cards
+// instead of one long info list. Fed entirely by GET /api/dawson/staff/[id]
 // (getStaffWithDetails) — one Agency Users record, one Agencies record (for
-// Status only — Name comes off a lookup already on the Agency Users row),
-// and this person's referrals via the Client Referrals reverse link. See
-// lib/airtable/agency-users.ts for the read.
+// Status and Primary Admin — Name comes off a lookup already on the Agency
+// Users row), and this person's referrals via the Client Referrals reverse
+// link. See lib/airtable/agency-users.ts for the read.
 //
-// Read-only, same as before this rebuild — no status changes, no editing.
-// Every caller (Referral Details card, agencies/[id] staff rows,
-// staff/wrong-agency, universal search) wants "view the record"; none
-// expects an action here.
+// Read-only, same as before this rebuild and before this reshape — no
+// status changes, no editing. Every caller (Referral Details card,
+// agencies/[id] staff rows, staff/wrong-agency, universal search) wants
+// "view the record"; none expects an action here.
 //
 // Weights: Lato (no fontFamily set, the inherited body face) ships 400/700
 // only; Montserrat (fontFamily: var(--font-montserrat)) ships 400/600/700.
@@ -19,11 +22,13 @@
 // 600 in a few places — both unloaded, the same bug the agency portal was
 // swept for. Every declaration below is 400/600/700.
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import { DAWSON_PAGE_BAR_HEIGHT } from '@/components/internal/DawsonPageBar'
-import { formatEasternTimestamp, formatDateOnly } from '@/lib/dates'
+import { formatEasternTimestamp, formatDateOnly, formatRelativeTime, easternTodayISO, differenceInDaysISO } from '@/lib/dates'
 import { fileDateOf } from '@/lib/referrals/effective-date'
+import { matchesSearch } from '@/lib/search'
+import CompactTimeline, { type TimelineSegment } from '@/components/internal/CompactTimeline'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -55,7 +60,7 @@ type Staff = {
   // Membership is a SEPARATE axis from Status / Portal Invite Status — an
   // agency admin's own assertion that this person works there. Blank
   // (unconfirmed, the default) is what this whole rebuild exists to stop
-  // hiding — see the header pill and the Membership row below.
+  // hiding — see the header pill and the Portal access card below.
   membershipStatus: string | null
   membershipDecidedBy: string | null
   membershipDecidedAt: string | null
@@ -71,6 +76,9 @@ type Staff = {
   agencyId: string | null
   agencyName: string | null
   agencyStatus: string | null
+  // staff-detail-reshape — whether this person is their agency's linked
+  // Primary Admin. See lib/airtable/agency-users.ts.
+  isPrimaryAdmin: boolean
   referrals: Referral[]
   referralCount: number
 }
@@ -81,21 +89,84 @@ type Staff = {
 
 // Record Creation Date is a date-only value ('YYYY-MM-DD') despite its
 // Airtable field type — checked live, not assumed from the type name.
-// Invited Date / Membership Decided At / Claimed Date / Last Login are real
-// instants (full timestamps) and go through formatEasternTimestamp instead.
+// Invited Date / Claimed Date / Last Login are real instants (full
+// timestamps) and go through formatEasternTimestamp instead.
+//
+// Both drop the year when the date falls in the CURRENT calendar year, and
+// show it otherwise — a rule, not a copy of the agency page's unconditional
+// year-less formatting. That page can drop the year unconditionally because
+// Reconciled / Live Referrals work is all this year; a staff record carries
+// no such guarantee (Record Creation Date can be years old), and a
+// year-less "Jan 4" on a 2024 record would misread as recent.
+function formatDateShortMaybeYear(dateStr: string | null, currentYear: number): string | null {
+  if (!dateStr) return null
+  const d = new Date(dateStr + 'T12:00:00')
+  const opts: Intl.DateTimeFormatOptions = d.getFullYear() === currentYear
+    ? { month: 'short', day: 'numeric' }
+    : { month: 'short', day: 'numeric', year: 'numeric' }
+  return d.toLocaleDateString('en-US', opts)
+}
+function formatInstantShortMaybeYear(dateStr: string | null, currentYear: number): string | null {
+  if (!dateStr) return null
+  const year = new Date(dateStr).getFullYear()
+  const opts: Intl.DateTimeFormatOptions = year === currentYear
+    ? { month: 'short', day: 'numeric' }
+    : { month: 'short', day: 'numeric', year: 'numeric' }
+  return formatEasternTimestamp(dateStr, opts)
+}
+
+// Full-date variants for the InfoRow-style Contact/Portal access cards —
+// unrelated to the compact timeline's space constraint, always carry the
+// year.
 function formatDate(dateStr: string | null): string {
   if (!dateStr) return '—'
   const d = new Date(dateStr + 'T12:00:00')
   return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
 }
-
 function formatInstant(dateStr: string | null): string {
   if (!dateStr) return '—'
   return formatEasternTimestamp(dateStr, { month: 'short', day: 'numeric', year: 'numeric' })
 }
 
 // ---------------------------------------------------------------------------
-// Styling — same tokens as the rebuilt agency detail page
+// Lifecycle timeline — four segments, this person's own: Created, Invited
+// (with who sent it), Claimed, Last login. Rendered by the shared
+// CompactTimeline (components/internal/CompactTimeline.tsx) — the agency
+// page's timeline moved there in the same branch so both pages draw from
+// one implementation. Segment content stays here: what counts as "reached"
+// and which date is specific to a staff record, not something the shared
+// renderer should know about.
+// ---------------------------------------------------------------------------
+
+function buildStaffTimeline(staff: Staff, currentYear: number): TimelineSegment[] {
+  return [
+    {
+      label: 'Created', reached: true,
+      date: formatDateShortMaybeYear(staff.recordCreationDate, currentYear),
+      tone: 'teal',
+    },
+    {
+      label: 'Invited', reached: !!staff.invitedDate,
+      date: staff.invitedDate
+        ? `${formatInstantShortMaybeYear(staff.invitedDate, currentYear)}${staff.invitedBy ? ` · by ${staff.invitedBy}` : ''}`
+        : null,
+      tone: 'teal',
+    },
+    {
+      label: 'Claimed', reached: !!staff.claimedDate,
+      date: formatInstantShortMaybeYear(staff.claimedDate, currentYear),
+      tone: 'teal',
+    },
+    {
+      label: 'Last login', reached: !!staff.lastLogin,
+      date: formatInstantShortMaybeYear(staff.lastLogin, currentYear),
+      tone: 'teal',
+    },
+  ]
+}
+
+// ---------------------------------------------------------------------------
+// Styling — same tokens as the agency detail page
 // ---------------------------------------------------------------------------
 
 const CARD: React.CSSProperties = {
@@ -113,12 +184,25 @@ const MUTED_EMPTY: React.CSSProperties = { fontSize: '13px', color: '#7A8899', f
 
 // Staff statuses come from Agency Users.Status: Active | Invited | Unclaimed
 // | Pending | Inactive — confirmed live, all 5 covered.
-const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText: string }> = {
-  Active:    { accent: '#2A7F6F', badgeBg: 'rgba(42,127,111,0.12)',   badgeText: '#2A7F6F' },
-  Invited:   { accent: '#5B8DB8', badgeBg: 'rgba(91,141,184,0.12)',   badgeText: '#5B8DB8' },
-  Unclaimed: { accent: '#7A8899', badgeBg: '#F0F0F0',                 badgeText: '#7A8899' },
-  Pending:   { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)',   badgeText: '#C9A84C' },
-  Inactive:  { accent: '#7A8899', badgeBg: '#F0F0F0',                 badgeText: '#7A8899' },
+const STATUS_COLORS: Record<string, { badgeBg: string; badgeText: string }> = {
+  Active:    { badgeBg: 'rgba(42,127,111,0.12)', badgeText: '#2A7F6F' },
+  Invited:   { badgeBg: 'rgba(91,141,184,0.12)', badgeText: '#5B8DB8' },
+  Unclaimed: { badgeBg: '#F0F0F0',               badgeText: '#7A8899' },
+  Pending:   { badgeBg: 'rgba(201,168,76,0.15)', badgeText: '#C9A84C' },
+  Inactive:  { badgeBg: '#F0F0F0',               badgeText: '#7A8899' },
+}
+
+// Portal state — a second, different axis from Status above (Active says
+// the account works; this says whether they've actually signed in) and from
+// Membership below (does this person work at the agency at all). Same three
+// values as Portal Invite Status, reusing the same colour tokens the
+// account-status pill's Invited/Unclaimed states already use — this is a
+// compact 3-state badge, not the fuller "Invited {date}" / "Last login
+// {relative}" detail the Portal access card gives the same fact below.
+const PORTAL_STATE_STYLE: Record<string, { badgeBg: string; badgeText: string; label: string }> = {
+  'Not Invited': { badgeBg: '#F0F0F0', badgeText: '#7A8899', label: 'Not invited' },
+  'Invite Sent': { badgeBg: 'rgba(91,141,184,0.12)', badgeText: '#5B8DB8', label: 'Invited' },
+  Claimed:       { badgeBg: 'rgba(42,127,111,0.12)', badgeText: '#2A7F6F', label: 'Claimed' },
 }
 
 function InfoRow({ label, value }: { label: string; value: React.ReactNode }) {
@@ -154,18 +238,42 @@ function MembershipPill({ status }: { status: string | null }) {
   )
 }
 
+// Portal access card's own read of the same fact the header's portal-state
+// pill compresses — "Not invited" / "Invited {date}" / "Last login
+// {relative}" / "Never signed in". Same copy and logic as AccountState on
+// the agency detail page (app/dawson/agencies/[id]/page.tsx); not shared
+// from there in this branch — flagged in the PR as a small duplication
+// worth consolidating alongside the ReferralsCard one, not fixed here.
+function InviteState({ portalInviteStatus, invitedDate, lastLogin }: {
+  portalInviteStatus: string | null
+  invitedDate: string | null
+  lastLogin: string | null
+}) {
+  const status = portalInviteStatus ?? 'Not Invited'
+  if (status === 'Not Invited') return <span>Not invited</span>
+  if (status === 'Invite Sent') {
+    return <span>Invited {formatEasternTimestamp(invitedDate, { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+  }
+  // Claimed
+  return <span>{lastLogin ? `Last login ${formatRelativeTime(lastLogin)}` : 'Never signed in'}</span>
+}
+
 // ---------------------------------------------------------------------------
-// Referrals — fresh-built, matching agencies/[id]'s ReferralsCard styling.
-// Not AgencyReferralsPanel: that component's ReferralStatus type has no
-// 'Reschedule' variant and no styling for it at all — this page's shaper
-// already carries a status the old component structurally can't represent.
-// This was AgencyReferralsPanel's only remaining caller (the agency page
-// stopped using it in its own rebuild); it is now orphaned.
+// Referrals — rebuilt to match agencies/[id]'s ReferralsCard (search, status
+// pills with counts, date-range select, month grouping, columns) rather
+// than the plain stacked list this page had before. Not shared from that
+// page in this branch (only fileDateOf is, per instruction) — the two cards
+// are now near-identical, which is worth knowing; flagged in the PR as a
+// follow-up candidate, same shape as the fileDateOf situation before its
+// own consolidation branch. This card keeps 3 columns (no Staff column) —
+// every row here is already this one person's referral.
 // ---------------------------------------------------------------------------
 
-// No REFERRAL_STATUS_ORDER — that only exists on agencies/[id] to drive its
-// filter pills, which this card doesn't have (see ReferralsCard below).
+// 'Reschedule' confirmed against Airtable's full Appointment Status option
+// list (Pending Schedule, Scheduled, Cancelled, Reschedule, Completed, No
+// Show — six values, this has all six).
 type ReferralStatusKey = 'Pending Schedule' | 'Scheduled' | 'Cancelled' | 'Reschedule' | 'Completed' | 'No Show'
+const REFERRAL_STATUS_ORDER: ReferralStatusKey[] = ['Pending Schedule', 'Scheduled', 'Reschedule', 'Cancelled', 'Completed', 'No Show']
 const REFERRAL_STATUS_STYLE: Record<ReferralStatusKey, { bg: string; fg: string }> = {
   'Pending Schedule': { bg: '#F0F0F0', fg: '#7A8899' },
   Scheduled:          { bg: 'rgba(42,127,111,0.12)', fg: '#2A7F6F' },
@@ -188,11 +296,6 @@ const REFERRAL_STATUS_LABEL: Record<ReferralStatusKey, string> = {
   'No Show': 'No Show',
 }
 
-// Returns the real Appointment Status value when this map doesn't recognise
-// it, rather than guessing — the exact bug this rebuild fixes. The
-// pre-rebuild page mapped 5 of 6 Appointment Status options and fell back
-// to '?? Pending Schedule' for the sixth (Reschedule), so a referral
-// awaiting a reschedule decision silently read as "not yet scheduled."
 function referralStatusKey(r: Referral): string {
   if (r.referralReview === 'Rejected' || r.referralReview === 'Withdrawn') return 'Cancelled'
   const map: Record<string, ReferralStatusKey> = {
@@ -215,35 +318,71 @@ function referralStatusStyle(key: string): { bg: string; fg: string } {
   return isKnownReferralStatus(key) ? REFERRAL_STATUS_STYLE[key] : UNKNOWN_STATUS_STYLE
 }
 
+type RangeKey = '90' | '365' | 'all'
+const RANGE_OPTIONS: { key: RangeKey; label: string }[] = [
+  { key: '90', label: '90 days' },
+  { key: '365', label: '12 months' },
+  { key: 'all', label: 'All time' },
+]
+
 function monthLabel(yearMonthKey: string): string {
   return formatDateOnly(`${yearMonthKey}-01`, { month: 'long', year: 'numeric' })
 }
 
-// fileDateOf: shared from lib/referrals/effective-date.ts
-// (consolidate-file-date) — was its own local copy here, diverged from
-// Dawson's referrals list in one way (no Preferred Date fallback for a
-// cancelled-or-withdrawn-before-scheduled row), which left that referral
-// sitting in the "no date" group below instead of filed under what it was
-// asked for. Not invisible — this page has no date-range control, every
-// referral always renders — just misfiled.
-
-// No search / filter / date-range controls — this is one person's referral
-// list, not an agency's aggregate; the agency page's controls earn their
-// keep at that scale, not this one. Month grouping is kept for the same
-// reason it's kept there: it's how Dawson already reads a referral list.
 function ReferralsCard({ referrals }: { referrals: Referral[] }) {
-  const sorted = [...referrals].sort((a, z) => (fileDateOf(z) ?? '').localeCompare(fileDateOf(a) ?? ''))
+  const [search, setSearch] = useState('')
+  const [statusFilter, setStatusFilter] = useState<ReferralStatusKey | 'All'>('All')
+  // 90 days by default, matching the agency page.
+  const [range, setRange] = useState<RangeKey>('90')
 
-  const months: { groups: { key: string; rows: Referral[] }[]; noDate: Referral[] } = { groups: [], noDate: [] }
-  for (const r of sorted) {
+  const todayISO = easternTodayISO()
+
+  // Same withinRange as the agency page: bounds on fileDateOf, exempts a
+  // null file date from every range (including 90 days) rather than
+  // dropping it — a referral with no date yet has nothing to measure
+  // against a range, and filtering it out under the default range is
+  // exactly the silently-missing-row failure that rule exists to close.
+  const withinRange = (r: Referral): boolean => {
+    if (range === 'all') return true
     const fd = fileDateOf(r)
-    if (!fd) { months.noDate.push(r); continue }
-    const key = fd.slice(0, 7)
-    const last = months.groups[months.groups.length - 1]
-    if (last && last.key === key) last.rows.push(r)
-    else months.groups.push({ key, rows: [r] })
+    if (fd === null) return true
+    const days = differenceInDaysISO(fd, todayISO)
+    if (days === null) return true
+    const limit = range === '90' ? 90 : 365
+    return Math.abs(days) <= limit
   }
-  months.noDate.sort((a, z) => a.clientName.localeCompare(z.clientName))
+
+  const counts = useMemo(() => {
+    const inRange = referrals.filter(withinRange)
+    const map: Partial<Record<ReferralStatusKey | 'All', number>> = { All: inRange.length }
+    for (const k of REFERRAL_STATUS_ORDER) map[k] = inRange.filter(r => referralStatusKey(r) === k).length
+    return map
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referrals, range])
+
+  const filtered = useMemo(() => {
+    return referrals
+      .filter(withinRange)
+      .filter(r => statusFilter === 'All' || referralStatusKey(r) === statusFilter)
+      .filter(r => matchesSearch(search, r.clientName))
+      .sort((a, z) => (fileDateOf(z) ?? '').localeCompare(fileDateOf(a) ?? ''))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [referrals, search, statusFilter, range])
+
+  const months = useMemo(() => {
+    const groups: { key: string; rows: Referral[] }[] = []
+    const noDate: Referral[] = []
+    for (const r of filtered) {
+      const fd = fileDateOf(r)
+      if (!fd) { noDate.push(r); continue }
+      const key = fd.slice(0, 7)
+      const last = groups[groups.length - 1]
+      if (last && last.key === key) last.rows.push(r)
+      else groups.push({ key, rows: [r] })
+    }
+    noDate.sort((a, z) => a.clientName.localeCompare(z.clientName))
+    return { groups, noDate }
+  }, [filtered])
 
   return (
     <div style={CARD}>
@@ -252,8 +391,48 @@ function ReferralsCard({ referrals }: { referrals: Referral[] }) {
         <div style={{ fontSize: '11px', color: '#7A8899' }}>{referrals.length} total</div>
       </div>
 
-      {referrals.length === 0 ? (
-        <div style={{ padding: '24px', textAlign: 'center', ...MUTED_EMPTY }}>No referrals yet.</div>
+      <div style={{ padding: '14px 24px', borderBottom: '1px solid #EDE9E1', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search by client name…"
+            style={{ flex: '1 1 200px', padding: '8px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#1B2B4B', fontFamily: 'inherit', outline: 'none' }}
+          />
+          <select
+            value={range}
+            onChange={e => setRange(e.target.value as RangeKey)}
+            style={{ padding: '8px 12px', borderRadius: '7px', border: '1px solid #EDE9E1', fontSize: '13px', color: '#1B2B4B', fontFamily: 'inherit', background: 'white', cursor: 'pointer' }}
+          >
+            {RANGE_OPTIONS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+          </select>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+          {(['All', ...REFERRAL_STATUS_ORDER] as const).map(k => {
+            const active = statusFilter === k
+            const count = counts[k] ?? 0
+            return (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setStatusFilter(k)}
+                style={{
+                  padding: '5px 12px', borderRadius: '20px', border: `1px solid ${active ? '#1B2B4B' : '#EDE9E1'}`,
+                  background: active ? '#1B2B4B' : 'white', color: active ? 'white' : '#7A8899',
+                  fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer',
+                }}
+              >
+                {k === 'All' ? 'All' : referralStatusLabel(k)}{' '}
+                <span style={{ color: active ? '#C9A84C' : count === 0 ? '#B8C1CC' : '#7A8899' }}>{count}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
+      {months.groups.length === 0 && months.noDate.length === 0 ? (
+        <div style={{ padding: '24px', textAlign: 'center', ...MUTED_EMPTY }}>No referrals match this filter.</div>
       ) : (
         <>
           {months.groups.map(group => (
@@ -344,25 +523,22 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
   )
 
   const statusColors = STATUS_COLORS[staff.status ?? ''] ?? STATUS_COLORS.Inactive
-  const initials =
-    (staff.name || '?')
-      .split(' ')
-      .map(w => w[0])
-      .filter(Boolean)
-      .slice(0, 2)
-      .join('')
-      .toUpperCase() || '?'
+  const portalState = PORTAL_STATE_STYLE[staff.portalInviteStatus ?? 'Not Invited'] ?? PORTAL_STATE_STYLE['Not Invited']
+  const todayISO = easternTodayISO()
+  const currentYear = Number(todayISO.slice(0, 4))
+  const timeline = buildStaffTimeline(staff, currentYear)
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
 
+      {/* ============ HEADER ============ */}
       <header style={{
         background: 'white', borderBottom: '1px solid #EDE9E1',
-        padding: '0 32px', minHeight: '60px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px',
+        padding: '0 32px', minHeight: '64px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap',
         position: 'sticky', top: DAWSON_PAGE_BAR_HEIGHT, zIndex: 50,
       }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '10px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', padding: '12px 0' }}>
           {/* Fallback to /dawson/agencies when opened in a fresh tab — staff
               pages are always reached from an agency or referral page.
               /dawson/agencies/active was the pre-consolidation name; it only
@@ -379,18 +555,42 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
             Back
           </button>
           <span style={{ color: '#EDE9E1' }}>→</span>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#1B2B4B' }}>
-            {staff.name || '—'}
+          <div>
+            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '17px', color: '#1B2B4B' }}>
+              {staff.name || '—'}
+            </div>
+            <div style={{ fontSize: '12.5px', color: '#7A8899', marginTop: '2px' }}>
+              {staff.role ?? '—'}
+              {' · '}
+              {staff.agencyId && staff.agencyName ? (
+                <a href={`/dawson/agencies/${staff.agencyId}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>
+                  {staff.agencyName}
+                </a>
+              ) : (
+                <span style={{ fontStyle: 'italic' }}>no agency linked</span>
+              )}
+            </div>
           </div>
         </div>
 
-        {/* Status always shows — it's the primary fact. The other three hide
-            at their normal value, so a healthy record shows one pill, not
-            four. */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '10px 0' }}>
-          {staff.status && (
-            <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: statusColors.badgeBg, color: statusColors.badgeText }}>
-              {staff.status}
+        {/* Account status and Portal state: different axes, always both
+            shown. Active says the account works; Claimed says they've
+            actually signed in — neither implies the other. Everything after
+            is a conditional exception pill, hidden at its normal value, so
+            a healthy record shows exactly two. Primary Admin sits first
+            among those — solid navy, unlike every other pill on this page
+            (all light-bg/dark-text) — because it isn't an exception like
+            the ones beside it, it's the single most significant fact this
+            page can carry about this person: what the invite route gates
+            on, true of exactly one person per agency. A muted note under
+            Role would have understated it. */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 0' }}>
+          {staff.isPrimaryAdmin && (
+            <span style={{
+              padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700,
+              letterSpacing: '0.04em', textTransform: 'uppercase', background: '#1B2B4B', color: 'white',
+            }}>
+              Primary Admin
             </span>
           )}
           <MembershipPill status={staff.membershipStatus} />
@@ -407,120 +607,93 @@ export default function StaffDetailPage({ params }: { params: Promise<{ id: stri
               ⚠ Review
             </span>
           )}
+          <span style={{
+            padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700,
+            letterSpacing: '0.06em', textTransform: 'uppercase', background: portalState.badgeBg, color: portalState.badgeText,
+          }}>
+            {portalState.label}
+          </span>
+          {staff.status && (
+            <span style={{ padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase', background: statusColors.badgeBg, color: statusColors.badgeText }}>
+              {staff.status}
+            </span>
+          )}
         </div>
       </header>
 
-      <div style={{ padding: '28px 32px', display: 'grid', gridTemplateColumns: '1.75fr 1fr', gap: '20px', alignItems: 'start' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+      {/* ============ LIFECYCLE ============ */}
+      <div style={{ padding: '20px 32px 0' }}>
+        <div style={CARD}>
+          <div style={{ padding: '16px 24px' }}>
+            <CompactTimeline segments={timeline} />
+          </div>
+        </div>
+      </div>
 
+      {/* ============ TWO RAILS ============ */}
+      <div style={{ padding: '20px 32px 28px', display: 'grid', gridTemplateColumns: '1.75fr 1fr', gap: '20px', alignItems: 'start' }}>
+
+        {/* LEFT — Referrals */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+          <ReferralsCard referrals={staff.referrals} />
+        </div>
+
+        {/* RIGHT — Contact, Portal access */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={CARD}>
-            <div style={{ background: statusColors.accent, height: '4px' }} />
-            <div style={{ padding: '24px' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', marginBottom: '24px' }}>
-                <div style={{ width: '52px', height: '52px', borderRadius: '12px', background: '#1B2B4B', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '16px', color: '#3AA08D', flexShrink: 0 }}>
-                  {initials}
-                </div>
-                <div>
-                  <h1 style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '20px', color: '#1B2B4B', margin: '0 0 4px' }}>
-                    {staff.name || '—'}
-                  </h1>
-                  {staff.role && (
-                    <div style={{ fontSize: '12px', color: '#7A8899' }}>{staff.role}</div>
-                  )}
-                </div>
-              </div>
-              <div style={{ borderTop: '1px solid #F7F5F1', paddingTop: '4px' }}>
-                <InfoRow
-                  label="Agency"
-                  value={
-                    staff.agencyId && staff.agencyName ? (
-                      <a
-                        href={`/dawson/agencies/${staff.agencyId}`}
-                        style={{ color: '#2A7F6F', textDecoration: 'none' }}
-                      >
-                        {staff.agencyName}
-                        {staff.agencyStatus && (
-                          <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 700, padding: '1px 8px', borderRadius: '20px', background: '#F0F0F0', color: '#7A8899', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            {staff.agencyStatus}
-                          </span>
-                        )}
-                      </a>
-                    ) : (
-                      <span style={{ color: '#7A8899', fontStyle: 'italic' }}>No agency linked</span>
-                    )
-                  }
-                />
-                <InfoRow label="Role" value={staff.role} />
-                <InfoRow
-                  label="Email"
-                  value={staff.email
-                    ? <a href={`mailto:${staff.email}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{staff.email}</a>
-                    : <em style={{ color: '#C9A84C' }}>no email on file</em>}
-                />
-                <InfoRow label="Phone" value={staff.phone} />
-                <InfoRow label="Record Created" value={formatDate(staff.recordCreationDate)} />
-                {staff.invitedDate && (
-                  <InfoRow
-                    label="Invited"
-                    value={<>{formatInstant(staff.invitedDate)}{staff.invitedBy && <span style={{ color: '#9AA6B2' }}> · by {staff.invitedBy}</span>}</>}
-                  />
-                )}
-                {staff.claimedDate && (
-                  <InfoRow label="Claimed" value={formatInstant(staff.claimedDate)} />
-                )}
-                <InfoRow
-                  label="Last Login"
-                  value={staff.lastLogin ? formatInstant(staff.lastLogin) : <span style={{ color: '#9AA6B2' }}>Never</span>}
-                />
-                <InfoRow
-                  label="Portal Invite"
-                  value={staff.portalInviteStatus ?? <span style={{ color: '#9AA6B2' }}>Not Invited</span>}
-                />
-                <InfoRow
-                  label="Membership"
-                  value={
-                    staff.membershipStatus === 'Confirmed'
-                      ? <><span style={{ color: '#2A7F6F' }}>Confirmed</span>{staff.membershipDecidedBy && ` by ${staff.membershipDecidedBy}`}{staff.membershipDecidedAt && ` · ${formatInstant(staff.membershipDecidedAt)}`}</>
-                      : staff.membershipStatus === 'Not At This Office'
-                        ? <><span style={{ color: '#7A8899' }}>Not at this office</span>{staff.membershipDecidedBy && ` by ${staff.membershipDecidedBy}`}{staff.membershipDecidedAt && ` · ${formatInstant(staff.membershipDecidedAt)}`}</>
-                        : <span style={{ color: '#9AA6B2' }}>Not yet confirmed</span>
-                  }
-                />
-                {staff.emailBounce && (
-                  <InfoRow
-                    label="Email Bounce"
-                    value={<span style={{ color: '#C0392B', fontWeight: 700 }}>⚠ A send to this address bounced — worth confirming it&apos;s current.</span>}
-                  />
-                )}
-                {staff.needsReview && (
-                  <InfoRow
-                    label="Review Flag"
-                    value={<span style={{ color: '#C9A84C', fontWeight: 700 }}>⚠ Placeholder from Excel import — needs admin review</span>}
-                  />
-                )}
-              </div>
+            <div style={CARD_HEAD}><div style={CARD_TITLE}>Contact</div></div>
+            <div style={{ padding: '4px 24px 8px' }}>
+              <InfoRow
+                label="Email"
+                value={staff.email
+                  ? <a href={`mailto:${staff.email}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{staff.email}</a>
+                  : <em style={{ color: '#C9A84C' }}>no email on file</em>}
+              />
+              <InfoRow label="Phone" value={staff.phone} />
+              <InfoRow
+                label="Agency"
+                value={
+                  staff.agencyId && staff.agencyName ? (
+                    <a href={`/dawson/agencies/${staff.agencyId}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>
+                      {staff.agencyName}
+                      {staff.agencyStatus && (
+                        <span style={{ marginLeft: '8px', fontSize: '10px', fontWeight: 700, padding: '1px 8px', borderRadius: '20px', background: '#F0F0F0', color: '#7A8899', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                          {staff.agencyStatus}
+                        </span>
+                      )}
+                    </a>
+                  ) : (
+                    <span style={{ color: '#7A8899', fontStyle: 'italic' }}>No agency linked</span>
+                  )
+                }
+              />
             </div>
           </div>
 
-          <ReferralsCard referrals={staff.referrals} />
-
-        </div>
-
-        {/* RIGHT COLUMN */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <div style={CARD}>
-            <div style={{ padding: '20px' }}>
-              <div style={CARD_TITLE}>Staff Stats</div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '12px', marginTop: '16px' }}>
-                <div style={{ background: '#F7F5F1', borderRadius: '8px', padding: '14px', textAlign: 'center' }}>
-                  <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '24px', color: '#1B2B4B', lineHeight: 1 }}>
-                    {staff.referralCount}
-                  </div>
-                  <div style={{ fontSize: '11px', fontWeight: 700, color: '#7A8899', marginTop: '4px', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-                    Total Referrals
-                  </div>
-                </div>
-              </div>
+            <div style={CARD_HEAD}><div style={CARD_TITLE}>Portal access</div></div>
+            <div style={{ padding: '4px 24px 8px' }}>
+              <InfoRow label="Role" value={staff.role} />
+              <InfoRow
+                label="Membership"
+                value={
+                  staff.membershipStatus === 'Confirmed'
+                    ? <><span style={{ color: '#2A7F6F' }}>Confirmed</span>{staff.membershipDecidedBy && ` by ${staff.membershipDecidedBy}`}{staff.membershipDecidedAt && ` · ${formatInstant(staff.membershipDecidedAt)}`}</>
+                    : staff.membershipStatus === 'Not At This Office'
+                      ? <><span style={{ color: '#7A8899' }}>Not at this office</span>{staff.membershipDecidedBy && ` by ${staff.membershipDecidedBy}`}{staff.membershipDecidedAt && ` · ${formatInstant(staff.membershipDecidedAt)}`}</>
+                      : <span style={{ color: '#9AA6B2' }}>Not yet confirmed</span>
+                }
+              />
+              <InfoRow
+                label="Invite"
+                value={
+                  <InviteState
+                    portalInviteStatus={staff.portalInviteStatus}
+                    invitedDate={staff.invitedDate}
+                    lastLogin={staff.lastLogin}
+                  />
+                }
+              />
             </div>
           </div>
         </div>

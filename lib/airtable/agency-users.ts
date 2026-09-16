@@ -292,6 +292,13 @@ export async function getStaffWithDetails(staffId: string) {
     // equivalent lookup, so it still needs that fetch.
     agencyName: (uf['Agency Name (from Agency)'] as string[])?.[0] ?? null,
     agencyStatus: agency ? ((agency.fields['Status'] as string) ?? null) : null,
+    // staff-detail-reshape: whether THIS person is the agency's Primary
+    // Admin — already fetched (the agency record above, no fields[]
+    // restriction), just not compared against this user's own id until now.
+    // false, not null, when there's no agency to check against.
+    isPrimaryAdmin: agency
+      ? ((agency.fields['Primary Admin'] as string[]) ?? []).includes(user.id)
+      : false,
     referrals,
     referralCount: referrals.length,
   }
