@@ -28,6 +28,11 @@ type Client = {
   referredBy: string | null
   referringAgency: string | null
   externalNotes: string | null
+  // Set only on the two synthetic blank sheets appended for walk-ups (see
+  // BLANK_CLIENTS below). Every real record fetched from the API omits this
+  // key entirely, so it's undefined — falsy — and every conditional keyed on
+  // it renders exactly as it did before this field existed.
+  synthetic?: boolean
 }
 
 
@@ -383,7 +388,9 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
           <img src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg" alt="Furniture Assist" style={{ width: '92px', height: '92px', objectFit: 'contain' }} />
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ fontSize: '34px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, whiteSpace: 'nowrap' }}>Furniture Assist</div>
-            <div style={{ fontSize: '11.5px', color: '#7A8899', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: '7px', fontWeight: 700, whiteSpace: 'nowrap' }}>Client Pickup Sheet</div>
+            <div style={{ fontSize: '11.5px', color: '#7A8899', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: '7px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              {client.synthetic ? 'Manual entry — do not scan.' : 'Client Pickup Sheet'}
+            </div>
           </div>
         </div>
 
@@ -528,6 +535,58 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
     </div>
   )
 }
+
+
+
+/* ============================================================
+   BLANK_CLIENTS — two synthetic, Client-shaped entries appended after the
+   real scheduled list, for walk-ups and same-day additions. Filled in by
+   hand and entered into the portal afterwards; never scanned.
+
+   There is no "extra blank row" in the data and there cannot be — a blank
+   has no referral to query for. These are client-side-only placeholders,
+   never sent to or read from Airtable.
+
+   `id` does double duty:
+     - It's what prints in the ID slot, so it needs to read as a label, not
+       a broken field.
+     - resolveRecordId() (lib/scanning/ocr.ts) checks
+       /^rec[A-Za-z0-9]{14}$/ first; neither string matches that shape, so
+       even a blank that lands in the scan pile by mistake can't resolve to
+       a record by ID.
+
+   Every other field is null, which the component already renders as '—'
+   via its existing null guards — except firstName/lastName, which the name
+   heading renders with no guard at all. '—' is that same "no value"
+   convention this file already uses everywhere (phone, appointment time,
+   etc.), not a new one.
+   ============================================================ */
+function blankClient(n: 1 | 2): Client {
+  return {
+    id: `MANUAL ENTRY ${n}`,
+    firstName: '—',
+    lastName: '—',
+    clientName: '—',
+    address: null,
+    address2: null,
+    city: null,
+    state: null,
+    zip: null,
+    phone: null,
+    dob: null,
+    language: null,
+    hhSize: null,
+    children: null,
+    items: null,
+    appointmentDate: null,
+    appointmentTime: null,
+    referredBy: null,
+    referringAgency: null,
+    externalNotes: null,
+    synthetic: true,
+  }
+}
+const BLANK_CLIENTS: Client[] = [blankClient(1), blankClient(2)]
 
 
 
@@ -847,8 +906,11 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
       ) : (
         <div className="print-sheet-wrapper">
           <RosterPage clients={clients} date={date} />
-          {clients.map((client, i) => (
-            <ClientSheet key={client.id} client={client} index={i} total={clients.length} />
+          {/* Roster stays real-clients-only, above. The two blank walk-up
+              sheets are appended here, sheets-only, after everyone with an
+              actual appointment. */}
+          {[...clients, ...BLANK_CLIENTS].map((client, i, sheetClients) => (
+            <ClientSheet key={client.id} client={client} index={i} total={sheetClients.length} />
           ))}
         </div>
       )}
