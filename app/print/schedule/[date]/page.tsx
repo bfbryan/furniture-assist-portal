@@ -28,6 +28,11 @@ type Client = {
   referredBy: string | null
   referringAgency: string | null
   externalNotes: string | null
+  // Set only on the two synthetic blank sheets appended for walk-ups (see
+  // BLANK_CLIENTS below). Every real record fetched from the API omits this
+  // key entirely, so it's undefined — falsy — and every conditional keyed on
+  // it renders exactly as it did before this field existed.
+  synthetic?: boolean
 }
 
 
@@ -343,6 +348,72 @@ function RescheduleBox() {
 
 
 
+/* ============================================================
+   WriteInLine — a small uppercase label beside a blank rule, for the
+   CLIENT INFO CARD on synthetic (blank walk-up) sheets only. A volunteer
+   writes directly on the rule; '—' would read as "no data" rather than
+   "write here" (see ClientSheet's info card).
+
+   Fixed label width + fixed rule width, laid out with flexbox rather than
+   inline text: a variable-length label followed by a fixed-width rule
+   still puts the rule at a different x per row (short label = rule starts
+   early). A fixed-width label box, with its text right-aligned inside
+   that box, fixes both the label's right edge and the rule's left edge —
+   every row in a column shares one gutter, so the rules form a clean
+   vertical stripe instead of stepping in and out with label length.
+
+   `align="right"` (RIGHT column) mirrors the pattern already used by the
+   card's real fields there (Label: value, right-aligned) — same
+   [label, rule] child order either way, just which end of the row is
+   pinned (flex-start for LEFT, flex-end for RIGHT), so the rule's END is
+   what lines up, not its start.
+
+   `labelWidth`/`ruleWidth` default per column, sized to the column's own
+   longest label measured in a real browser (Chromium, this exact font/
+   weight/letter-spacing) rather than guessed — "Appointment date" (LEFT,
+   115.6px) and "Items requested" (RIGHT, 108.5px) are the two that don't
+   fit a smaller box without wrapping. One shared width per column, not a
+   per-row override, so every rule in a column — including Items
+   requested's — ends at the same x as the rest; a field that needs more
+   room gets it by widening the whole column's label gutter, not by
+   growing its own rule past where its neighbors' end.
+
+   `first` drops the row's top margin, for whichever line opens its block.
+   ============================================================ */
+function WriteInLine({
+  label, align = 'left', first = false,
+  labelWidth = align === 'right' ? 116 : 124,
+  ruleWidth = align === 'right' ? 130 : 190,
+}: {
+  label: string
+  align?: 'left' | 'right'
+  first?: boolean
+  labelWidth?: number
+  ruleWidth?: number
+}) {
+  return (
+    <div style={{
+      marginTop: first ? 0 : '9px',
+      display: 'flex', justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+      alignItems: 'baseline', gap: '6px',
+    }}>
+      <span style={{
+        display: 'inline-block', width: `${labelWidth}px`, flexShrink: 0, textAlign: 'right',
+        fontSize: '10px', fontWeight: 800, color: '#7A8899',
+        textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap',
+      }}>
+        {label}:
+      </span>
+      <span style={{
+        display: 'inline-block', width: `${ruleWidth}px`, flexShrink: 0,
+        borderBottom: '1.5px solid #333', height: '13px',
+      }} />
+    </div>
+  )
+}
+
+
+
 function ClientSheet({ client, index, total }: { client: Client; index: number; total: number }) {
   const requestedItems = client.items
   ? (Array.isArray(client.items) ? client.items : client.items.split(','))
@@ -383,7 +454,9 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
           <img src="https://furnitureassist.com/wp-content/uploads/2026/02/logo_2.22.26.jpg" alt="Furniture Assist" style={{ width: '92px', height: '92px', objectFit: 'contain' }} />
           <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
             <div style={{ fontSize: '34px', fontWeight: 900, color: '#1B2B4B', lineHeight: 1, whiteSpace: 'nowrap' }}>Furniture Assist</div>
-            <div style={{ fontSize: '11.5px', color: '#7A8899', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: '7px', fontWeight: 700, whiteSpace: 'nowrap' }}>Client Pickup Sheet</div>
+            <div style={{ fontSize: '11.5px', color: '#7A8899', letterSpacing: '0.14em', textTransform: 'uppercase', marginTop: '7px', fontWeight: 700, whiteSpace: 'nowrap' }}>
+              {client.synthetic ? 'Manual entry — do not scan.' : 'Client Pickup Sheet'}
+            </div>
           </div>
         </div>
 
@@ -423,26 +496,60 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
 
 
 
-          {/* LEFT: Name / Time · Date / Address / Phone / Language */}
-          <div>
-            <div style={{ fontSize: '24px', fontWeight: 900, color: '#1B2B4B', letterSpacing: '-0.01em', lineHeight: 1.1 }}>
-              {client.lastName}, {client.firstName}
+          {/* LEFT: Name / Time · Date / Address / Phone / Language.
+              Synthetic (blank walk-up sheets) swaps this whole block for
+              labelled write-in lines instead — Add Referral's own intake
+              form fields (app/dawson/referrals/new/page.tsx's `form` state:
+              name, DOB, address, phone, household size, children, language)
+              plus Appointment date and Appointment time, each its own line
+              like every other field here. These sheets are photocopy
+              masters, reused across many walk-ups — nothing about a given
+              Saturday can be pre-printed on them, including the date, so
+              even the one piece of information this file already knows
+              (the Saturday being printed) gets a blank line, not a filled
+              one. Ordered Name / date / time / DOB / address / phone /
+              language — date and time sit where the real sheet's Time ·
+              Date line does, right after the name, rather than at the end. */}
+          {client.synthetic ? (
+            <div>
+              <WriteInLine label="Name" first />
+              <WriteInLine label="Appointment date" />
+              <WriteInLine label="Appointment time" />
+              <WriteInLine label="Date of birth" />
+              <WriteInLine label="Address" />
+              <WriteInLine label="Phone" />
+              <WriteInLine label="Language" />
             </div>
-            <div style={{ fontSize: '20px', fontWeight: 900, color: '#2A7F6F', lineHeight: 1.1, marginTop: '4px' }}>
-              {client.appointmentTime ?? '—'} · {formatDateNoWeekday(client.appointmentDate)}
-            </div>
-            <div style={{ fontSize: '11.5px', color: '#1B2B4B', lineHeight: 1.55, marginTop: '10px' }}>
-              <div>
-                {client.address}{client.address2 ? `, ${client.address2}` : ''}{client.city ? `, ${client.city}` : ''}{client.state ? `, ${client.state}` : ''} {client.zip ?? ''}
+          ) : (
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: 900, color: '#1B2B4B', letterSpacing: '-0.01em', lineHeight: 1.1 }}>
+                {client.lastName}, {client.firstName}
               </div>
-              <div>{client.phone ?? '—'}</div>
-              <div>{client.language ?? '—'}</div>
+              <div style={{ fontSize: '20px', fontWeight: 900, color: '#2A7F6F', lineHeight: 1.1, marginTop: '4px' }}>
+                {client.appointmentTime ?? '—'} · {formatDateNoWeekday(client.appointmentDate)}
+              </div>
+              <div style={{ fontSize: '11.5px', color: '#1B2B4B', lineHeight: 1.55, marginTop: '10px' }}>
+                <div>
+                  {client.address}{client.address2 ? `, ${client.address2}` : ''}{client.city ? `, ${client.city}` : ''}{client.state ? `, ${client.state}` : ''} {client.zip ?? ''}
+                </div>
+                <div>{client.phone ?? '—'}</div>
+                <div>{client.language ?? '—'}</div>
+              </div>
             </div>
-          </div>
+          )}
 
 
 
-          {/* RIGHT: ID / Agency / Household + Items (External notes removed from here) */}
+          {/* RIGHT: ID / Agency / Household + Items (External notes removed from here).
+              ID stays the MANUAL ENTRY marker either way (set on the synthetic
+              client itself, not branched here). On synthetic sheets, Agency,
+              Referring staff, Household size, Children and Items requested
+              are all write-in lines — Ben's field list has Agency and
+              Referring staff alongside the others Add Referral collects, and
+              "None specified" for Items is a true statement about a real
+              client but a false one on a blank, so it needs a line too, not
+              a fallback. Household still splits into two lines (size,
+              children), same as before. */}
           <div style={{ fontSize: '11.5px', lineHeight: 1.55, textAlign: 'right', alignSelf: 'center' }}>
             <div>
               <span style={{ color: '#7A8899', fontWeight: 700 }}>ID: </span>
@@ -457,19 +564,36 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
               </span>
             </div>
             <div>&nbsp;</div>
-            <div>
-              <span style={{ color: '#7A8899', fontWeight: 700 }}>Agency: </span>
-              <span style={{ color: '#1B2B4B' }}>{client.referringAgency ?? '—'}{client.referredBy ? ` / ${client.referredBy}` : ''}</span>
-            </div>
+            {client.synthetic ? (
+              <>
+                <WriteInLine label="Agency" align="right" first />
+                <WriteInLine label="Referring staff" align="right" />
+              </>
+            ) : (
+              <div>
+                <span style={{ color: '#7A8899', fontWeight: 700 }}>Agency: </span>
+                <span style={{ color: '#1B2B4B' }}>{client.referringAgency ?? '—'}{client.referredBy ? ` / ${client.referredBy}` : ''}</span>
+              </div>
+            )}
             <div>&nbsp;</div>
-            <div>
-              <span style={{ color: '#7A8899', fontWeight: 700 }}>Household: </span>
-              <span style={{ color: '#1B2B4B' }}>{client.hhSize ?? '—'}{client.children ? ` (${client.children} children)` : ''}</span>
-            </div>
-            <div>
-              <span style={{ color: '#7A8899', fontWeight: 700 }}>Items: </span>
-              <span style={{ color: '#1B2B4B' }}>{requestedItems.length > 0 ? requestedItems.join(' · ') : 'None specified'}</span>
-            </div>
+            {client.synthetic ? (
+              <>
+                <WriteInLine label="Household size" align="right" first />
+                <WriteInLine label="Children" align="right" />
+                <WriteInLine label="Items requested" align="right" />
+              </>
+            ) : (
+              <>
+                <div>
+                  <span style={{ color: '#7A8899', fontWeight: 700 }}>Household: </span>
+                  <span style={{ color: '#1B2B4B' }}>{client.hhSize ?? '—'}{client.children ? ` (${client.children} children)` : ''}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#7A8899', fontWeight: 700 }}>Items: </span>
+                  <span style={{ color: '#1B2B4B' }}>{requestedItems.length > 0 ? requestedItems.join(' · ') : 'None specified'}</span>
+                </div>
+              </>
+            )}
           </div>
 
 
@@ -528,6 +652,62 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
     </div>
   )
 }
+
+
+
+/* ============================================================
+   BLANK_CLIENTS — two synthetic, Client-shaped entries appended after the
+   real scheduled list, for walk-ups and same-day additions. Filled in by
+   hand and entered into the portal afterwards; never scanned.
+
+   There is no "extra blank row" in the data and there cannot be — a blank
+   has no referral to query for. These are client-side-only placeholders,
+   never sent to or read from Airtable.
+
+   `id` does double duty:
+     - It's what prints in the ID slot, so it needs to read as a label, not
+       a broken field.
+     - resolveRecordId() (lib/scanning/ocr.ts) checks
+       /^rec[A-Za-z0-9]{14}$/ first; neither string matches that shape, so
+       even a blank that lands in the scan pile by mistake can't resolve to
+       a record by ID.
+
+   Every other field is null, which the component already renders as '—'
+   via its existing null guards — except firstName/lastName, which the name
+   heading renders with no guard at all. '—' is that same "no value"
+   convention this file already uses everywhere (phone, appointment time,
+   etc.), not a new one.
+   ============================================================ */
+function blankClient(n: 1 | 2): Client {
+  return {
+    id: `MANUAL ENTRY ${n}`,
+    // Name renders as a WriteInLine on synthetic sheets (ClientSheet's info
+    // card), not from these fields — they're only non-optional on the
+    // Client type. RosterPage never sees BLANK_CLIENTS at all, so there's
+    // no "—, —" to read anywhere for these.
+    firstName: '',
+    lastName: '',
+    clientName: '',
+    address: null,
+    address2: null,
+    city: null,
+    state: null,
+    zip: null,
+    phone: null,
+    dob: null,
+    language: null,
+    hhSize: null,
+    children: null,
+    items: null,
+    appointmentDate: null,
+    appointmentTime: null,
+    referredBy: null,
+    referringAgency: null,
+    externalNotes: null,
+    synthetic: true,
+  }
+}
+const BLANK_CLIENTS: Client[] = [blankClient(1), blankClient(2)]
 
 
 
@@ -818,6 +998,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
       }}>
         <div style={{ color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '14px' }}>
           {formatSaturdayDate(date)} · {clients.length} client{clients.length !== 1 ? 's' : ''}
+          {clients.length === 0 ? ' scheduled' : ''} · {BLANK_CLIENTS.length} blank
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <a href="/dawson/schedule" style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.3)', color: 'white', fontSize: '13px', fontWeight: 600, textDecoration: 'none', fontFamily: 'var(--font-montserrat)' }}>
@@ -829,7 +1010,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
           </button>
           <button onClick={handlePrint} disabled={merging || generatingPdf}
             style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: (merging || generatingPdf) ? '#5A8577' : '#2A7F6F', color: 'white', fontSize: '13px', fontWeight: 700, cursor: (merging || generatingPdf) ? 'wait' : 'pointer', fontFamily: 'var(--font-montserrat)' }}>
-            {merging ? 'Marking merge…' : `🖨 Print Roster + ${clients.length} sheets`}
+            {merging ? 'Marking merge…' : `🖨 Print Roster + ${clients.length + BLANK_CLIENTS.length} sheets`}
           </button>
         </div>
       </div>
@@ -840,18 +1021,21 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
 
 
 
-      {clients.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899', fontFamily: 'Arial' }}>
-          No scheduled clients found for this date.
-        </div>
-      ) : (
-        <div className="print-sheet-wrapper">
-          <RosterPage clients={clients} date={date} />
-          {clients.map((client, i) => (
-            <ClientSheet key={client.id} client={client} index={i} total={clients.length} />
-          ))}
-        </div>
-      )}
+      {/* The packet always produces the two blank walk-up sheets, even on a
+          Saturday with no real scheduled clients — that is exactly the day
+          a walk-up is most likely (nothing booked, warehouse still open).
+          RosterPage already renders correctly at clients.length === 0 (an
+          empty two-column roster under "0 appointments"), so no separate
+          empty-state branch is needed here any more. */}
+      <div className="print-sheet-wrapper">
+        <RosterPage clients={clients} date={date} />
+        {/* Roster stays real-clients-only, above. The two blank walk-up
+            sheets are appended here, sheets-only, after everyone with an
+            actual appointment (or, on a day with none, after nobody). */}
+        {[...clients, ...BLANK_CLIENTS].map((client, i, sheetClients) => (
+          <ClientSheet key={client.id} client={client} index={i} total={sheetClients.length} />
+        ))}
+      </div>
 
 
 
