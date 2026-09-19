@@ -64,6 +64,27 @@ drift. Put it in `lib/` and have the copies import it. If a copy exists somewher
 this repo cannot reach — an Airtable automation script, for example — say so
 prominently at the top of the new module.
 
+## Commit and push discipline
+
+**Commit each round to its branch and push it. Update the PR. Then stop and wait.**
+A pushed commit is safe — a PR does not merge itself. The review gate is the merge,
+not the commit, so Ben can still check everything on localhost before anything
+lands on `main`.
+
+Five rounds of approved work on the blank Saturday sheets once ended up sitting in
+a stash instead of in git, while an earlier round had already merged as its own
+PR. The standing instruction had been "don't push yet, leave it in the working
+tree so Ben can check it first" — meant as "don't merge until I've looked," taken
+as "don't commit at all." Uncommitted work is fragile: it doesn't survive a branch
+switch, it's invisible to anyone but the person who wrote it, and recovering it
+depends on a stash entry nobody is tracking.
+
+**Never leave approved work uncommitted.** If Ben says "don't push yet," ask
+whether he means don't merge — he almost always does.
+
+This doesn't change the rule on `lib/auth/dawson-access.ts`: never `git add -A`;
+its local-only test user id stays unstaged, always.
+
 ---
 
 ## Verification standards
