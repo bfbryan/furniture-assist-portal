@@ -348,6 +348,35 @@ function RescheduleBox() {
 
 
 
+/* ============================================================
+   WriteInLine — a small uppercase label beside a blank rule, for the
+   CLIENT INFO CARD on synthetic (blank walk-up) sheets only. A volunteer
+   writes directly on the rule; '—' would read as "no data" rather than
+   "write here" (see ClientSheet's info card).
+
+   `align="right"` mirrors the pattern already used by the RIGHT column's
+   real fields (Label: value, both inline, block right-aligned) rather
+   than reversing the label/rule order — a right-aligned row still reads
+   label-then-blank left to right, just flush to the card's right edge.
+
+   `first` drops the row's top margin, for whichever line opens its block.
+   ============================================================ */
+function WriteInLine({ label, align = 'left', first = false }: { label: string; align?: 'left' | 'right'; first?: boolean }) {
+  return (
+    <div style={{ marginTop: first ? 0 : '9px', textAlign: align }}>
+      <span style={{ fontSize: '10px', fontWeight: 800, color: '#7A8899', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+        {label}:{' '}
+      </span>
+      <span style={{
+        display: 'inline-block', width: align === 'right' ? '130px' : '190px',
+        borderBottom: '1.5px solid #333', height: '13px', verticalAlign: 'top',
+      }} />
+    </div>
+  )
+}
+
+
+
 function ClientSheet({ client, index, total }: { client: Client; index: number; total: number }) {
   const requestedItems = client.items
   ? (Array.isArray(client.items) ? client.items : client.items.split(','))
@@ -430,26 +459,56 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
 
 
 
-          {/* LEFT: Name / Time · Date / Address / Phone / Language */}
-          <div>
-            <div style={{ fontSize: '24px', fontWeight: 900, color: '#1B2B4B', letterSpacing: '-0.01em', lineHeight: 1.1 }}>
-              {client.lastName}, {client.firstName}
+          {/* LEFT: Name / Time · Date / Address / Phone / Language.
+              Synthetic (blank walk-up sheets) swaps this whole block for
+              labelled write-in lines instead — one per field Add Referral's
+              own intake form collects (app/dawson/referrals/new/page.tsx's
+              `form` state: name, DOB, address, phone, household size,
+              children, language). Appointment date/time is deliberately
+              NOT one of them — a walk-up has neither, so that row is
+              dropped rather than given a line nobody should fill in. Row
+              count and heights are kept close to the real block's (one
+              line per field, same ~9px rhythm) so a blank sheet's natural
+              height stays close to a real sheet's — see the page-break
+              note on ClientSheet above. */}
+          {client.synthetic ? (
+            <div>
+              <WriteInLine label="Name" first />
+              <WriteInLine label="Date of birth" />
+              <WriteInLine label="Address" />
+              <WriteInLine label="Phone" />
+              <WriteInLine label="Language" />
             </div>
-            <div style={{ fontSize: '20px', fontWeight: 900, color: '#2A7F6F', lineHeight: 1.1, marginTop: '4px' }}>
-              {client.appointmentTime ?? '—'} · {formatDateNoWeekday(client.appointmentDate)}
-            </div>
-            <div style={{ fontSize: '11.5px', color: '#1B2B4B', lineHeight: 1.55, marginTop: '10px' }}>
-              <div>
-                {client.address}{client.address2 ? `, ${client.address2}` : ''}{client.city ? `, ${client.city}` : ''}{client.state ? `, ${client.state}` : ''} {client.zip ?? ''}
+          ) : (
+            <div>
+              <div style={{ fontSize: '24px', fontWeight: 900, color: '#1B2B4B', letterSpacing: '-0.01em', lineHeight: 1.1 }}>
+                {client.lastName}, {client.firstName}
               </div>
-              <div>{client.phone ?? '—'}</div>
-              <div>{client.language ?? '—'}</div>
+              <div style={{ fontSize: '20px', fontWeight: 900, color: '#2A7F6F', lineHeight: 1.1, marginTop: '4px' }}>
+                {client.appointmentTime ?? '—'} · {formatDateNoWeekday(client.appointmentDate)}
+              </div>
+              <div style={{ fontSize: '11.5px', color: '#1B2B4B', lineHeight: 1.55, marginTop: '10px' }}>
+                <div>
+                  {client.address}{client.address2 ? `, ${client.address2}` : ''}{client.city ? `, ${client.city}` : ''}{client.state ? `, ${client.state}` : ''} {client.zip ?? ''}
+                </div>
+                <div>{client.phone ?? '—'}</div>
+                <div>{client.language ?? '—'}</div>
+              </div>
             </div>
-          </div>
+          )}
 
 
 
-          {/* RIGHT: ID / Agency / Household + Items (External notes removed from here) */}
+          {/* RIGHT: ID / Agency / Household + Items (External notes removed from here).
+              ID stays the MANUAL ENTRY marker either way (set on the synthetic
+              client itself, not branched here). Agency and Items are NOT in
+              Add Referral's field list (agency is a picker selection, not a
+              form field; Items here is the requested-items summary, which
+              for a walk-up is accurately "None specified" — nobody could
+              have requested ahead of time) — both are left as the existing
+              '—'/"None specified" fallback, unlabelled, on purpose. Household
+              splits into two write-in lines (size, children) since Add
+              Referral collects them as two separate fields. */}
           <div style={{ fontSize: '11.5px', lineHeight: 1.55, textAlign: 'right', alignSelf: 'center' }}>
             <div>
               <span style={{ color: '#7A8899', fontWeight: 700 }}>ID: </span>
@@ -469,10 +528,17 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
               <span style={{ color: '#1B2B4B' }}>{client.referringAgency ?? '—'}{client.referredBy ? ` / ${client.referredBy}` : ''}</span>
             </div>
             <div>&nbsp;</div>
-            <div>
-              <span style={{ color: '#7A8899', fontWeight: 700 }}>Household: </span>
-              <span style={{ color: '#1B2B4B' }}>{client.hhSize ?? '—'}{client.children ? ` (${client.children} children)` : ''}</span>
-            </div>
+            {client.synthetic ? (
+              <>
+                <WriteInLine label="Household size" align="right" first />
+                <WriteInLine label="Children" align="right" />
+              </>
+            ) : (
+              <div>
+                <span style={{ color: '#7A8899', fontWeight: 700 }}>Household: </span>
+                <span style={{ color: '#1B2B4B' }}>{client.hhSize ?? '—'}{client.children ? ` (${client.children} children)` : ''}</span>
+              </div>
+            )}
             <div>
               <span style={{ color: '#7A8899', fontWeight: 700 }}>Items: </span>
               <span style={{ color: '#1B2B4B' }}>{requestedItems.length > 0 ? requestedItems.join(' · ') : 'None specified'}</span>
@@ -564,9 +630,13 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
 function blankClient(n: 1 | 2): Client {
   return {
     id: `MANUAL ENTRY ${n}`,
-    firstName: '—',
-    lastName: '—',
-    clientName: '—',
+    // Name renders as a WriteInLine on synthetic sheets (ClientSheet's info
+    // card), not from these fields — they're only non-optional on the
+    // Client type. RosterPage never sees BLANK_CLIENTS at all, so there's
+    // no "—, —" to read anywhere for these.
+    firstName: '',
+    lastName: '',
+    clientName: '',
     address: null,
     address2: null,
     city: null,
@@ -877,6 +947,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
       }}>
         <div style={{ color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '14px' }}>
           {formatSaturdayDate(date)} · {clients.length} client{clients.length !== 1 ? 's' : ''}
+          {clients.length === 0 ? ' scheduled' : ''} · {BLANK_CLIENTS.length} blank
         </div>
         <div style={{ display: 'flex', gap: '10px' }}>
           <a href="/dawson/schedule" style={{ padding: '8px 16px', borderRadius: '6px', border: '1px solid rgba(255,255,255,0.3)', color: 'white', fontSize: '13px', fontWeight: 600, textDecoration: 'none', fontFamily: 'var(--font-montserrat)' }}>
@@ -888,7 +959,7 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
           </button>
           <button onClick={handlePrint} disabled={merging || generatingPdf}
             style={{ padding: '8px 20px', borderRadius: '6px', border: 'none', background: (merging || generatingPdf) ? '#5A8577' : '#2A7F6F', color: 'white', fontSize: '13px', fontWeight: 700, cursor: (merging || generatingPdf) ? 'wait' : 'pointer', fontFamily: 'var(--font-montserrat)' }}>
-            {merging ? 'Marking merge…' : `🖨 Print Roster + ${clients.length} sheets`}
+            {merging ? 'Marking merge…' : `🖨 Print Roster + ${clients.length + BLANK_CLIENTS.length} sheets`}
           </button>
         </div>
       </div>
@@ -899,21 +970,21 @@ export default function PrintPage({ params }: { params: Promise<{ date: string }
 
 
 
-      {clients.length === 0 ? (
-        <div style={{ textAlign: 'center', padding: '60px', color: '#7A8899', fontFamily: 'Arial' }}>
-          No scheduled clients found for this date.
-        </div>
-      ) : (
-        <div className="print-sheet-wrapper">
-          <RosterPage clients={clients} date={date} />
-          {/* Roster stays real-clients-only, above. The two blank walk-up
-              sheets are appended here, sheets-only, after everyone with an
-              actual appointment. */}
-          {[...clients, ...BLANK_CLIENTS].map((client, i, sheetClients) => (
-            <ClientSheet key={client.id} client={client} index={i} total={sheetClients.length} />
-          ))}
-        </div>
-      )}
+      {/* The packet always produces the two blank walk-up sheets, even on a
+          Saturday with no real scheduled clients — that is exactly the day
+          a walk-up is most likely (nothing booked, warehouse still open).
+          RosterPage already renders correctly at clients.length === 0 (an
+          empty two-column roster under "0 appointments"), so no separate
+          empty-state branch is needed here any more. */}
+      <div className="print-sheet-wrapper">
+        <RosterPage clients={clients} date={date} />
+        {/* Roster stays real-clients-only, above. The two blank walk-up
+            sheets are appended here, sheets-only, after everyone with an
+            actual appointment (or, on a day with none, after nobody). */}
+        {[...clients, ...BLANK_CLIENTS].map((client, i, sheetClients) => (
+          <ClientSheet key={client.id} client={client} index={i} total={sheetClients.length} />
+        ))}
+      </div>
 
 
 
