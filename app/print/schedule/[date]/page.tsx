@@ -348,6 +348,23 @@ function RescheduleBox() {
 
 
 
+// Shared by WriteInLine and WriteInLinePair below, so a label/rule pair
+// looks identical whether it's alone on its row or sharing one with
+// another pair — same font, same rule weight, same fixed-width box logic.
+function writeInLabelStyle(width: number): React.CSSProperties {
+  return {
+    display: 'inline-block', width: `${width}px`, flexShrink: 0, textAlign: 'right',
+    fontSize: '10px', fontWeight: 800, color: '#7A8899',
+    textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap',
+  }
+}
+function writeInRuleStyle(width: number): React.CSSProperties {
+  return {
+    display: 'inline-block', width: `${width}px`, flexShrink: 0,
+    borderBottom: '1.5px solid #333', height: '13px',
+  }
+}
+
 /* ============================================================
    WriteInLine — a small uppercase label beside a blank rule, for the
    CLIENT INFO CARD on synthetic (blank walk-up) sheets only. A volunteer
@@ -369,21 +386,25 @@ function RescheduleBox() {
    what lines up, not its start.
 
    `labelWidth`/`ruleWidth` default per column, sized to the column's own
-   longest label measured in a real browser (Chromium, this exact font/
-   weight/letter-spacing) rather than guessed — "Appointment date" (LEFT,
-   115.6px) and "Items requested" (RIGHT, 108.5px) are the two that don't
-   fit a smaller box without wrapping. One shared width per column, not a
-   per-row override, so every rule in a column — including Items
-   requested's — ends at the same x as the rest; a field that needs more
-   room gets it by widening the whole column's label gutter, not by
-   growing its own rule past where its neighbors' end.
+   longest remaining single-row label measured in a real browser (this
+   exact font/weight/letter-spacing) — LEFT's is "Date of birth" (88.2px,
+   with room to spare in the 124px box); RIGHT's is "Items requested"
+   (108.5px). RIGHT's rule is now 210px, not just enough to clear
+   wrapping — Agency/Referring staff/Items requested had the most spare
+   column width of anything on the sheet, so they got widened, not just
+   kept wrap-safe. One shared width per column, not a per-row override,
+   so every plain row's rule ends at the same x as its neighbors.
+   Appointment date/time and Household size/Children are NOT part of this
+   shared width — they pair up on one row each via WriteInLinePair below,
+   with their own (smaller) widths, since two short fields together don't
+   need — and don't have room for — a full single-row rule apiece.
 
    `first` drops the row's top margin, for whichever line opens its block.
    ============================================================ */
 function WriteInLine({
   label, align = 'left', first = false,
   labelWidth = align === 'right' ? 116 : 124,
-  ruleWidth = align === 'right' ? 130 : 190,
+  ruleWidth = align === 'right' ? 210 : 190,
 }: {
   label: string
   align?: 'left' | 'right'
@@ -397,17 +418,55 @@ function WriteInLine({
       display: 'flex', justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
       alignItems: 'baseline', gap: '6px',
     }}>
-      <span style={{
-        display: 'inline-block', width: `${labelWidth}px`, flexShrink: 0, textAlign: 'right',
-        fontSize: '10px', fontWeight: 800, color: '#7A8899',
-        textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap',
-      }}>
-        {label}:
-      </span>
-      <span style={{
-        display: 'inline-block', width: `${ruleWidth}px`, flexShrink: 0,
-        borderBottom: '1.5px solid #333', height: '13px',
-      }} />
+      <span style={writeInLabelStyle(labelWidth)}>{label}:</span>
+      <span style={writeInRuleStyle(ruleWidth)} />
+    </div>
+  )
+}
+
+/* ============================================================
+   WriteInLinePair — two label+rule pairs on ONE row, for fields that are
+   really one fact (appointment date/time) or individually short enough
+   that a full single-row rule would be wasted space (household size,
+   children). Recovers a row versus giving each its own WriteInLine.
+
+   Deliberately its OWN labelWidth/ruleWidth, not the column's shared
+   WriteInLine defaults — those are sized for a single label alone on a
+   full-width row; cramming two of them onto one row wouldn't fit, and
+   these fields don't need that much room each anyway. The two pairs
+   mirror each other (same labelWidth/ruleWidth for both), so the row
+   reads as one balanced unit rather than two mismatched halves — this
+   row's internal symmetry is a separate concern from the column-wide
+   "every rule ends at the same x" alignment WriteInLine rows keep; nothing
+   else on the sheet shares this row's shape, so nothing needs to line up
+   with it beyond its own two ends.
+   ============================================================ */
+function WriteInLinePair({
+  leftLabel, rightLabel, align = 'left', first = false,
+  labelWidth, ruleWidth, pairGap = 16,
+}: {
+  leftLabel: string
+  rightLabel: string
+  align?: 'left' | 'right'
+  first?: boolean
+  labelWidth: number
+  ruleWidth: number
+  pairGap?: number
+}) {
+  return (
+    <div style={{
+      marginTop: first ? 0 : '9px',
+      display: 'flex', justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+      gap: `${pairGap}px`,
+    }}>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+        <span style={writeInLabelStyle(labelWidth)}>{leftLabel}:</span>
+        <span style={writeInRuleStyle(ruleWidth)} />
+      </div>
+      <div style={{ display: 'flex', alignItems: 'baseline', gap: '6px' }}>
+        <span style={writeInLabelStyle(labelWidth)}>{rightLabel}:</span>
+        <span style={writeInRuleStyle(ruleWidth)} />
+      </div>
     </div>
   )
 }
@@ -498,27 +557,28 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
 
           {/* LEFT: Name / Time · Date / Address / Phone / Language.
               Synthetic (blank walk-up sheets) swaps this whole block for
-              labelled write-in lines instead — Add Referral's own intake
-              form fields (app/dawson/referrals/new/page.tsx's `form` state:
-              name, DOB, address, phone, household size, children, language)
-              plus Appointment date and Appointment time, each its own line
-              like every other field here. These sheets are photocopy
-              masters, reused across many walk-ups — nothing about a given
-              Saturday can be pre-printed on them, including the date, so
-              even the one piece of information this file already knows
-              (the Saturday being printed) gets a blank line, not a filled
-              one. Ordered Name / date / time / DOB / address / phone /
-              language — date and time sit where the real sheet's Time ·
-              Date line does, right after the name, rather than at the end. */}
+              labelled write-in lines instead. Appointment date and time
+              share ONE row — they're one fact, not two, and a full row
+              each was more space than this column can spare. Short labels
+              ("Appt date"/"Appt time") rather than "Appointment date" in
+              full: this row already carries two of them side by side, and
+              "Date of birth" two rows down keeps "date" unambiguous even
+              abbreviated. That row leads, matching where the real sheet's
+              own Time · Date line sits — right after the name would be,
+              which is why Name comes second here, not first.
+
+              Language was on Add Referral's own field list but is dropped
+              here — it doesn't cost anything a duplicate check or the
+              rest of intake needs, and this column had no row to spare
+              for it. Everything else (name, DOB, address, phone) still
+              gets its own line, matching Add Referral's remaining fields. */}
           {client.synthetic ? (
             <div>
-              <WriteInLine label="Name" first />
-              <WriteInLine label="Appointment date" />
-              <WriteInLine label="Appointment time" />
+              <WriteInLinePair leftLabel="Appt date" rightLabel="Appt time" labelWidth={70} ruleWidth={80} first />
+              <WriteInLine label="Name" />
               <WriteInLine label="Date of birth" />
               <WriteInLine label="Address" />
               <WriteInLine label="Phone" />
-              <WriteInLine label="Language" />
             </div>
           ) : (
             <div>
@@ -543,13 +603,21 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
           {/* RIGHT: ID / Agency / Household + Items (External notes removed from here).
               ID stays the MANUAL ENTRY marker either way (set on the synthetic
               client itself, not branched here). On synthetic sheets, Agency,
-              Referring staff, Household size, Children and Items requested
-              are all write-in lines — Ben's field list has Agency and
-              Referring staff alongside the others Add Referral collects, and
-              "None specified" for Items is a true statement about a real
-              client but a false one on a blank, so it needs a line too, not
-              a fallback. Household still splits into two lines (size,
-              children), same as before. */}
+              Referring staff and Items requested are full-row write-in
+              lines — Ben's field list has Agency and Referring staff
+              alongside the others Add Referral collects, and "None
+              specified" for Items is a true statement about a real client
+              but a false one on a blank, so it needs a line too, not a
+              fallback. Those three got WIDER rules this round, not just
+              wide enough to avoid wrapping — this column had the most
+              spare width on the sheet once Household size/Children moved
+              off their own two rows (below).
+
+              Household size and Children pair onto ONE row instead —
+              unlike Agency/Referring staff/Items, both are short answers
+              (a number, maybe two), so a full-width rule each would be
+              mostly unused space, and the row saved matters more here
+              than it would for a field that's actually written out. */}
           <div style={{ fontSize: '11.5px', lineHeight: 1.55, textAlign: 'right', alignSelf: 'center' }}>
             <div>
               <span style={{ color: '#7A8899', fontWeight: 700 }}>ID: </span>
@@ -578,8 +646,7 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
             <div>&nbsp;</div>
             {client.synthetic ? (
               <>
-                <WriteInLine label="Household size" align="right" first />
-                <WriteInLine label="Children" align="right" />
+                <WriteInLinePair leftLabel="Household" rightLabel="Children" align="right" labelWidth={78} ruleWidth={75} first />
                 <WriteInLine label="Items requested" align="right" />
               </>
             ) : (
