@@ -1531,29 +1531,66 @@ const ACCENT_GOLD = '#C9A84C'
 
 function ActionBtn({ label, tone, onClick, disabled, title }: {
   label: string
-  tone: 'accept' | 'gold' | 'red' | 'cancel'
+  tone: 'accept' | 'primary' | 'gold' | 'red' | 'cancel'
   onClick: () => void
   disabled?: boolean
   title?: string
 }) {
-  // 'cancel' is a REAL, clickable secondary action (Reschedule, Cancel, Pick
-  // another date) — not a lesser cousin of the disabled state. It used to
-  // share disabled's flat grey fill (#F0F0F0 vs disabled's #EDEBE7 — two
-  // shades of the same grey, with muted text on both), which read as
-  // "can't click this," the opposite of what it meant. Given a real border
-  // and navy text instead — the same white-bg / #EDE9E1-border / navy-text
-  // pattern this page already uses for its inline-edit Cancel buttons and
-  // the header's Data Page link, so it's a reused convention, not a new
-  // one — and no fill at all, so it can't be mistaken for the disabled
-  // state's solid grey chip. Still visually second to 'accept' (solid teal)
-  // and 'gold' (solid-tinted gold), which is the emphasis order Ben asked
-  // to keep: primary stronger than secondary, secondary now merely
-  // "outlined and real" rather than "grey and inert."
+  // Round-trip on this button's tones, both times on Ben's own read of the
+  // rendered page rather than in the abstract:
+  //
+  //   First pass gave 'cancel' a white background with a #EDE9E1 border —
+  //   the same subtle border this page already uses for its inline-edit
+  //   Cancel buttons. On an ordinary Scheduled referral, next to no other
+  //   color, that border was too close to invisible: white-on-white with a
+  //   thin line gives no signal a button is there to press, which for
+  //   Dawson (84, not a daily software user) means the button goes
+  //   unpressed and he emails Ben instead — exactly what this page exists
+  //   to prevent.
+  //
+  //   Second pass, this one: Reschedule on a plain Scheduled referral
+  //   becomes a real PRIMARY action — solid teal, matching the Edit
+  //   buttons and every other solid-teal affordance in the portal — not a
+  //   grey or bordered secondary. Cancel keeps a bordered look but with a
+  //   border and text worth calling a border: solid navy (#1B2B4B, already
+  //   the page's own heading/body color), not the near-invisible #EDE9E1
+  //   card-border grey. Checked side by side against the disabled state
+  //   (flat pale fill, no border, washed-out text) — the two don't read
+  //   alike: disabled is a filled chip with faint text, 'cancel' is an
+  //   outlined button with full-strength navy text.
+  //
+  //   Deliberately NOT gold and NOT red, per Ben directly:
+  //     - Gold already means "something needs deciding" everywhere else in
+  //       this portal (this card's own accent border, Needs Action,
+  //       dashboard prompts). Reschedule renders on every Scheduled
+  //       referral, decision pending or not — gold there would dilute what
+  //       gold means everywhere else. It stays reserved for the states
+  //       that already carry the accent border (approved-no-date,
+  //       reschedule-requested's "Pick another date," no-show-in-window's
+  //       "Reschedule" — all untouched here).
+  //     - Red on Cancel would draw the eye to the least-wanted action by
+  //       accident. The portal's own convention runs the other way: the
+  //       safe action (here, teal Reschedule) gets the visual weight, the
+  //       destructive one (Cancel) stays plain.
+  //
+  //   'primary' exists as its own tone, pixel-identical to 'accept', so the
+  //   two don't get conflated by name — 'accept' means "agree to this
+  //   specific proposal" (Approve, Accept a requested date); 'primary' means
+  //   "the strong, teal, default action for this state," which Reschedule
+  //   now is without being an acceptance of anything.
+  //
+  //   Third pass: the solid navy border above turned out heavier than
+  //   needed and competed with the filled teal primary for attention.
+  //   Softened to a translucent navy line — still a real, visible border
+  //   (nothing like the original near-invisible #EDE9E1), just no longer
+  //   trying to match the primary's own visual weight. Text stays solid
+  //   navy; only the border backed off. The teal fill on 'primary' itself
+  //   is untouched — that one was never the problem.
   const c =
     disabled ? { bg: '#EDEBE7', fg: '#B8C1CC', border: 'none' }
-    : tone === 'accept' ? { bg: '#2A7F6F', fg: 'white', border: 'none' }
+    : tone === 'accept' || tone === 'primary' ? { bg: '#2A7F6F', fg: 'white', border: 'none' }
     : tone === 'red' ? { bg: 'rgba(192,57,43,0.08)', fg: '#C0392B', border: 'none' }
-    : tone === 'cancel' ? { bg: 'white', fg: '#1B2B4B', border: '1px solid #EDE9E1' }
+    : tone === 'cancel' ? { bg: 'white', fg: '#1B2B4B', border: '1px solid rgba(27,43,75,0.28)' }
     : { bg: 'rgba(201,168,76,0.15)', fg: '#8B7724', border: 'none' }
   return (
     <button onClick={disabled ? undefined : onClick} disabled={disabled} title={title}
@@ -1571,19 +1608,30 @@ function ActionBtn({ label, tone, onClick, disabled, title }: {
 // no date at all, which show a placeholder rather than skipping the block.
 // Ben's instruction: they sit in the same place whatever is happening, so the
 // card never reflows its top line between states.
-function ActionCardDateTime({ referral }: { referral: Referral }) {
+function ActionCardDateTime({ referral, muted }: { referral: Referral; muted?: boolean }) {
   return (
     <div>
       <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#7A8899' }}>
         Appointment
       </div>
-      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '22px', color: '#1B2B4B', lineHeight: 1.2, marginTop: '2px' }}>
+      {/* Muted on Cancelled/Rejected/Withdrawn only — it's history, not a
+          plan, and the large bold navy date was the first thing the eye
+          landed on regardless of the pill elsewhere on the row. Not a
+          strikethrough: that reads as "replaced," which is true of the
+          rescheduled-referral "Previously" line below but not here —
+          nothing superseded this date, the referral just ended. No Show
+          stays navy: the date is still live in the sense that matters (the
+          25-day reschedule window runs from it, and the card says so). */}
+      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '22px', color: muted ? '#7A8899' : '#1B2B4B', lineHeight: 1.2, marginTop: '2px' }}>
         {referral.effectiveAppointmentDate
           ? <>{formatDate(referral.effectiveAppointmentDate)}{referral.appointmentTime ? ` · ${referral.appointmentTime}` : ''}</>
           : 'No date set'}
       </div>
+      {/* Body size, normal text colour — not a muted footnote. For Dawson
+          this is the fact that stops him looking for this client on the
+          old date; it needs to read as a fact, not an aside. */}
       {referral.originalAppointmentDate && referral.originalAppointmentDate !== referral.effectiveAppointmentDate && (
-        <div style={{ fontSize: '11px', color: '#9AA6B2', marginTop: '4px' }}>
+        <div style={{ fontSize: '13px', color: '#1B2B4B', marginTop: '4px' }}>
           Previously {formatDate(referral.originalAppointmentDate)}
         </div>
       )}
@@ -1722,7 +1770,7 @@ function ActionCard({
           document ever applies at a time regardless of state, so the
           header is the more natural constant home for it. */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
-        <ActionCardDateTime referral={referral} />
+        <ActionCardDateTime referral={referral} muted={state === 'closed' && referral.appointmentStatus !== 'No Show'} />
         {state === 'reschedule-requested' && (
           <ActionCardRequested referral={referral} availableDates={availableDates} todayISO={todayISO} />
         )}
@@ -1739,8 +1787,14 @@ function ActionCard({
         <div style={{ borderTop: '1px solid #EEF0F3', margin: '14px 0 0' }} />
       )}
 
+      {/* 12px between buttons in every row below, not the 8px other tight
+          clusters on this page use — that read as one control with two
+          click targets, which is a real mis-click risk when Cancel sits
+          right beside a primary action. 12px matches the gap this page's
+          own CancelModal/PickSlotModal footers already use for the same
+          kind of row, so it's a reused value, not a new one. */}
       {state === 'awaiting-review' && (
-        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+        <div style={{ display: 'flex', gap: '12px', marginTop: '14px' }}>
           <ActionBtn label={confirm === 'Approved' ? (actionLoading ? '…' : 'Confirm Approve') : 'Approve'}
             tone="accept" onClick={onApprove} disabled={actionLoading && confirm !== 'Approved'} />
           <ActionBtn label={confirm === 'Rejected' ? (actionLoading ? '…' : 'Confirm Reject') : 'Reject'}
@@ -1752,15 +1806,15 @@ function ActionCard({
       )}
 
       {state === 'approved-no-date' && (
-        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+        <div style={{ display: 'flex', gap: '12px', marginTop: '14px' }}>
           {isReschedulable && <ActionBtn label="Pick a date" tone="gold" onClick={onPickSlot} disabled={actionLoading} />}
           {isCancellable && <ActionBtn label="Cancel" tone="cancel" onClick={onCancel} disabled={actionLoading} />}
         </div>
       )}
 
       {state === 'scheduled' && (
-        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
-          {isReschedulable && <ActionBtn label="Reschedule" tone="cancel" onClick={onPickSlot} disabled={actionLoading} />}
+        <div style={{ display: 'flex', gap: '12px', marginTop: '14px' }}>
+          {isReschedulable && <ActionBtn label="Reschedule" tone="primary" onClick={onPickSlot} disabled={actionLoading} />}
           {isCancellable && <ActionBtn label="Cancel" tone="cancel" onClick={onCancel} disabled={actionLoading} />}
         </div>
       )}
@@ -1771,7 +1825,7 @@ function ActionCard({
           : 'Accept'
         return (
           <>
-            <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
+            <div style={{ display: 'flex', gap: '12px', marginTop: '14px' }}>
               {acceptArmed ? (
                 <ActionBtn label="Cancel" tone="cancel" onClick={() => setAcceptArmed(false)} disabled={actionLoading} />
               ) : (
