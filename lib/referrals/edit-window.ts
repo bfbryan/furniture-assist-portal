@@ -27,7 +27,7 @@
 // All dates are Eastern. `todayISO` is injected so the caller can pass one
 // value for a whole render or request rather than re-reading the clock.
 
-import { addDaysISO, differenceInDaysISO, easternTodayISO } from '@/lib/dates'
+import { addDaysISO, differenceInDaysISO, easternHour, easternTodayISO } from '@/lib/dates'
 
 /**
  * Days between the edit cutoff and the appointment. Saturday minus five days
@@ -134,4 +134,62 @@ export function agencyEditWindow({
   if (daysLeft < 0) return { editable: false, reason: 'past-cutoff', cutoffDate }
 
   return { editable: true, cutoffDate }
+}
+
+// ---------------------------------------------------------------------------
+// Dawson's own edit window — Client Information / Items Requested on the
+// internal referral detail page. A DIFFERENT cutoff from agencyEditWindow's:
+// 5pm the Friday before the Saturday appointment, not the Monday five days
+// out. Both exist for the same reason (the warehouse builds its pick list off
+// these fields), just drawn at different points by each side; Dawson is one
+// step closer to the pick list than an agency is, so its own cutoff sits
+// later in the week.
+//
+// Deliberately NOT used for Reschedule/Cancel eligibility — those follow
+// agencyReferralActions() + isAwaitingOutcome() instead, unchanged from what
+// the agency side already does, so Dawson can still record a Saturday-morning
+// cancellation instead of it silently becoming a no-show. This window is for
+// the FIELD edits only.
+//
+// Same two-gate shape as agencyEditWindow, for the same reason:
+//
+//   1. Status gate, reusing EDITABLE_STATUSES rather than deciding a second
+//      list. Needed because gate 2 alone would misread a closed record: a
+//      Cancelled or Withdrawn referral's appointmentDate empties to null (see
+//      the referral detail page's own note on that field), and with no date
+//      to compute a cutoff from, gate 2 alone would call it editable forever.
+//
+//   2. No appointment date yet (Awaiting review, Approved-no-date) → editable,
+//      same fallback agencyEditWindow uses — there is no Friday to have
+//      passed, and these are exactly the states editing matters most in.
+export function dawsonEditWindow({
+  portalStatus,
+  appointmentDate,
+  now = new Date(),
+}: {
+  portalStatus: string
+  appointmentDate: string | null | undefined
+  now?: Date
+}): EditWindow {
+  if (!(EDITABLE_STATUSES as readonly string[]).includes(portalStatus)) {
+    return { editable: false, reason: 'status', cutoffDate: null }
+  }
+  if (!appointmentDate) {
+    return { editable: true, cutoffDate: null }
+  }
+
+  const todayISO = easternTodayISO(now)
+  // Friday = the Saturday appointment minus one day.
+  const cutoffDate = addDaysISO(appointmentDate, -1)
+  const daysUntilCutoff = differenceInDaysISO(todayISO, cutoffDate)
+  if (daysUntilCutoff === null) return { editable: true, cutoffDate }
+  if (daysUntilCutoff > 0) return { editable: true, cutoffDate }
+  if (daysUntilCutoff < 0) return { editable: false, reason: 'past-cutoff', cutoffDate }
+
+  // daysUntilCutoff === 0: today IS the cutoff Friday. Editable until 5pm
+  // Eastern, not all day — Ben's cutoff is a working-day boundary, not a
+  // calendar one.
+  return easternHour(now) < 17
+    ? { editable: true, cutoffDate }
+    : { editable: false, reason: 'past-cutoff', cutoffDate }
 }
