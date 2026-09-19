@@ -1,20 +1,25 @@
 // lib/agencies/upsert.ts
 //
-// Canonical "find-or-create Agency + find-or-create Agency User" helper.
+// createAgency / createAgencyUser: the canonical field mapping for both
+// tables. upsertAgencyAndUser wraps them with find-or-create dedupe
+// (Agency Name / Email) for CSV agency-slip import
+// (app/api/dawson/admin/import-agencies/route.ts) — its one real caller;
+// an older header comment here claimed three, checked live (2026-09) and
+// corrected — don't trust the old one either without checking again.
 //
-// One code path that ALL agency/user creation flows funnel through:
-//   - Self-service portal (admin/invite/route.ts) -> status: 'Pending'  + Clerk user ID
-//   - Excel referral import (createReferralWithAgency)   -> status: 'Unclaimed', no Clerk ID
-//   - CSV agency-slip import (import-agencies/route)     -> status: 'Unclaimed', no Clerk ID
+// agency-registration-route calls createAgency / createAgencyUser
+// DIRECTLY, deliberately bypassing upsertAgencyAndUser's find-or-create:
+// a public registration must always create a new row, never silently
+// attach to an existing one that happens to share a name — Catholic
+// Charities and Center for Great Expectations each already hold two
+// Agencies records distinguished only by Office Name, and Agency-Name-only
+// matching would collide a legitimate second office into the first one it
+// found. That route runs its own non-blocking duplicate check
+// (lib/agencies/duplicate-check.ts) instead and flags rather than merges.
 //
-// Why this matters: field mapping must be IDENTICAL across all three paths so we
-// don't end up with subtly different records that defeat dedupe.
-//
-// Dedup keys:
+// Dedup keys, for upsertAgencyAndUser's own find-or-create only:
 //   Agency       -> Agency Name (case-insensitive, trimmed)
 //   Agency User  -> Email (case-insensitive, trimmed)
-//
-// Field mapping mirrors lib/airtable.ts + app/api/admin/invite/route.ts exactly.
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -62,7 +67,25 @@ export interface AgencyInput {
   mainPhone?: string | null      // -> 'Main Phone Number'
   website?: string | null
   status: AgencyStatus
-  source?: 'Manual Entry' | 'Created via Referral' | 'Created via Import' | 'Self Registration'
+  // 'Self Registered' is the live Airtable option (Meta API, checked
+  // 2026-09). This used to read 'Self Registration' — nobody had ever
+  // called createAgency with that value, so the mismatch shipped silently;
+  // the create call has no typecast, so it would have 422'd the first time
+  // something tried.
+  source?: 'Manual Entry' | 'Created via Referral' | 'Created via Import' | 'Self Registered'
+  // Set only by a caller that has already run its own duplicate check
+  // (agency-registration-route) — CSV import never passes these, and
+  // createAgency leaves both alone when omitted, same as every other
+  // optional field below.
+  possibleDuplicate?: boolean
+  notes?: string | null
+  // Public registration only. Airtable field names, verified live
+  // (2026-09) — no typecast on this create, so a name drifting from the
+  // real field would 422 the whole call, not fail quietly.
+  cert501c3?: boolean
+  cert501c3At?: string | null     // ISO instant — the field is dateTime, not date-only
+  termsAccepted?: boolean
+  termsAcceptedAt?: string | null
 }
 
 export interface AgencyUserInput {
@@ -135,13 +158,18 @@ async function findAgencyByName(name: string): Promise<string | null> {
   return data.records?.[0]?.id ?? null
 }
 
-async function createAgency(input: AgencyInput): Promise<string> {
+export async function createAgency(input: AgencyInput): Promise<string> {
   // Only write fields that have values. NEVER write computed/auto fields:
   //   Record Creation Date, Approval Date, Invited Date, Rejected Date,
   //   Claimed Date, Agency # (autonumber), Last Modified,
   //   County (zip-driven automation),
-  //   Admin First/Last/Email/Phone (lookups via Primary Admin link),
-  //   Possible Duplicate (set by dedup logic, not here).
+  //   Admin First/Last/Email/Phone (lookups via Primary Admin link).
+  //
+  // Possible Duplicate and Notes ARE writable here now, but only when the
+  // caller passes them — CSV import never does, so its records are
+  // unaffected; agency-registration-route passes them after running its
+  // own duplicate check, same "set once at creation, Dawson edits after"
+  // shape as everything else on this row.
   //
   // These fields were DELETED from Agencies in the June 2026 migration
   // — do not write them: First Name, Last Name, Phone Number, Email,
@@ -162,6 +190,12 @@ async function createAgency(input: AgencyInput): Promise<string> {
   if (input.mainPhone) fields['Main Phone Number'] = input.mainPhone
   if (input.website) fields['Website'] = input.website
   if (input.source) fields['Source'] = input.source
+  if (input.possibleDuplicate !== undefined) fields['Possible Duplicate'] = input.possibleDuplicate
+  if (input.notes) fields['Notes'] = input.notes
+  if (input.cert501c3 !== undefined) fields['501c3 Certified'] = input.cert501c3
+  if (input.cert501c3At) fields['501c3 Certified At'] = input.cert501c3At
+  if (input.termsAccepted !== undefined) fields['Terms Accepted'] = input.termsAccepted
+  if (input.termsAcceptedAt) fields['Terms Accepted At'] = input.termsAcceptedAt
 
   const created = await airtableCreate('Agencies', fields)
   return created.id
@@ -178,7 +212,7 @@ async function findAgencyUserByEmail(email: string): Promise<string | null> {
   return data.records?.[0]?.id ?? null
 }
 
-async function createAgencyUser(input: AgencyUserInput, agencyId: string): Promise<string> {
+export async function createAgencyUser(input: AgencyUserInput, agencyId: string): Promise<string> {
   // Only write non-empty values — Airtable text fields accept empty strings
   // but it's cleaner to omit them so the column stays visually blank.
   //

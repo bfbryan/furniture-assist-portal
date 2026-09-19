@@ -696,6 +696,12 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
   const [confirm, setConfirm] = useState<string | null>(null)
   const [inviteLoading, setInviteLoading] = useState(false)
   const [inviteNote, setInviteNote] = useState<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(null)
+  // Approve/Reject (handleStatusChange) had no error surfacing at all — a
+  // silent no-op on failure, same shape inviteNote used to fix for Invite.
+  // Went from a latent gap to a routine one once Approve on a Pending
+  // (self-registered) agency started actually provisioning Clerk access
+  // and could fail on a real, expected reason ("not reconciled yet").
+  const [statusNote, setStatusNote] = useState<{ kind: 'error'; text: string } | null>(null)
   const [agencyId, setAgencyId] = useState<string>('')
   const [notesModal, setNotesModal] = useState(false)
   const [notesSaving, setNotesSaving] = useState(false)
@@ -735,18 +741,24 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
 
   async function handleStatusChange(newStatus: string) {
     if (!agency) return
-    if (confirm !== newStatus) { setConfirm(newStatus); return }
+    if (confirm !== newStatus) { setConfirm(newStatus); setStatusNote(null); return }
     setStatusLoading(true)
+    setStatusNote(null)
     try {
       const res = await fetch(`/api/dawson/agencies/${agencyId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus, previousStatus: agency.status }),
       })
-      if (res.ok) {
-        setAgency({ ...agency, status: newStatus })
-        setConfirm(null)
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) {
+        setStatusNote({ kind: 'error', text: body?.error || `That didn’t go through (${res.status}).` })
+        return
       }
+      setAgency({ ...agency, status: newStatus })
+      setConfirm(null)
+    } catch {
+      setStatusNote({ kind: 'error', text: 'Network error. Please try again.' })
     } finally { setStatusLoading(false) }
   }
 
@@ -1118,6 +1130,15 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
                   {inviteNote.text}
                 </span>
               )}
+            </div>
+          )}
+
+          {statusNote && (
+            <div style={{
+              margin: '0 24px 16px', padding: '12px 16px', borderRadius: '8px', fontSize: '13px',
+              background: 'rgba(192,57,43,0.08)',
+            }}>
+              <span style={{ fontWeight: 700, color: '#C0392B' }}>{statusNote.text}</span>
             </div>
           )}
         </div>
