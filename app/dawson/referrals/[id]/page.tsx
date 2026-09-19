@@ -5,7 +5,6 @@ import { useRouter } from 'next/navigation'
 import CancelModal from '@/components/internal/modals/CancelModal'
 import PickSlotModal from '@/components/internal/modals/PickSlotModal'
 import { DAWSON_PAGE_BAR_HEIGHT } from '@/components/internal/DawsonPageBar'
-import CompactTimeline, { type TimelineSegment } from '@/components/internal/CompactTimeline'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
 import { easternTodayISO, formatDob, differenceInDaysISO } from '@/lib/dates'
 import {
@@ -117,16 +116,6 @@ type Referral = {
 }
 
 
-// One row of the Email Log table, as /api/dawson/referrals/[id]/emails
-// returns it. Mirrors EmailLogEntry in lib/airtable/email-log.ts.
-type EmailLogEntry = {
-  id: string
-  type: string | null
-  status: string | null
-  sentAt: string | null
-  recipient: string | null
-  bounceReason: string | null
-}
 
 
 // ---------------------------------------------------------------------------
@@ -145,6 +134,18 @@ const ITEM_CATEGORIES = [
   'Household Items (including kitchen & linens)',
   'Baby Items',
 ]
+
+// Display-only shortening for Items Requested on this page — the stored
+// value and ITEM_CATEGORIES itself are untouched, so matching/select state
+// and what gets PATCHed back stay keyed on the full string. The parenthetical
+// earns its place on the agency submission form, where a caseworker is
+// choosing among categories and needs to know what one covers; Dawson
+// already knows, so it's just visual noise here. Local to this page only —
+// NewReferralForm, the Dawson "Add Referral" form, and the Excel import
+// admin page all still show the category's real full name.
+function displayCategoryLabel(cat: string): string {
+  return cat === 'Household Items (including kitchen & linens)' ? 'Household Items' : cat
+}
 
 
 // NJ counties. Dawson works exclusively in NJ; if the org expands out-of-
@@ -582,12 +583,29 @@ function ItemsDisbursedCard({
         accent={EDIT_ACCENT}
         title="Items Disbursed"
         headerRight={
-          locked ? null : (
-            <button onClick={startEdit}
-              style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: EDIT_ACCENT, color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
-              Edit Items
-            </button>
-          )
+          (d?.checkInTime || d?.checkoutTime || !locked) ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+              {/* The only record of when a client actually arrived and left —
+                  written by the OCR pass from the sheet's bottom strip.
+                  Lives with the disbursement it accompanies, same as before
+                  the left-rail reshape moved it onto the appointment card;
+                  moved back here. Absent, not em-dashed, until a pickup has
+                  actually happened and the scan has written something. */}
+              {(d?.checkInTime || d?.checkoutTime) && (
+                <span style={{ fontSize: '12px', color: '#7A8899' }}>
+                  {d?.checkInTime && <>Checked in {d.checkInTime}</>}
+                  {d?.checkInTime && d?.checkoutTime && ' · '}
+                  {d?.checkoutTime && <>Checked out {d.checkoutTime}</>}
+                </span>
+              )}
+              {!locked && (
+                <button onClick={startEdit}
+                  style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: EDIT_ACCENT, color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
+                  Edit Items
+                </button>
+              )}
+            </div>
+          ) : null
         }
       >
         {lineCount === 0 ? (
@@ -1121,7 +1139,7 @@ function ItemsRequestedCard({
             {current.map((item, i) => (
               <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                 <span style={{ color: '#2A7F6F', fontWeight: 700, flexShrink: 0, lineHeight: 1.5 }}>•</span>
-                <span style={{ fontSize: '13.5px', color: '#2C3A4A', lineHeight: 1.5 }}>{item}</span>
+                <span style={{ fontSize: '13.5px', color: '#2C3A4A', lineHeight: 1.5 }}>{displayCategoryLabel(item)}</span>
               </div>
             ))}
           </div>
@@ -1153,7 +1171,7 @@ function ItemsRequestedCard({
           <label key={cat} style={{ display: 'flex', alignItems: 'flex-start', gap: '10px', cursor: 'pointer', fontSize: '13.5px', color: '#2C3A4A', lineHeight: 1.5 }}>
             <input type="checkbox" checked={selected.has(cat)} onChange={() => toggle(cat)}
               style={{ width: '16px', height: '16px', accentColor: EDIT_ACCENT, cursor: 'pointer', flexShrink: 0, marginTop: '2px' }} />
-            <span>{cat}</span>
+            <span>{displayCategoryLabel(cat)}</span>
           </label>
         ))}
       </div>
@@ -1229,9 +1247,9 @@ function InternalNotesCard({
         title="Internal Notes"
         headerRight={<EditButton onClick={startEdit} label={referral.internalNotes ? 'Edit' : '+ Add'} />}
       >
-        {/* The notes-left / outbound-emails-right split Ben asked for is built:
-            this card is now half-width, with EmailHistoryCard beside it. See
-            the two-column wrapper in the page body. */}
+        {/* Right rail, beneath Agency Notes — both are short prose about the
+            referral rather than about the client, so they sit together
+            rather than with Activity. */}
         {referral.internalNotes ? (
           <div style={{ fontSize: '13px', color: '#1B2B4B', whiteSpace: 'pre-wrap', lineHeight: 1.6, padding: '4px 0' }}>{referral.internalNotes}</div>
         ) : (
@@ -1271,254 +1289,203 @@ function InternalNotesCard({
 
 
 // ---------------------------------------------------------------------------
-// Email History
+// Email milestones — feeds Activity, below
 // ---------------------------------------------------------------------------
 
 
-// Sits beside Internal Notes and answers "has this client been told?".
+// The five "…Sent At" stamps the notification modules write as each email
+// fires, off the referral row itself. Previously the checklist behind a
+// separate Email History card (all five always listed, including the ones
+// that hadn't happened) paired with a delivery log of non-clean Resend
+// results. Both are gone from this page now — see the note above
+// buildActivityEvents() for what replaced them and what was dropped.
 //
-// MILESTONES come off the referral row itself — the five "…Sent At" stamps the
-// notification modules write as each email fires. They are the checklist: all
-// five are always listed, including the ones that have not happened, so a
-// missing confirmation is visible rather than absent.
-//
-// DELIVERY LOG is the Email Log table, one row per send attempt, carrying what
-// Resend said afterwards — but only the rows that are NOT a clean delivery.
-//
-// How it got here, in two steps, because the middle position is the point:
-//
-//   Ben asked for the log to go. On a normal referral it restated the
-//   milestones directly above it, one row for one row, and it was the tallest
-//   thing in the right column. It was dropped in full.
-//
-//   Dropping it in full also dropped the only place in the portal that showed
-//   whether an email ACTUALLY ARRIVED. A milestone stamp records that we tried
-//   to send, nothing more. Ben's answer was to keep the log and show only the
-//   rows a milestone cannot already tell you:
-//
-//     a Delivered row next to "Appointment Confirmation — 3:14 PM" says the
-//     same thing twice; a Bounced one says something new.
-//
-// So a referral whose email all went out normally renders NO log rows and no
-// heading either — the vertical space is genuinely returned, which was the
-// original ask. Anything that did not cleanly arrive stays visible with its
-// reason attached.
-//
-// This is not Ben's only view of delivery. He is watching Resend directly for
-// now, and /dawson/reports/email-log is still an empty placeholder for the
-// across-all-clients rollup. This is the per-referral view.
+// Labelled as messages, not milestones — "Appointment Confirmation" read as
+// a status change; "Confirmation Email" reads as what it is, a thing that
+// was sent.
 const EMAIL_MILESTONES = [
-  { key: 'confirmation', label: 'Appointment Confirmation' },
-  { key: 'reschedule',   label: 'Reschedule Notice' },
-  { key: 'reminder',     label: 'Appointment Reminder' },
-  { key: 'completed',    label: 'Post-Appointment' },
-  { key: 'cancellation', label: 'Cancellation Notice' },
+  { key: 'confirmation', label: 'Confirmation Email' },
+  { key: 'reschedule',   label: 'Reschedule Email' },
+  { key: 'reminder',     label: 'Reminder Email' },
+  { key: 'completed',    label: 'Receipt Email' },
+  { key: 'cancellation', label: 'Cancellation Email' },
 ] as const
 
 
-// Airtable datetimes are full ISO timestamps, unlike the date-only appointment
-// fields formatDate() handles, so this one keeps the time of day.
-function formatSentAt(iso: string | null): string | null {
-  if (!iso) return null
-  const d = new Date(iso)
-  if (isNaN(d.getTime())) return null
-  return d.toLocaleString('en-US', {
-    month: 'short', day: 'numeric', year: 'numeric',
-    hour: 'numeric', minute: '2-digit',
+// Email History (the card) is gone — its two milestone/delivery-log halves
+// split between Activity (below: the five "…Sent At" stamps, as dated rows)
+// and nothing (the delivery-log half — Bounced/Failed/Withheld detail from
+// the Email Log table, the only place in the portal that showed whether an
+// email ACTUALLY arrived rather than just that it was handed to Resend).
+// That second half wasn't part of Activity's spec and isn't rebuilt here.
+// Ben already watches Resend directly as his primary channel for this (the
+// removed card's own comment said so), so it's a real but secondary loss —
+// flagging it rather than quietly dropping it, in case a bounced-delivery
+// marker on an Activity email row turns out to be wanted after all.
+
+
+// ---------------------------------------------------------------------------
+// Activity — replaces both the lifecycle strip and Email History.
+//
+// One vertical, chronological feed instead of a horizontal step tracker plus
+// a separate card: same information (what's happened, when), one place to
+// read it, and it grows with the referral instead of reserving five fixed
+// slots most referrals never fill.
+//
+// THE RULE THIS CARD FOLLOWS: a row appears only if it has its own real
+// timestamp, AND that timestamp isn't just the appointment date restated —
+// the appointment card above already states that date once, in large type.
+// Two things got dropped for that second reason: "Scheduled" and "Pickup"
+// both stood in Effective Appointment Date for a timestamp that doesn't
+// exist, which on a completed referral meant two rows reading the same
+// date as each other and as the card above them. "No Show" was cut for
+// the identical reason — Appointment Date again, already stated above.
+//
+// WHAT'S LEFT, AND THE FIELD BEHIND EACH ROW — checked against the live
+// schema (Meta API), not assumed. Client Referrals carries exactly seven
+// dateTime fields in total:
+//
+//   Submitted             — Referral Date. Real, own timestamp.
+//   Reschedule requested  — Reschedule Requested At. Real, own timestamp.
+//   Confirmation Email    — Confirm Email Sent At. Real.
+//   Reminder Email        — Reminder Sent At. Real.
+//   Reschedule Email      — Reschedule Email Sent At. Real.
+//   Cancellation Email    — Cancellation Email Sent At. Real.
+//   Receipt Email         — Post Appt Email Sent At. Real.
+//   Approved              — NO field anywhere in the schema. Does not
+//                           survive: this was the one in doubt, and the
+//                           answer is no — omitted rather than shown with
+//                           a fabricated or borrowed date. Same gap as
+//                           before; still flagged for Ben below.
+//   Cancelled / Withdrawn — NO field anywhere in the schema either. Don't
+//                           become dated rows for the same reason. See
+//                           "current exception" below for where they do
+//                           show up.
+//
+// "Approved" being silently missing is a real gap, not a design choice —
+// there is no Airtable field that would let this ever be honestly dated.
+// Flagging for Ben: if it's wanted, it needs a field, which is his call
+// (this file doesn't add one) — a formula/automation stamping the moment
+// Referral Review flips to 'Approved' would do it.
+//
+// CURRENT EXCEPTION. Cancelled / Rejected / Withdrawn are read literally
+// as "milestones" in the brief, but none has a timestamp to be one. My
+// reading: this is exactly what the separate "current exception" row is
+// for — a warning-coloured, UNDATED line for the terminal state the
+// referral currently sits in, appended once at the end rather than sorted
+// into the dated list it can't honestly join. This is my interpretation,
+// not a certainty — flagging it as the one structural call in this file
+// that could be read the other way.
+//
+// EVENTS ON THE SAME CALENDAR DAY. Primary sort is by date, compared at
+// day granularity (`.slice(0, 10)`) even for full timestamps — a date-only
+// value has no finer precision to sort by, and giving it a fake time (e.g.
+// midnight) to break ties would assert an ordering the data doesn't
+// support. Same-day events tie-break on a fixed type order instead:
+// milestones before emails (the status change causes the notification, not
+// the reverse), and within each kind, workflow order for milestones
+// (Submitted, Reschedule requested) and EMAIL_MILESTONES' own order for
+// emails.
+//
+// ROW WEIGHT. Every row renders at the same weight and colour, milestone or
+// email — the label itself now says "Email" where it applies, so a second
+// visual signal (a muted colour, a hollow dot) would just repeat what the
+// text already says. Both were tried and dropped for that reason; see the
+// dot colour note in ActivityCard below.
+type ActivityEvent = {
+  key: string
+  label: string
+  date: string          // ISO date or full timestamp — day-compared for sort
+  kind: 'milestone' | 'email'
+}
+
+const MILESTONE_ORDER = ['submitted', 'reschedule-requested']
+// Derived from EMAIL_MILESTONES itself rather than repeated as a literal
+// list, so the two orderings can't drift out of step with each other.
+const EMAIL_ORDER = EMAIL_MILESTONES.map(m => m.key) as string[]
+
+function buildActivityEvents(referral: Referral): ActivityEvent[] {
+  const events: ActivityEvent[] = []
+
+  events.push({ key: 'submitted', label: 'Submitted', date: referral.referralDate, kind: 'milestone' })
+
+  // No "Scheduled," "Pickup," or "No Show" row: none has a timestamp of its
+  // own — all three would have stood Appointment Date (or Effective
+  // Appointment Date) in as a substitute, which is exactly the date the
+  // appointment card above already states in large type. Restating it here
+  // reads as invented and repetitive rather than as new information.
+  if (referral.rescheduleRequestedAt) {
+    events.push({ key: 'reschedule-requested', label: 'Reschedule requested', date: referral.rescheduleRequestedAt, kind: 'milestone' })
+  }
+
+  for (const m of EMAIL_MILESTONES) {
+    const when = referral.emailSentAt?.[m.key]
+    if (when) events.push({ key: `email-${m.key}`, label: m.label, date: when, kind: 'email' })
+  }
+
+  return events.sort((a, b) => {
+    const dayA = a.date.slice(0, 10)
+    const dayB = b.date.slice(0, 10)
+    if (dayA !== dayB) return dayA < dayB ? -1 : 1
+    if (a.kind !== b.kind) return a.kind === 'milestone' ? -1 : 1
+    const order = a.kind === 'milestone' ? MILESTONE_ORDER : EMAIL_ORDER
+    return order.indexOf(a.key.replace(/^email-/, '')) - order.indexOf(b.key.replace(/^email-/, ''))
   })
 }
 
-
-const EMAIL_STATUS_COLORS: Record<string, { bg: string; fg: string }> = {
-  Sent:       { bg: 'rgba(42,127,111,0.10)',  fg: '#2A7F6F' },
-  Delivered:  { bg: 'rgba(42,127,111,0.10)',  fg: '#2A7F6F' },
-  Bounced:    { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
-  Complained: { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
-  Failed:     { bg: 'rgba(192,57,43,0.08)',   fg: '#C0392B' },
-  // Gold, not red. A withheld notice is a decision the portal made on purpose,
-  // not a delivery that went wrong, and it should not read as an incident.
-  Withheld:   { bg: 'rgba(201,168,76,0.15)',  fg: '#8B7724' },
+// The undated terminal-outcome row — see the CURRENT EXCEPTION note above.
+function currentException(referral: Referral): { label: string } | null {
+  if (referral.referralReview === 'Rejected') return { label: 'Rejected' }
+  if (referral.referralReview === 'Withdrawn') return { label: 'Withdrawn' }
+  if (referral.appointmentStatus === 'Cancelled') return { label: 'Cancelled' }
+  return null
 }
 
-// Statuses whose Bounce Reason is an explanation rather than a fault. Rendered
-// in the same gold as the pill so the row reads as one thought.
-const EXPLANATORY_STATUSES = new Set(['Withheld'])
-
-/**
- * The statuses that mean "this went out fine" — the ONLY ones hidden from the
- * delivery log.
- *
- * DENY-LIST, NOT AN ALLOW-LIST, and deliberately so. logEmailSend() writes
- * Status with `typecast: true`, which auto-creates a new single-select option
- * in Airtable rather than rejecting it — so a status this file has never heard
- * of can start appearing in the base without any code change here. An
- * allow-list would silently swallow it; a deny-list surfaces it, which is the
- * safe direction to fail for a card whose whole job is telling Dawson that
- * something did not arrive.
- *
- * Both entries earn their place. 'Delivered' is the duplicate Ben objected to.
- * 'Sent' has to go too: it means we handed the message to Resend and heard
- * nothing further, which is exactly what the milestone stamp beside it already
- * says. Leaving it in would put a row on every normal referral and give back
- * none of the space.
- */
-const CLEAN_DELIVERY_STATUSES = new Set(['Sent', 'Delivered'])
-
-/**
- * Does this row say something the milestone list above it cannot?
- *
- * A null or unrecognised status counts as noteworthy: we do not know that it
- * arrived, and "unknown" is a thing Dawson should see rather than a thing to
- * hide.
- */
-function isNoteworthy(entry: EmailLogEntry): boolean {
-  return !entry.status || !CLEAN_DELIVERY_STATUSES.has(entry.status)
-}
-
-function EmailStatusPill({ status }: { status: string | null }) {
-  // A row with no status at all is shown precisely BECAUSE it is not a known
-  // clean delivery, so it needs to say so. Returning null here — which is what
-  // this did when the log listed everything — would leave it sitting in the
-  // list with nothing explaining why.
-  if (!status) {
-    return (
-      <span style={{
-        fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em',
-        padding: '2px 8px', borderRadius: '12px',
-        background: 'rgba(122,136,153,0.12)', color: '#7A8899', flexShrink: 0,
-      }}>
-        Unknown
-      </span>
-    )
-  }
-  const c = EMAIL_STATUS_COLORS[status] ?? { bg: 'rgba(122,136,153,0.12)', fg: '#7A8899' }
-  return (
-    <span style={{
-      fontSize: '10px', fontWeight: 700, letterSpacing: '0.04em',
-      padding: '2px 8px', borderRadius: '12px',
-      background: c.bg, color: c.fg, flexShrink: 0,
-    }}>
-      {status}
-    </span>
-  )
-}
-
-
-function EmailHistoryCard({ referral, entries }: {
-  referral: Referral
-  entries: EmailLogEntry[]
-}) {
-  const stamps = referral.emailSentAt
-  const noteworthy = entries.filter(isNoteworthy)
+function ActivityCard({ referral }: { referral: Referral }) {
+  const events = buildActivityEvents(referral)
+  const exception = currentException(referral)
 
   return (
-    <Card accent={READ_ACCENT} title="Email History">
-      <div style={{ padding: '4px 0' }}>
-        {EMAIL_MILESTONES.map(m => {
-          const when = formatSentAt(stamps?.[m.key] ?? null)
-          return (
-            <div key={m.key} style={{ display: 'flex', gap: '12px', justifyContent: 'space-between', alignItems: 'baseline', padding: '7px 0', borderBottom: '1px solid #F7F5F1' }}>
-              <span style={{ fontSize: '12px', fontWeight: 700, color: '#7A8899', letterSpacing: '0.04em' }}>{m.label}</span>
+    <Card accent={READ_ACCENT} title="Activity">
+      {events.length === 0 && !exception ? (
+        <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '4px 0' }}>Nothing yet.</div>
+      ) : (
+        <div style={{ padding: '2px 0' }}>
+          {events.map(e => (
+            <div key={e.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0' }}>
+              {/* Every row — dot, weight, and colour — renders identically
+                  regardless of kind. Tried a hollow dot and a muted colour
+                  for email rows first; both read as "pending," which is
+                  backwards, since every row here already happened. Dropped
+                  both once the labels themselves started saying "Email" —
+                  that distinction doesn't need a second, visual one on top
+                  of it. */}
               <span style={{
-                fontSize: '13px', textAlign: 'right',
-                color: when ? '#1B2B4B' : '#C9CFD6',
-                fontStyle: when ? 'normal' : 'italic',
-              }}>
-                {when ?? 'Not sent'}
+                width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0,
+                background: EDIT_ACCENT,
+              }} />
+              <span style={{ fontSize: '13px', flex: 1, fontWeight: 700, color: '#1B2B4B' }}>
+                {e.label}
+              </span>
+              <span style={{ fontSize: '11.5px', color: '#9AA6B2', flexShrink: 0 }}>
+                {/* Date only, even for emails (which carry a real time) — so
+                    every row in the column lines up on the same format
+                    instead of the email rows alone carrying a time the
+                    milestone rows don't have. */}
+                {formatDate(e.date.slice(0, 10))}
               </span>
             </div>
-          )
-        })}
-      </div>
-
-      {/* Nothing renders at all on a referral whose email went out cleanly —
-          no heading, no divider, no "none to show" line. An empty-state
-          message would hand back none of the height Ben asked for, and the
-          milestone list above already answers "was anything sent".
-
-          There is deliberately no loading state either. `entries` starts empty
-          while the fetch is in flight, which renders the same nothing as the
-          common case, so the card does not flash a spinner on every referral
-          to tell Dawson about a problem that almost never exists. */}
-      {noteworthy.length > 0 && (
-        <div style={{ marginTop: '14px', paddingTop: '12px', borderTop: '1px solid #EDE9E1' }}>
-          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.08em', color: READ_ACCENT, marginBottom: '4px' }}>
-            Delivery Log
-          </div>
-          {/* Says why the list is short, so a filtered log cannot be misread as
-              "only one email was ever sent". Costs a line only on the referrals
-              that already have something worth reading. */}
-          <div style={{ fontSize: '11px', color: '#9AA6B2', marginBottom: '8px', lineHeight: 1.45 }}>
-            Only emails that did not arrive cleanly are listed here.
-          </div>
-
-          {noteworthy.map(e => (
-            <div key={e.id} style={{ padding: '7px 0', borderBottom: '1px solid #F7F5F1' }}>
-              <div style={{ display: 'flex', gap: '8px', alignItems: 'center', justifyContent: 'space-between' }}>
-                <span style={{ fontSize: '13px', fontWeight: 700, color: '#1B2B4B', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {e.type ?? 'Unknown email'}
-                </span>
-                <EmailStatusPill status={e.status} />
-              </div>
-              <div style={{ fontSize: '11px', color: '#7A8899', marginTop: '2px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {[formatSentAt(e.sentAt), e.recipient].filter(Boolean).join(' · ') || '—'}
-              </div>
-              {e.bounceReason && (
-                <div style={{
-                  fontSize: '11px', marginTop: '3px', lineHeight: 1.5,
-                  color: EXPLANATORY_STATUSES.has(e.status ?? '') ? '#8B7724' : '#C0392B',
-                }}>
-                  {e.bounceReason}
-                </div>
-              )}
-            </div>
           ))}
+          {exception && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '10px', padding: '6px 0', marginTop: events.length > 0 ? '4px' : 0, borderTop: events.length > 0 ? '1px solid #F7F5F1' : 'none' }}>
+              <span style={{ width: '8px', height: '8px', borderRadius: '50%', flexShrink: 0, background: '#C9A84C' }} />
+              <span style={{ fontSize: '13px', fontWeight: 700, color: '#8B7724', flex: 1 }}>{exception.label}</span>
+            </div>
+          )}
         </div>
       )}
     </Card>
   )
-}
-
-
-// ---------------------------------------------------------------------------
-// Lifecycle strip
-// ---------------------------------------------------------------------------
-
-// Fixed five steps: Submitted, Approved, Scheduled, Pickup, Receipt. A
-// reschedule updates the Scheduled step's reached-state in place rather than
-// adding one — Original Appointment Date is single-value, so there is no
-// history of past reschedules to show even if the strip wanted to (same
-// reasoning as the meta strip's old "Previously X" line).
-//
-// Rejected replaces the Approved slot, same convention CompactTimeline's
-// first consumer (the agency page's own 5-segment timeline) already uses for
-// exactly this shape of problem — showing "Approved: Not yet" on a referral
-// that was actually turned down would read as still-pending, not closed.
-//
-// No date text on the Scheduled segment on purpose: the action card below
-// already shows the appointment date/time in large type in every state that
-// has one, so repeating it here would say the same thing twice — the
-// instruction that also drops it from the meta strip that used to hold it.
-function buildReferralTimeline(referral: Referral): TimelineSegment[] {
-  const rejected = referral.referralReview === 'Rejected'
-  const completed = referral.appointmentStatus === 'Completed'
-  return [
-    { label: 'Submitted', reached: true, date: formatDate(referral.referralDate), tone: 'teal' },
-    rejected
-      ? { label: 'Rejected', reached: true, date: null, tone: 'red' }
-      : { label: 'Approved', reached: referral.referralReview === 'Approved', date: null, tone: 'teal' },
-    { label: 'Scheduled', reached: !!referral.effectiveAppointmentDate, date: null, tone: 'teal' },
-    {
-      label: 'Pickup', reached: completed,
-      date: completed ? formatDate(referral.effectiveAppointmentDate) : null,
-      tone: 'teal',
-    },
-    {
-      label: 'Receipt', reached: !!referral.emailSentAt?.completed,
-      date: referral.emailSentAt?.completed ? formatSentAt(referral.emailSentAt.completed) : null,
-      tone: 'teal',
-    },
-  ]
 }
 
 // ---------------------------------------------------------------------------
@@ -1569,16 +1536,29 @@ function ActionBtn({ label, tone, onClick, disabled, title }: {
   disabled?: boolean
   title?: string
 }) {
+  // 'cancel' is a REAL, clickable secondary action (Reschedule, Cancel, Pick
+  // another date) — not a lesser cousin of the disabled state. It used to
+  // share disabled's flat grey fill (#F0F0F0 vs disabled's #EDEBE7 — two
+  // shades of the same grey, with muted text on both), which read as
+  // "can't click this," the opposite of what it meant. Given a real border
+  // and navy text instead — the same white-bg / #EDE9E1-border / navy-text
+  // pattern this page already uses for its inline-edit Cancel buttons and
+  // the header's Data Page link, so it's a reused convention, not a new
+  // one — and no fill at all, so it can't be mistaken for the disabled
+  // state's solid grey chip. Still visually second to 'accept' (solid teal)
+  // and 'gold' (solid-tinted gold), which is the emphasis order Ben asked
+  // to keep: primary stronger than secondary, secondary now merely
+  // "outlined and real" rather than "grey and inert."
   const c =
-    disabled ? { bg: '#EDEBE7', fg: '#B8C1CC' }
-    : tone === 'accept' ? { bg: '#2A7F6F', fg: 'white' }
-    : tone === 'red' ? { bg: 'rgba(192,57,43,0.08)', fg: '#C0392B' }
-    : tone === 'cancel' ? { bg: '#F0F0F0', fg: '#7A8899' }
-    : { bg: 'rgba(201,168,76,0.15)', fg: '#8B7724' }
+    disabled ? { bg: '#EDEBE7', fg: '#B8C1CC', border: 'none' }
+    : tone === 'accept' ? { bg: '#2A7F6F', fg: 'white', border: 'none' }
+    : tone === 'red' ? { bg: 'rgba(192,57,43,0.08)', fg: '#C0392B', border: 'none' }
+    : tone === 'cancel' ? { bg: 'white', fg: '#1B2B4B', border: '1px solid #EDE9E1' }
+    : { bg: 'rgba(201,168,76,0.15)', fg: '#8B7724', border: 'none' }
   return (
     <button onClick={disabled ? undefined : onClick} disabled={disabled} title={title}
       style={{
-        padding: '9px 18px', borderRadius: '7px', border: 'none',
+        padding: '9px 18px', borderRadius: '7px', border: c.border,
         background: c.bg, color: c.fg, fontFamily: 'var(--font-montserrat)', fontWeight: 700,
         fontSize: '13px', cursor: disabled ? 'not-allowed' : 'pointer',
       }}>
@@ -1592,36 +1572,61 @@ function ActionBtn({ label, tone, onClick, disabled, title }: {
 // Ben's instruction: they sit in the same place whatever is happening, so the
 // card never reflows its top line between states.
 function ActionCardDateTime({ referral }: { referral: Referral }) {
-  const d = referral.itemsDisbursed
-  const checkedIn = d?.checkInTime
-  const checkedOut = d?.checkoutTime
   return (
     <div>
       <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#7A8899' }}>
         Appointment
       </div>
       <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '22px', color: '#1B2B4B', lineHeight: 1.2, marginTop: '2px' }}>
-        {referral.effectiveAppointmentDate ? formatDate(referral.effectiveAppointmentDate) : 'No date set'}
+        {referral.effectiveAppointmentDate
+          ? <>{formatDate(referral.effectiveAppointmentDate)}{referral.appointmentTime ? ` · ${referral.appointmentTime}` : ''}</>
+          : 'No date set'}
       </div>
-      {referral.appointmentTime && (
-        <div style={{ fontSize: '14px', fontWeight: 700, color: '#7A8899', marginTop: '2px' }}>{referral.appointmentTime}</div>
-      )}
       {referral.originalAppointmentDate && referral.originalAppointmentDate !== referral.effectiveAppointmentDate && (
         <div style={{ fontSize: '11px', color: '#9AA6B2', marginTop: '4px' }}>
           Previously {formatDate(referral.originalAppointmentDate)}
         </div>
       )}
-      {/* The only record of when a client actually arrived and left —
-          written by the OCR pass from the sheet's bottom strip. Same fact
-          as the appointment date/time above, just after the event, so it
-          lives in the same block. Absent, not em-dashed, until a pickup has
-          actually happened and the scan has written something — matches how
-          every other not-yet-applicable value on this page behaves. */}
-      {(checkedIn || checkedOut) && (
-        <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '6px' }}>
-          {checkedIn && <>Checked in {checkedIn}</>}
-          {checkedIn && checkedOut && ' · '}
-          {checkedOut && <>Checked out {checkedOut}</>}
+    </div>
+  )
+}
+
+// The requested slot, right-aligned beside the current appointment — read
+// together on one row rather than inferred from two numbers in different
+// places. Only rendered while a reschedule is actually pending.
+function ActionCardRequested({ referral, availableDates, todayISO }: {
+  referral: Referral
+  availableDates: AvailableDate[]
+  todayISO: string
+}) {
+  const load = requestedSlotLoad(referral, availableDates)
+  // A referral only reaches Reschedule status because an agency asked —
+  // Dawson rescheduling directly applies the new date immediately and never
+  // leaves the record in this status (see the isCancellable/isReschedulable
+  // gates below), so no field check is needed to say this came from the
+  // agency. Naming it here matters: Accept means agreeing to someone else's
+  // proposal, not just picking a date, and the label is the first thing
+  // read. Falls back to the bare label on the rare referral with no agency
+  // link at all (see the "no staff linked" flag elsewhere on this page).
+  const requestedByLabel = referral.referringAgency ? `${referral.referringAgency} requested` : 'Requested'
+  return (
+    <div style={{ textAlign: 'right' }}>
+      <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#8B7724' }}>
+        {requestedByLabel}
+      </div>
+      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '18px', color: '#8B7724', lineHeight: 1.2, marginTop: '2px' }}>
+        {referral.preferredDate
+          ? <>{formatDate(referral.preferredDate)}{referral.preferredTime ? ` · ${referral.preferredTime}` : ''}</>
+          : 'Flexible — no date given'}
+      </div>
+      {load && (
+        <div style={{ fontSize: '13px', color: load.full ? '#C0392B' : '#7A8899', fontWeight: load.full ? 700 : 400, marginTop: '2px' }}>
+          {load.booked} / {load.cap} booked{load.full ? ' · full' : ''}
+        </div>
+      )}
+      {referral.rescheduleRequestedAt && (
+        <div style={{ fontSize: '11px', color: '#9AA6B2', marginTop: '4px' }}>
+          {requestAge(referral.rescheduleRequestedAt, todayISO)}
         </div>
       )}
     </div>
@@ -1716,10 +1721,26 @@ function ActionCard({
           it competed with these buttons for the same row, and only one
           document ever applies at a time regardless of state, so the
           header is the more natural constant home for it. */}
-      <ActionCardDateTime referral={referral} />
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '16px' }}>
+        <ActionCardDateTime referral={referral} />
+        {state === 'reschedule-requested' && (
+          <ActionCardRequested referral={referral} availableDates={availableDates} todayISO={todayISO} />
+        )}
+      </div>
+
+      {/* Rule before the actions row — skipped when nothing follows it:
+          completed-sent always (see the comment on that state below), and
+          closed for every terminal reason except No-show (the only one of
+          the four that still renders something underneath — see the closed
+          block below). A rule with nothing beneath it would say "more
+          below" and then not deliver. */}
+      {state !== 'completed-sent' &&
+        !(state === 'closed' && !(referral.appointmentStatus === 'No Show' && daysSinceNoShow !== null)) && (
+        <div style={{ borderTop: '1px solid #EEF0F3', margin: '14px 0 0' }} />
+      )}
 
       {state === 'awaiting-review' && (
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
           <ActionBtn label={confirm === 'Approved' ? (actionLoading ? '…' : 'Confirm Approve') : 'Approve'}
             tone="accept" onClick={onApprove} disabled={actionLoading && confirm !== 'Approved'} />
           <ActionBtn label={confirm === 'Rejected' ? (actionLoading ? '…' : 'Confirm Reject') : 'Reject'}
@@ -1731,44 +1752,26 @@ function ActionCard({
       )}
 
       {state === 'approved-no-date' && (
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
           {isReschedulable && <ActionBtn label="Pick a date" tone="gold" onClick={onPickSlot} disabled={actionLoading} />}
           {isCancellable && <ActionBtn label="Cancel" tone="cancel" onClick={onCancel} disabled={actionLoading} />}
         </div>
       )}
 
       {state === 'scheduled' && (
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+        <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
           {isReschedulable && <ActionBtn label="Reschedule" tone="cancel" onClick={onPickSlot} disabled={actionLoading} />}
           {isCancellable && <ActionBtn label="Cancel" tone="cancel" onClick={onCancel} disabled={actionLoading} />}
         </div>
       )}
 
       {state === 'reschedule-requested' && (() => {
-        const load = requestedSlotLoad(referral, availableDates)
         const acceptLabel = referral.preferredDate
           ? `Accept ${formatDate(referral.preferredDate)}${referral.preferredTime ? ` · ${referral.preferredTime}` : ''}`
           : 'Accept'
         return (
           <>
-            <div style={{
-              margin: '14px 0 0', padding: '10px 14px', borderRadius: '8px',
-              background: 'rgba(201,168,76,0.12)', fontSize: '13px', color: '#2C3A4A',
-            }}>
-              <strong style={{ color: '#8B7724' }}>Requested:</strong>{' '}
-              {referral.preferredDate
-                ? <>{formatDate(referral.preferredDate)}{referral.preferredTime ? ` · ${referral.preferredTime}` : ''}</>
-                : 'Flexible — no date given'}
-              {load && (
-                <span style={{ color: load.full ? '#C0392B' : '#7A8899', fontWeight: load.full ? 700 : 400 }}>
-                  {' · '}{load.booked} / {load.cap} booked{load.full ? ' · full' : ''}
-                </span>
-              )}
-              {referral.rescheduleRequestedAt && (
-                <span style={{ color: '#7A8899' }}> · {requestAge(referral.rescheduleRequestedAt, todayISO)}</span>
-              )}
-            </div>
-            <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+            <div style={{ display: 'flex', gap: '8px', marginTop: '14px' }}>
               {acceptArmed ? (
                 <ActionBtn label="Cancel" tone="cancel" onClick={() => setAcceptArmed(false)} disabled={actionLoading} />
               ) : (
@@ -1798,7 +1801,7 @@ function ActionCard({
 
       {state === 'completed-not-sent' && (
         <label style={{
-          display: 'flex', alignItems: 'center', gap: '8px', marginTop: '16px',
+          display: 'flex', alignItems: 'center', gap: '8px', marginTop: '14px',
           cursor: emailToggleSaving ? 'default' : 'pointer',
           fontSize: '13px', fontWeight: 700, color: readyForPostApptEmail ? ACCENT_GOLD : '#7A8899',
         }}>
@@ -1809,12 +1812,12 @@ function ActionCard({
       )}
 
       {/* completed-sent renders nothing below the date/time block — the
-          lifecycle strip's Receipt segment and the Email History card both
-          already carry the sent timestamp. Date, label, nothing else: that's
-          correct, not an omission. */}
+          Activity card already carries the sent timestamp, and there is
+          nothing left for Dawson to decide. Date, label, nothing else:
+          that's correct, not an omission. */}
 
       {state === 'no-show-in-window' && (
-        <div style={{ marginTop: '16px' }}>
+        <div style={{ marginTop: '14px' }}>
           {daysSinceNoShow !== null && (
             <div style={{ fontSize: '11px', fontWeight: 700, color: ACCENT_GOLD, marginBottom: '8px' }}>
               {daysSinceNoShow === 0 ? 'No-show today' : `${daysSinceNoShow} day${daysSinceNoShow === 1 ? '' : 's'} since`}
@@ -1826,11 +1829,16 @@ function ActionCard({
         </div>
       )}
 
-      {state === 'closed' && (
+      {/* Cancelled / Withdrawn / Rejected: nothing renders here — the header
+          pill already names the state (Withdrawn / Rejected directly;
+          Cancelled via the Appointment Status pill, suppressed only for
+          Withdrawn's own conflict — see the header). Restating it below the
+          date said the same thing twice for no reason. No-show is kept: it
+          carries information no pill states — how long ago, and that the
+          25-day reschedule window itself has closed. */}
+      {state === 'closed' && referral.appointmentStatus === 'No Show' && daysSinceNoShow !== null && (
         <div style={{ marginTop: '14px', fontSize: '12.5px', color: '#9AA6B2' }}>
-          {referral.appointmentStatus === 'No Show' && daysSinceNoShow !== null
-            ? `No-show, ${daysSinceNoShow} days ago — past the ${NO_SHOW_RESCHEDULE_WINDOW_DAYS}-day reschedule window.`
-            : `This referral is ${referral.referralReview === 'Rejected' ? 'rejected' : referral.referralReview === 'Withdrawn' ? 'withdrawn' : 'cancelled'}.`}
+          No-show, {daysSinceNoShow} days ago — past the {NO_SHOW_RESCHEDULE_WINDOW_DAYS}-day reschedule window.
         </div>
       )}
     </div>
@@ -1865,12 +1873,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // Items Disbursed card — see itemsDisbursedLocked below).
   const [readyForPostApptEmail, setReadyForPostApptEmail] = useState(false)
   const [emailToggleSaving, setEmailToggleSaving] = useState(false)
-  // Outbound email history. Loaded alongside the referral rather than as part
-  // of it — see the note on /api/dawson/referrals/[id]/emails. Every row is
-  // fetched; EmailHistoryCard decides which are worth showing, so the filter
-  // stays next to the reasoning for it rather than being split across a route
-  // and a component.
-  const [emailLog, setEmailLog] = useState<EmailLogEntry[]>([])
   // Only needed by the action card's Reschedule-requested state (the booked
   // count next to the agency's requested slot) — fetched once that state is
   // actually reached, not on every load. Every other state never pays for
@@ -1881,11 +1883,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   useEffect(() => {
     params.then(({ id }) => {
       setReferralId(id)
-
-      fetch(`/api/dawson/referrals/${id}/emails`, { cache: 'no-store' })
-        .then(r => (r.ok ? r.json() : []))
-        .then(data => setEmailLog(Array.isArray(data) ? data : []))
-        .catch(() => {})
 
       fetch(`/api/dawson/referrals/${id}`, { cache: 'no-store' })
         .then(async r => {
@@ -1932,24 +1929,15 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
 
   // Refetch the referral after a successful mutation (cancel/reschedule) so
-  // the header status badge, appointment date/time, and action buttons all
-  // reflect the new state without a full page reload.
-  //
-  // The email history is refetched with it, and this is the case that matters
-  // most for it: a reschedule or a cancel is exactly the moment a new Email Log
-  // row appears — including a Withheld row when the confirmation guard
-  // suppresses a reschedule notice. Loaded once on mount, the card would go on
-  // showing the state from before the action Dawson just took, and a withheld
-  // notice would not appear until he reloaded the page.
+  // the header status badge, appointment date/time, action buttons, and
+  // Activity's own event list (which reads straight off referral.emailSentAt
+  // / rescheduleRequestedAt / etc., no separate fetch of its own) all reflect
+  // the new state without a full page reload.
   const refetchReferral = () => {
     if (!referralId) return
     fetch(`/api/dawson/referrals/${referralId}`, { cache: 'no-store' })
       .then(r => r.json())
       .then(data => setReferral(data))
-      .catch(() => {})
-    fetch(`/api/dawson/referrals/${referralId}/emails`, { cache: 'no-store' })
-      .then(r => (r.ok ? r.json() : []))
-      .then(data => setEmailLog(Array.isArray(data) ? data : []))
       .catch(() => {})
   }
 
@@ -2288,6 +2276,9 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             Nothing else unless something's wrong. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <ActionCardDocument referral={referral} showReceiptSlot={showReceiptSlot} readyForPostApptEmail={readyForPostApptEmail} />
+          {/* Breathing room between the document link and the first pill —
+              they read as one run-on otherwise. */}
+          <span style={{ width: '6px' }} />
           {referral.possibleDuplicate && (
             <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B' }}>⚠ Possible Duplicate</span>
           )}
@@ -2300,13 +2291,28 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
               {referral.referralReview}
             </span>
           )}
-          <span style={{
-            padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
-            background: (APPOINTMENT_STATUS_COLORS[referral.appointmentStatus] ?? { badgeBg: '#F0F0F0', badgeText: '#7A8899' }).badgeBg,
-            color: (APPOINTMENT_STATUS_COLORS[referral.appointmentStatus] ?? { badgeBg: '#F0F0F0', badgeText: '#7A8899' }).badgeText,
-          }}>
-            {referral.appointmentStatus || '—'}
-          </span>
+          {/* Withdrawing writes Referral Review: Withdrawn AND Appointment
+              Status: Cancelled together (see end-referral.ts) — both true at
+              once, which without this check rendered both pills side by
+              side. `status` (getPortalStatus, above) already resolves this
+              exact conflation by checking review-Withdrawn ahead of
+              status-Cancelled — the same priority the referrals list page's
+              own deriveStatus() encodes for its Cancelled/Withdrawn filter
+              split, though that function is local to that page and shaped
+              for its own collapsed vocabulary, not reachable or reusable
+              as-is here. Reusing getPortalStatus (already shared, already
+              imported) rather than inlining a second raw
+              review-check keeps both pages deriving the same fact from the
+              same place. */}
+          {status !== 'Withdrawn' && (
+            <span style={{
+              padding: '4px 14px', borderRadius: '20px', fontSize: '12px', fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+              background: (APPOINTMENT_STATUS_COLORS[referral.appointmentStatus] ?? { badgeBg: '#F0F0F0', badgeText: '#7A8899' }).badgeBg,
+              color: (APPOINTMENT_STATUS_COLORS[referral.appointmentStatus] ?? { badgeBg: '#F0F0F0', badgeText: '#7A8899' }).badgeText,
+            }}>
+              {referral.appointmentStatus || '—'}
+            </span>
+          )}
           {referral.dataPageUrl && (
             <a href={referral.dataPageUrl} target="_blank" rel="noreferrer"
               style={{ padding: '8px 18px', borderRadius: '7px', border: '1px solid #EDE9E1', background: 'white', color: '#5B8DB8', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', textDecoration: 'none' }}>
@@ -2317,31 +2323,20 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       </header>
 
 
-      {/* Lifecycle strip — full width, above the two-rail body. Same card
-          shell the agency/staff pages use for CompactTimeline, no accent —
-          the action card below carries the only accent on this page. */}
-      <div style={{ padding: '20px 32px 0' }}>
-        <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '16px 22px' }}>
-          <CompactTimeline segments={buildReferralTimeline(referral)} />
-        </div>
-      </div>
-
-
       {/* ------------------------------------------------------------------
           Two-rail body. 1.75fr / 1fr — the same proportion the agency and
           staff detail pages use.
 
-          LEFT (wide) is the working surface: the action card leads it (so
-          Client Information alongside it, in the right rail, rises to the
-          same height instead of starting a row below), then what was
-          requested and what was disbursed — Items Requested sits directly
-          on top of Items Disbursed because comparing them IS the audit,
-          separating them would make Dawson scroll between the two halves
-          of one question.
+          LEFT (wide) is the working surface: the appointment/action card
+          spans the full rail so it never fights the empty space below it
+          on a reschedule-requested referral. Items Requested and Activity
+          sit side by side under it — what was asked for beside what has
+          happened — then Items Disbursed full width beneath, directly under
+          Items Requested because comparing them IS the audit.
 
-          RIGHT (narrow) is reference material: who the client is, Dawson's
-          own read on them, who sent them, what has already been sent to
-          them. Read once, rarely touched.
+          RIGHT (narrow) is reference material: who the client is, who
+          sent them, what the agency wrote, and Dawson's own Internal
+          Notes beneath it. Read once, rarely touched.
       ------------------------------------------------------------------- */}
       <div style={{ padding: '20px 32px 32px', display: 'grid', gridTemplateColumns: '1.75fr 1fr', gap: '20px', alignItems: 'start' }}>
 
@@ -2369,7 +2364,17 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             onAccept={handleAccept}
             acceptError={acceptError}
           />
-          <ItemsRequestedCard referral={referral} locked={clientLocked} onSaved={applyUpdate} />
+
+          {/* Items Requested gets the wider of the two columns — its rows are
+              bullet lines from a 6-category list; Activity's are a short
+              label and a date. 1.15fr / 0.85fr: a modest lean rather than a
+              hard split, since either can be the taller card depending on
+              the referral. */}
+          <div style={{ display: 'grid', gridTemplateColumns: '1.15fr 0.85fr', gap: '20px', alignItems: 'start' }}>
+            <ItemsRequestedCard referral={referral} locked={clientLocked} onSaved={applyUpdate} />
+            <ActivityCard referral={referral} />
+          </div>
+
           {/* Completed only. Cancelled / No Show / Scheduled mean nothing was
               handed out, so the card would be an empty box asking to be
               filled in for an appointment that hasn't happened. */}
@@ -2380,8 +2385,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
           <ClientInfoCard referral={referral} locked={clientLocked} onSaved={applyUpdate} />
-
-          <InternalNotesCard referral={referral} onSaved={applyUpdate} />
 
           <Card accent={READ_ACCENT} title="Referral Details">
             <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
@@ -2405,7 +2408,11 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             )}
           </Card>
 
-          <EmailHistoryCard referral={referral} entries={emailLog} />
+          {/* Paired with Agency Notes rather than with Activity — both are
+              short prose about this referral rather than about the client,
+              so they read together; frees the left rail's second row for
+              Items Requested / Activity instead. */}
+          <InternalNotesCard referral={referral} onSaved={applyUpdate} />
 
           {referral.possibleDuplicate && (
             <div style={{ background: 'rgba(192,57,43,0.06)', border: '1px solid rgba(192,57,43,0.2)', borderRadius: '12px', padding: '16px 20px' }}>
