@@ -7,7 +7,7 @@ import PickSlotModal from '@/components/internal/modals/PickSlotModal'
 import { DAWSON_PAGE_BAR_HEIGHT } from '@/components/internal/DawsonPageBar'
 import CompactTimeline, { type TimelineSegment } from '@/components/internal/CompactTimeline'
 import { CATALOG } from '@/lib/catalog/items-disbursed'
-import { easternTodayISO, formatDob, formatDateOnly, differenceInDaysISO } from '@/lib/dates'
+import { easternTodayISO, formatDob, differenceInDaysISO } from '@/lib/dates'
 import {
   NO_SHOW_RESCHEDULE_WINDOW_DAYS, withinNoShowRescheduleWindow, isAwaitingOutcome,
 } from '@/lib/referrals/no-show-window'
@@ -370,38 +370,10 @@ function EditButton({ onClick, label = 'Edit' }: { onClick: () => void; label?: 
 }
 
 
-// Shown in place of the Edit button once a card's edit window has closed.
-// There's no unlock affordance — the referral is set at that point, and
-// nothing here should read as a temporary block waiting on a click.
-function LockedBadge() {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: '#9AA6B2' }}>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-      </svg>
-      Locked
-    </span>
-  )
-}
-
-// The one-line "why" that goes with LockedBadge. A card that just loses its
-// Edit button gives no reason; this names the actual cutoff — the same date
-// or timestamp the lock itself keys on, not a generic "editing is closed."
-function LockReason({ children }: { children: React.ReactNode }) {
-  return (
-    <div style={{ fontSize: '12px', color: '#9AA6B2', fontStyle: 'italic', padding: '4px 0 10px' }}>
-      {children}
-    </div>
-  )
-}
-
-// "Friday, Sep 19 · 5pm" — the reason line's date format for
-// dawsonEditWindow's cutoffDate, which is a bare 'YYYY-MM-DD' with no time
-// component of its own (the 5pm is always implied, never stored).
-function formatCutoffFriday(cutoffDate: string | null): string {
-  if (!cutoffDate) return 'the cutoff'
-  return `${formatDateOnly(cutoffDate, { weekday: 'long', month: 'short', day: 'numeric' })} · 5pm`
-}
+// A closed card's edit window shows nothing in place of the Edit button —
+// no icon, no reason line. Ben's call: he's the only one who edits these,
+// he knows the rules, and the space is worth more than the signal. (An
+// earlier round built a LockedBadge + reason line here; both are gone.)
 
 
 // Reusable input style — keeps all inputs visually consistent
@@ -503,12 +475,10 @@ function Stepper({ value, onChange, changed }: {
 function ItemsDisbursedCard({
   referral,
   locked,
-  lockedReason,
   onSaved,
 }: {
   referral: Referral
   locked: boolean
-  lockedReason?: React.ReactNode
   onSaved: (updated: Partial<Referral>) => void
 }) {
   const d = referral.itemsDisbursed
@@ -612,7 +582,7 @@ function ItemsDisbursedCard({
         accent={EDIT_ACCENT}
         title="Items Disbursed"
         headerRight={
-          locked ? <LockedBadge /> : (
+          locked ? null : (
             <button onClick={startEdit}
               style={{ padding: '6px 14px', borderRadius: '6px', border: 'none', background: EDIT_ACCENT, color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '11px', cursor: 'pointer' }}>
               Edit Items
@@ -620,7 +590,6 @@ function ItemsDisbursedCard({
           )
         }
       >
-        {locked && lockedReason && <LockReason>{lockedReason}</LockReason>}
         {lineCount === 0 ? (
           <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '10px 0' }}>
             Nothing recorded yet — add from the pickup sheet.
@@ -819,12 +788,10 @@ function referralToClientEditState(r: Referral): ClientEditState {
 function ClientInfoCard({
   referral,
   locked,
-  lockedReason,
   onSaved,
 }: {
   referral: Referral
   locked: boolean
-  lockedReason?: React.ReactNode
   onSaved: (updated: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -938,9 +905,8 @@ function ClientInfoCard({
       <Card
         accent={EDIT_ACCENT}
         title="Client Information"
-        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
+        headerRight={locked ? null : <EditButton onClick={startEdit} />}
       >
-        {locked && lockedReason && <LockReason>{lockedReason}</LockReason>}
         {/* Order follows how Dawson actually uses the record: who and where
             first (that's what he's confirming against the pickup sheet), then
             how to reach them, then the demographics.
@@ -1082,12 +1048,10 @@ function parseItemsToSet(items: unknown): Set<string> {
 function ItemsRequestedCard({
   referral,
   locked,
-  lockedReason,
   onSaved,
 }: {
   referral: Referral
   locked: boolean
-  lockedReason?: React.ReactNode
   onSaved: (updated: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -1148,9 +1112,8 @@ function ItemsRequestedCard({
       <Card
         accent={EDIT_ACCENT}
         title="Items Requested"
-        headerRight={locked ? <LockedBadge /> : <EditButton onClick={startEdit} />}
+        headerRight={locked ? null : <EditButton onClick={startEdit} />}
       >
-        {locked && lockedReason && <LockReason>{lockedReason}</LockReason>}
         {current.length === 0 ? (
           <div style={{ fontSize: '13px', color: '#7A8899', fontStyle: 'italic', padding: '4px 0' }}>No items specified.</div>
         ) : (
@@ -1629,9 +1592,15 @@ function ActionBtn({ label, tone, onClick, disabled, title }: {
 // Ben's instruction: they sit in the same place whatever is happening, so the
 // card never reflows its top line between states.
 function ActionCardDateTime({ referral }: { referral: Referral }) {
+  const d = referral.itemsDisbursed
+  const checkedIn = d?.checkInTime
+  const checkedOut = d?.checkoutTime
   return (
     <div>
-      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '22px', color: '#1B2B4B', lineHeight: 1.2 }}>
+      <div style={{ fontSize: '10px', fontWeight: 700, letterSpacing: '0.09em', textTransform: 'uppercase', color: '#7A8899' }}>
+        Appointment
+      </div>
+      <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '22px', color: '#1B2B4B', lineHeight: 1.2, marginTop: '2px' }}>
         {referral.effectiveAppointmentDate ? formatDate(referral.effectiveAppointmentDate) : 'No date set'}
       </div>
       {referral.appointmentTime && (
@@ -1640,6 +1609,19 @@ function ActionCardDateTime({ referral }: { referral: Referral }) {
       {referral.originalAppointmentDate && referral.originalAppointmentDate !== referral.effectiveAppointmentDate && (
         <div style={{ fontSize: '11px', color: '#9AA6B2', marginTop: '4px' }}>
           Previously {formatDate(referral.originalAppointmentDate)}
+        </div>
+      )}
+      {/* The only record of when a client actually arrived and left —
+          written by the OCR pass from the sheet's bottom strip. Same fact
+          as the appointment date/time above, just after the event, so it
+          lives in the same block. Absent, not em-dashed, until a pickup has
+          actually happened and the scan has written something — matches how
+          every other not-yet-applicable value on this page behaves. */}
+      {(checkedIn || checkedOut) && (
+        <div style={{ fontSize: '12px', color: '#7A8899', marginTop: '6px' }}>
+          {checkedIn && <>Checked in {checkedIn}</>}
+          {checkedIn && checkedOut && ' · '}
+          {checkedOut && <>Checked out {checkedOut}</>}
         </div>
       )}
     </div>
@@ -1692,7 +1674,7 @@ function ActionCard({
   referral, state, todayISO, daysSinceNoShow, isReschedulable, isCancellable, availableDates,
   readyForPostApptEmail, emailToggleSaving, onToggleReady,
   confirm, setConfirm, actionLoading, onApprove, onReject, onPickSlot, onCancel,
-  acceptArmed, setAcceptArmed, onAccept, acceptError, showReceiptSlot,
+  acceptArmed, setAcceptArmed, onAccept, acceptError,
 }: {
   referral: Referral
   state: ActionCardState
@@ -1715,7 +1697,6 @@ function ActionCard({
   setAcceptArmed: (v: boolean) => void
   onAccept: () => void
   acceptError: string | null
-  showReceiptSlot: boolean
 }) {
   // Gold left border ONLY when something needs deciding — same rule, same
   // "spent once, deliberately" reasoning as the agency page's own action
@@ -1731,12 +1712,11 @@ function ActionCard({
       borderLeft: `3px solid ${needsDecision ? ACCENT_GOLD : 'transparent'}`,
       padding: '18px 22px',
     }}>
-      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '16px' }}>
-        <ActionCardDateTime referral={referral} />
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexShrink: 0 }}>
-          <ActionCardDocument referral={referral} showReceiptSlot={showReceiptSlot} readyForPostApptEmail={readyForPostApptEmail} />
-        </div>
-      </div>
+      {/* Document slot (Appt Slip / Client Receipt) moved to the header —
+          it competed with these buttons for the same row, and only one
+          document ever applies at a time regardless of state, so the
+          header is the more natural constant home for it. */}
+      <ActionCardDateTime referral={referral} />
 
       {state === 'awaiting-review' && (
         <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
@@ -1828,11 +1808,10 @@ function ActionCard({
         </label>
       )}
 
-      {state === 'completed-sent' && (
-        <div style={{ marginTop: '14px', fontSize: '12.5px', color: '#9AA6B2' }}>
-          Sent {formatSentAt(referral.emailSentAt?.completed ?? null)}
-        </div>
-      )}
+      {/* completed-sent renders nothing below the date/time block — the
+          lifecycle strip's Receipt segment and the Email History card both
+          already carry the sent timestamp. Date, label, nothing else: that's
+          correct, not an omission. */}
 
       {state === 'no-show-in-window' && (
         <div style={{ marginTop: '16px' }}>
@@ -2212,9 +2191,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
   // editable, since that is the window where a mistake gets caught.
   const emailSent = !!referral.emailSentAt?.completed
   const itemsDisbursedLocked = status === 'Completed' && emailSent
-  const itemsDisbursedLockedReason = itemsDisbursedLocked
-    ? `Editing closed — the post-appointment email sent ${formatSentAt(referral.emailSentAt!.completed)}.`
-    : null
 
 
   // Client Information / Items Requested — 5pm Friday before the Saturday
@@ -2228,10 +2204,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     appointmentDate: referral.appointmentDate,
   })
   const clientLocked = !clientEditWindow.editable
-  const clientLockedReason =
-    clientLocked && clientEditWindow.reason === 'past-cutoff'
-      ? `Editing closed ${formatCutoffFriday(clientEditWindow.cutoffDate)} — the referral was set for Saturday's appointment.`
-      : null
 
 
   // Which row of Ben's action-card table this referral is in. Computed once
@@ -2277,10 +2249,16 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           stays pinned on this route too — top offset by its height, z-index
           below it.
 
-          Client name only, per the mockup — Approve/Reject, the document
-          slot and Reschedule/Cancel all moved into the action card below,
-          since none of them apply in every state and a header full of
-          conditionally-greyed buttons was the thing being fixed. */}
+          Client name only, no sub-line — agency/staff/date are all in the
+          Referral Details card and the lifecycle's Submitted segment now,
+          so a sub-line here would just repeat them. With the sub-line gone
+          the name carries more weight on its own: 20px, one size up from
+          the agency/staff pages' 17px (those keep a sub-line, so they don't
+          need it to carry as much), but still under the action card's 22px
+          appointment date so the two don't compete for "biggest thing on
+          the page." Document slot and status pills sit on the right —
+          Approve/Reject and Reschedule/Cancel stay in the action card,
+          since neither applies in every state. */}
       <header style={{ background: 'white', borderBottom: '1px solid #EDE9E1', padding: '12px 32px', minHeight: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap', position: 'sticky', top: DAWSON_PAGE_BAR_HEIGHT, zIndex: 50 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <button
@@ -2297,35 +2275,19 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             Back
           </button>
           <span style={{ color: '#EDE9E1' }}>→</span>
-          <div>
-            <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '17px', color: '#1B2B4B' }}>
-              {referral.clientName}
-            </div>
-            {/* "Referred [date] by [staff] at [agency]", both linked —
-                same sub-line convention the agency/staff detail pages use
-                (12.5px muted, marginTop 2px, teal no-underline links).
-                staffDisplay/agencyDisplay omit their own fragment when
-                null rather than rendering "by " or " at " with nothing
-                after it. */}
-            <div style={{ fontSize: '12.5px', color: '#7A8899', marginTop: '2px' }}>
-              Referred {formatDate(referral.referralDate)}
-              {staffDisplay && <> by {staffDisplay}</>}
-              {agencyDisplay && <> at {agencyDisplay}</>}
-            </div>
-            {noStaffLinked && (
-              <div style={{ fontSize: '11px', color: '#C9A84C', fontStyle: 'italic', marginTop: '2px' }}>
-                No staff linked — fix at agency claim
-              </div>
-            )}
+          <div style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '20px', color: '#1B2B4B' }}>
+            {referral.clientName}
           </div>
         </div>
 
-        {/* Pills, right, exception convention: Appointment Status always
-            (it's the primary fact, not an exception); Review Status only
-            when it isn't 'Approved' — the normal case needs no badge, same
-            "absent, not muted" rule the agency/staff pages use; possible-
-            duplicate only when true. Nothing else unless something's wrong. */}
+        {/* Document slot first, then pills — exception convention:
+            Appointment Status always (it's the primary fact, not an
+            exception); Review Status only when it isn't 'Approved' — the
+            normal case needs no badge, same "absent, not muted" rule the
+            agency/staff pages use; possible-duplicate only when true.
+            Nothing else unless something's wrong. */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <ActionCardDocument referral={referral} showReceiptSlot={showReceiptSlot} readyForPostApptEmail={readyForPostApptEmail} />
           {referral.possibleDuplicate && (
             <span style={{ fontSize: '11px', fontWeight: 700, padding: '2px 8px', borderRadius: '20px', background: 'rgba(192,57,43,0.1)', color: '#C0392B' }}>⚠ Possible Duplicate</span>
           )}
@@ -2355,38 +2317,13 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
       </header>
 
 
-      <div style={{ padding: '20px 32px 0', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-        {/* Lifecycle strip. Same card shell the agency/staff pages use for
-            CompactTimeline, no accent — the action card below carries the
-            only accent on this page. */}
+      {/* Lifecycle strip — full width, above the two-rail body. Same card
+          shell the agency/staff pages use for CompactTimeline, no accent —
+          the action card below carries the only accent on this page. */}
+      <div style={{ padding: '20px 32px 0' }}>
         <div style={{ background: 'white', borderRadius: '12px', boxShadow: '0 2px 8px rgba(27,43,75,0.06)', padding: '16px 22px' }}>
           <CompactTimeline segments={buildReferralTimeline(referral)} />
         </div>
-
-        <ActionCard
-          referral={referral}
-          state={actionCardState}
-          todayISO={todayISO}
-          daysSinceNoShow={daysSinceNoShow}
-          isReschedulable={isReschedulable}
-          isCancellable={isCancellable}
-          availableDates={availableDates}
-          readyForPostApptEmail={readyForPostApptEmail}
-          emailToggleSaving={emailToggleSaving}
-          onToggleReady={handleToggleReady}
-          confirm={confirm}
-          setConfirm={setConfirm}
-          actionLoading={actionLoading}
-          onApprove={() => handleReview('Approved')}
-          onReject={() => handleReview('Rejected')}
-          onPickSlot={() => { setRescheduleError(null); setRescheduleModal({ open: true, id: referral.id, name: referral.clientName }) }}
-          onCancel={() => setCancelModal({ open: true, id: referral.id, name: referral.clientName })}
-          acceptArmed={acceptArmed}
-          setAcceptArmed={setAcceptArmed}
-          onAccept={handleAccept}
-          acceptError={acceptError}
-          showReceiptSlot={showReceiptSlot}
-        />
       </div>
 
 
@@ -2394,31 +2331,57 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           Two-rail body. 1.75fr / 1fr — the same proportion the agency and
           staff detail pages use.
 
-          LEFT (wide) is the working surface: what was requested, what was
-          disbursed, then Dawson's own notes. Items Requested sits directly
-          on top of Items Disbursed because comparing them IS the audit —
-          separating them would make Dawson scroll between the two halves of
-          one question.
+          LEFT (wide) is the working surface: the action card leads it (so
+          Client Information alongside it, in the right rail, rises to the
+          same height instead of starting a row below), then what was
+          requested and what was disbursed — Items Requested sits directly
+          on top of Items Disbursed because comparing them IS the audit,
+          separating them would make Dawson scroll between the two halves
+          of one question.
 
-          RIGHT (narrow) is reference material: who the client is, who sent
-          them, what has already been sent to them. Read once, rarely
-          touched.
+          RIGHT (narrow) is reference material: who the client is, Dawson's
+          own read on them, who sent them, what has already been sent to
+          them. Read once, rarely touched.
       ------------------------------------------------------------------- */}
       <div style={{ padding: '20px 32px 32px', display: 'grid', gridTemplateColumns: '1.75fr 1fr', gap: '20px', alignItems: 'start' }}>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <ItemsRequestedCard referral={referral} locked={clientLocked} lockedReason={clientLockedReason} onSaved={applyUpdate} />
+          <ActionCard
+            referral={referral}
+            state={actionCardState}
+            todayISO={todayISO}
+            daysSinceNoShow={daysSinceNoShow}
+            isReschedulable={isReschedulable}
+            isCancellable={isCancellable}
+            availableDates={availableDates}
+            readyForPostApptEmail={readyForPostApptEmail}
+            emailToggleSaving={emailToggleSaving}
+            onToggleReady={handleToggleReady}
+            confirm={confirm}
+            setConfirm={setConfirm}
+            actionLoading={actionLoading}
+            onApprove={() => handleReview('Approved')}
+            onReject={() => handleReview('Rejected')}
+            onPickSlot={() => { setRescheduleError(null); setRescheduleModal({ open: true, id: referral.id, name: referral.clientName }) }}
+            onCancel={() => setCancelModal({ open: true, id: referral.id, name: referral.clientName })}
+            acceptArmed={acceptArmed}
+            setAcceptArmed={setAcceptArmed}
+            onAccept={handleAccept}
+            acceptError={acceptError}
+          />
+          <ItemsRequestedCard referral={referral} locked={clientLocked} onSaved={applyUpdate} />
           {/* Completed only. Cancelled / No Show / Scheduled mean nothing was
               handed out, so the card would be an empty box asking to be
               filled in for an appointment that hasn't happened. */}
           {showItemsDisbursed && (
-            <ItemsDisbursedCard referral={referral} locked={itemsDisbursedLocked} lockedReason={itemsDisbursedLockedReason} onSaved={applyUpdate} />
+            <ItemsDisbursedCard referral={referral} locked={itemsDisbursedLocked} onSaved={applyUpdate} />
           )}
-          <InternalNotesCard referral={referral} onSaved={applyUpdate} />
         </div>
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-          <ClientInfoCard referral={referral} locked={clientLocked} lockedReason={clientLockedReason} onSaved={applyUpdate} />
+          <ClientInfoCard referral={referral} locked={clientLocked} onSaved={applyUpdate} />
+
+          <InternalNotesCard referral={referral} onSaved={applyUpdate} />
 
           <Card accent={READ_ACCENT} title="Referral Details">
             <InfoRow label="Submitted" value={formatDate(referral.referralDate)} />
@@ -2427,6 +2390,12 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
             <InfoRow label="Staff Phone" value={referral.staffPhone} />
             <InfoRow label="Agency Email" value={referral.agencyEmail ? <a href={`mailto:${referral.agencyEmail}`} style={{ color: '#2A7F6F', textDecoration: 'none' }}>{referral.agencyEmail}</a> : null} />
           </Card>
+
+          {noStaffLinked && (
+            <div style={{ background: 'rgba(201,168,76,0.1)', border: '1px solid rgba(201,168,76,0.3)', borderRadius: '12px', padding: '12px 16px', fontSize: '12px', color: '#8B7724', fontStyle: 'italic' }}>
+              No staff linked — fix at agency claim
+            </div>
+          )}
 
           <Card accent={READ_ACCENT} title="Agency Notes">
             {referral.externalNotes ? (

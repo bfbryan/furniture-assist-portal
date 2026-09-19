@@ -162,6 +162,16 @@ export function agencyEditWindow({
 //   2. No appointment date yet (Awaiting review, Approved-no-date) → editable,
 //      same fallback agencyEditWindow uses — there is no Friday to have
 //      passed, and these are exactly the states editing matters most in.
+//
+//      Reschedule gets the same treatment, and for the same reason
+//      agencyEditWindow already exempts it: a Reschedule-status referral
+//      DOES carry an appointmentDate, but it's the CURRENT slot — the one
+//      about to be superseded, not "approved and scheduled, nothing left
+//      to decide." Running the Friday math against that soon-to-be-replaced
+//      date would lock the Edit button while Dawson is actively working out
+//      a new one, exactly the wrong moment. Missed porting this the first
+//      time; ported now to match the agency side's own established rule
+//      rather than leave a second, divergent one.
 export function dawsonEditWindow({
   portalStatus,
   appointmentDate,
@@ -174,7 +184,7 @@ export function dawsonEditWindow({
   if (!(EDITABLE_STATUSES as readonly string[]).includes(portalStatus)) {
     return { editable: false, reason: 'status', cutoffDate: null }
   }
-  if (!appointmentDate) {
+  if (!appointmentDate || portalStatus === 'Reschedule') {
     return { editable: true, cutoffDate: null }
   }
 
