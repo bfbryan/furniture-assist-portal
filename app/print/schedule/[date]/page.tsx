@@ -354,22 +354,59 @@ function RescheduleBox() {
    writes directly on the rule; '—' would read as "no data" rather than
    "write here" (see ClientSheet's info card).
 
-   `align="right"` mirrors the pattern already used by the RIGHT column's
-   real fields (Label: value, both inline, block right-aligned) rather
-   than reversing the label/rule order — a right-aligned row still reads
-   label-then-blank left to right, just flush to the card's right edge.
+   Fixed label width + fixed rule width, laid out with flexbox rather than
+   inline text: a variable-length label followed by a fixed-width rule
+   still puts the rule at a different x per row (short label = rule starts
+   early). A fixed-width label box, with its text right-aligned inside
+   that box, fixes both the label's right edge and the rule's left edge —
+   every row in a column shares one gutter, so the rules form a clean
+   vertical stripe instead of stepping in and out with label length.
+
+   `align="right"` (RIGHT column) mirrors the pattern already used by the
+   card's real fields there (Label: value, right-aligned) — same
+   [label, rule] child order either way, just which end of the row is
+   pinned (flex-start for LEFT, flex-end for RIGHT), so the rule's END is
+   what lines up, not its start.
+
+   `labelWidth`/`ruleWidth` default per column, sized to the column's own
+   longest label measured in a real browser (Chromium, this exact font/
+   weight/letter-spacing) rather than guessed — "Appointment date" (LEFT,
+   115.6px) and "Items requested" (RIGHT, 108.5px) are the two that don't
+   fit a smaller box without wrapping. One shared width per column, not a
+   per-row override, so every rule in a column — including Items
+   requested's — ends at the same x as the rest; a field that needs more
+   room gets it by widening the whole column's label gutter, not by
+   growing its own rule past where its neighbors' end.
 
    `first` drops the row's top margin, for whichever line opens its block.
    ============================================================ */
-function WriteInLine({ label, align = 'left', first = false }: { label: string; align?: 'left' | 'right'; first?: boolean }) {
+function WriteInLine({
+  label, align = 'left', first = false,
+  labelWidth = align === 'right' ? 116 : 124,
+  ruleWidth = align === 'right' ? 130 : 190,
+}: {
+  label: string
+  align?: 'left' | 'right'
+  first?: boolean
+  labelWidth?: number
+  ruleWidth?: number
+}) {
   return (
-    <div style={{ marginTop: first ? 0 : '9px', textAlign: align }}>
-      <span style={{ fontSize: '10px', fontWeight: 800, color: '#7A8899', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
-        {label}:{' '}
+    <div style={{
+      marginTop: first ? 0 : '9px',
+      display: 'flex', justifyContent: align === 'right' ? 'flex-end' : 'flex-start',
+      alignItems: 'baseline', gap: '6px',
+    }}>
+      <span style={{
+        display: 'inline-block', width: `${labelWidth}px`, flexShrink: 0, textAlign: 'right',
+        fontSize: '10px', fontWeight: 800, color: '#7A8899',
+        textTransform: 'uppercase', letterSpacing: '0.06em', whiteSpace: 'nowrap',
+      }}>
+        {label}:
       </span>
       <span style={{
-        display: 'inline-block', width: align === 'right' ? '130px' : '190px',
-        borderBottom: '1.5px solid #333', height: '13px', verticalAlign: 'top',
+        display: 'inline-block', width: `${ruleWidth}px`, flexShrink: 0,
+        borderBottom: '1.5px solid #333', height: '13px',
       }} />
     </div>
   )
@@ -461,19 +498,23 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
 
           {/* LEFT: Name / Time · Date / Address / Phone / Language.
               Synthetic (blank walk-up sheets) swaps this whole block for
-              labelled write-in lines instead — one per field Add Referral's
-              own intake form collects (app/dawson/referrals/new/page.tsx's
-              `form` state: name, DOB, address, phone, household size,
-              children, language). Appointment date/time is deliberately
-              NOT one of them — a walk-up has neither, so that row is
-              dropped rather than given a line nobody should fill in. Row
-              count and heights are kept close to the real block's (one
-              line per field, same ~9px rhythm) so a blank sheet's natural
-              height stays close to a real sheet's — see the page-break
-              note on ClientSheet above. */}
+              labelled write-in lines instead — Add Referral's own intake
+              form fields (app/dawson/referrals/new/page.tsx's `form` state:
+              name, DOB, address, phone, household size, children, language)
+              plus Appointment date and Appointment time, each its own line
+              like every other field here. These sheets are photocopy
+              masters, reused across many walk-ups — nothing about a given
+              Saturday can be pre-printed on them, including the date, so
+              even the one piece of information this file already knows
+              (the Saturday being printed) gets a blank line, not a filled
+              one. Ordered Name / date / time / DOB / address / phone /
+              language — date and time sit where the real sheet's Time ·
+              Date line does, right after the name, rather than at the end. */}
           {client.synthetic ? (
             <div>
               <WriteInLine label="Name" first />
+              <WriteInLine label="Appointment date" />
+              <WriteInLine label="Appointment time" />
               <WriteInLine label="Date of birth" />
               <WriteInLine label="Address" />
               <WriteInLine label="Phone" />
@@ -501,14 +542,14 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
 
           {/* RIGHT: ID / Agency / Household + Items (External notes removed from here).
               ID stays the MANUAL ENTRY marker either way (set on the synthetic
-              client itself, not branched here). Agency and Items are NOT in
-              Add Referral's field list (agency is a picker selection, not a
-              form field; Items here is the requested-items summary, which
-              for a walk-up is accurately "None specified" — nobody could
-              have requested ahead of time) — both are left as the existing
-              '—'/"None specified" fallback, unlabelled, on purpose. Household
-              splits into two write-in lines (size, children) since Add
-              Referral collects them as two separate fields. */}
+              client itself, not branched here). On synthetic sheets, Agency,
+              Referring staff, Household size, Children and Items requested
+              are all write-in lines — Ben's field list has Agency and
+              Referring staff alongside the others Add Referral collects, and
+              "None specified" for Items is a true statement about a real
+              client but a false one on a blank, so it needs a line too, not
+              a fallback. Household still splits into two lines (size,
+              children), same as before. */}
           <div style={{ fontSize: '11.5px', lineHeight: 1.55, textAlign: 'right', alignSelf: 'center' }}>
             <div>
               <span style={{ color: '#7A8899', fontWeight: 700 }}>ID: </span>
@@ -523,26 +564,36 @@ function ClientSheet({ client, index, total }: { client: Client; index: number; 
               </span>
             </div>
             <div>&nbsp;</div>
-            <div>
-              <span style={{ color: '#7A8899', fontWeight: 700 }}>Agency: </span>
-              <span style={{ color: '#1B2B4B' }}>{client.referringAgency ?? '—'}{client.referredBy ? ` / ${client.referredBy}` : ''}</span>
-            </div>
+            {client.synthetic ? (
+              <>
+                <WriteInLine label="Agency" align="right" first />
+                <WriteInLine label="Referring staff" align="right" />
+              </>
+            ) : (
+              <div>
+                <span style={{ color: '#7A8899', fontWeight: 700 }}>Agency: </span>
+                <span style={{ color: '#1B2B4B' }}>{client.referringAgency ?? '—'}{client.referredBy ? ` / ${client.referredBy}` : ''}</span>
+              </div>
+            )}
             <div>&nbsp;</div>
             {client.synthetic ? (
               <>
                 <WriteInLine label="Household size" align="right" first />
                 <WriteInLine label="Children" align="right" />
+                <WriteInLine label="Items requested" align="right" />
               </>
             ) : (
-              <div>
-                <span style={{ color: '#7A8899', fontWeight: 700 }}>Household: </span>
-                <span style={{ color: '#1B2B4B' }}>{client.hhSize ?? '—'}{client.children ? ` (${client.children} children)` : ''}</span>
-              </div>
+              <>
+                <div>
+                  <span style={{ color: '#7A8899', fontWeight: 700 }}>Household: </span>
+                  <span style={{ color: '#1B2B4B' }}>{client.hhSize ?? '—'}{client.children ? ` (${client.children} children)` : ''}</span>
+                </div>
+                <div>
+                  <span style={{ color: '#7A8899', fontWeight: 700 }}>Items: </span>
+                  <span style={{ color: '#1B2B4B' }}>{requestedItems.length > 0 ? requestedItems.join(' · ') : 'None specified'}</span>
+                </div>
+              </>
             )}
-            <div>
-              <span style={{ color: '#7A8899', fontWeight: 700 }}>Items: </span>
-              <span style={{ color: '#1B2B4B' }}>{requestedItems.length > 0 ? requestedItems.join(' · ') : 'None specified'}</span>
-            </div>
           </div>
 
 
