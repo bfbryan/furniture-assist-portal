@@ -185,7 +185,15 @@ function RowShell({ children }: { children: React.ReactNode }) {
   )
 }
 
-// Col 1 — name (link) + a muted sub-line, both truncating rather than wrapping.
+// Col 1 — name (link, still truncating: client/agency names are short) + a
+// muted sub-line that now WRAPS instead of truncating. The sub-line is the
+// referring agency on the three client-row cards (Reschedule requested, New
+// referrals, Awaiting outcome — all three call this with sub={r.referringAgency},
+// so fixing it once here fixes all three) — that name is how Dawson tells
+// whose client a row is, so cutting it off ("The North Ward Center Family
+// Succ…") defeats the one thing this column exists to say. No `title`
+// tooltip any more either — that was there specifically to recover text an
+// ellipsis hid; nothing's hidden now.
 function NameCell({ href, name, sub, extra }: {
   href: string; name: string; sub?: string | null; extra?: React.ReactNode
 }) {
@@ -202,10 +210,7 @@ function NameCell({ href, name, sub, extra }: {
         {name}
       </a>
       {sub && (
-        <div
-          title={sub}
-          style={{ fontSize: '12px', color: GREY, marginTop: '2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}
-        >
+        <div style={{ fontSize: '12px', color: GREY, marginTop: '2px', lineHeight: 1.4 }}>
           {sub}
         </div>
       )}
