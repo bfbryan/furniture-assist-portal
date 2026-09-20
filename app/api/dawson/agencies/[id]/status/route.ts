@@ -84,8 +84,12 @@ export async function PATCH(
     const primaryAdminId = (agencyData.fields['Primary Admin'] as string[])?.[0] ?? null
 
     if (!reconciled) {
+      // Unlike Primary Admin below (no on-page way to set it — still
+      // genuinely Airtable-only), Reconciled is a checkbox a few inches to
+      // the left on this same page. Pointing Ben at Airtable for something
+      // he can do in place read as confusing every time — worded to match.
       return NextResponse.json(
-        { error: 'This agency has not been reconciled yet. Tick Reconciled in Airtable first.' },
+        { error: 'Tick Reconciled above before approving — it confirms this agency isn’t a duplicate of one already in the base.' },
         { status: 400 }
       )
     }
