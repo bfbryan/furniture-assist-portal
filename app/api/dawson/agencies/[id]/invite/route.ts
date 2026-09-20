@@ -23,11 +23,10 @@
 // case: everything is reused and a fresh token is issued.
 
 import { NextRequest, NextResponse } from 'next/server'
-import { auth, clerkClient } from '@clerk/nextjs/server'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { updateAgencyUserPortalInvite } from '@/lib/airtable'
 import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email'
-import { portalSignInLink } from '@/lib/auth/portal-sign-in-link'
+import { provisionAgencyPortalAccess, resolveDawsonActorName } from '@/lib/agencies/portal-provisioning'
 
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
@@ -119,108 +118,34 @@ export async function POST(
     )
   }
 
-  const client = await clerkClient()
-
-  // 1. Clerk organization — created once, reused forever after.
-  if (!clerkOrgId) {
-    try {
-      const org = await client.organizations.createOrganization({ name: agencyName })
-      clerkOrgId = org.id
-    } catch (err: any) {
-      return NextResponse.json(
-        { error: 'Failed to create the Clerk organization', detail: err?.message ?? String(err) },
-        { status: 500 }
-      )
-    }
-    // Written back immediately so a failure later in this request can't
-    // strand an unrecorded org (a retry would otherwise create a second one).
-    await patchAirtable('Agencies', agencyId, { 'Clerk Org ID': clerkOrgId })
-  }
-
-  // 2. Clerk user for the admin — reuse by id, then by email, then create.
-  if (!adminClerkUserId) {
-    try {
-      const created = await client.users.createUser({
-        emailAddress: [adminEmail],
-        firstName: adminFirstName,
-        lastName: adminLastName,
-        skipPasswordChecks: true,
-        skipPasswordRequirement: true,
-      })
-      adminClerkUserId = created.id
-    } catch (err: any) {
-      if (err?.errors?.[0]?.code === 'form_identifier_exists') {
-        const existing = await client.users.getUserList({ emailAddress: [adminEmail] })
-        if (existing.data.length > 0) adminClerkUserId = existing.data[0].id
-      }
-      if (!adminClerkUserId) {
-        return NextResponse.json(
-          { error: 'Failed to create the admin user', detail: err?.message ?? String(err) },
-          { status: 500 }
-        )
-      }
-    }
-    await patchAirtable('Agency Users', primaryAdminId, { 'Clerk User ID': adminClerkUserId })
-  }
-
-  // 3. Org membership as admin — the Team page requires org:admin.
-  try {
-    await client.organizations.createOrganizationMembership({
-      organizationId: clerkOrgId,
-      userId: adminClerkUserId,
-      role: 'org:admin',
-    })
-  } catch (err: any) {
-    if (err?.errors?.[0]?.code !== 'organization_membership_exists') {
-      return NextResponse.json(
-        { error: 'Failed to add the admin to the organization', detail: err?.message ?? String(err) },
-        { status: 500 }
-      )
-    }
-  }
-
-  // 4. Fresh magic sign-in token. The "Agency Welcome to Portal - Claimed"
-  // template takes a `magicLink` placeholder — a COMPLETE sign-in URL used
-  // directly as the href on both CTA buttons — the same contract the staff
-  // invite template uses. It has no {{token}} placeholder and wraps no URL
-  // around a raw token, so the raw token must be turned into a link here with
-  // portalSignInLink(); passing the bare token leaves both buttons href="".
-  const tokenRes = await fetch('https://api.clerk.com/v1/sign_in_tokens', {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${process.env.CLERK_SECRET_KEY}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      user_id: adminClerkUserId,
-      expires_in_seconds: 60 * 60 * 24 * 30,
-    }),
+  // Clerk org + admin user + org membership + sign-in token — shared with
+  // the Pending -> Approved provisioning branch in status/route.ts. See
+  // lib/agencies/portal-provisioning.ts for why this isn't inlined here
+  // any more.
+  const provisioned = await provisionAgencyPortalAccess({
+    agencyId,
+    agencyName,
+    clerkOrgId,
+    primaryAdminId,
+    adminEmail,
+    adminFirstName,
+    adminLastName,
+    adminClerkUserId,
   })
-  if (!tokenRes.ok) {
-    return NextResponse.json({ error: 'Failed to generate the sign-in link' }, { status: 500 })
+  if (!provisioned.ok) {
+    return NextResponse.json({ error: provisioned.error }, { status: provisioned.status })
   }
-  const tokenData = await tokenRes.json()
-  const signInToken: string | null = tokenData.token ?? null
-  if (!signInToken) {
-    return NextResponse.json({ error: 'Failed to generate the sign-in link' }, { status: 500 })
-  }
-  // Wrap the portal's own sign-in URL around the raw token — never Clerk's
-  // ready-made tokenData.url, which points at the Clerk instance. Same helper,
-  // same reason, as the two staff invite routes. See lib/auth/portal-sign-in-link.ts.
-  const magicLink = portalSignInLink(signInToken)
+  clerkOrgId = provisioned.clerkOrgId
+  adminClerkUserId = provisioned.adminClerkUserId
+  // "Agency Welcome to Portal - Claimed" takes a `magicLink` placeholder — a
+  // COMPLETE sign-in URL used directly as the href on both CTA buttons, the
+  // same contract the staff invite template uses. NOT the bare token; that
+  // contract belongs to "Agency Registration Approval" (status/route.ts),
+  // which already hardcodes its own URL around just the token.
+  const magicLink = provisioned.magicLink
 
   // Who clicked Invite — stamped on the admin row as Invited By.
-  let invitedByName = 'Furniture Assist'
-  try {
-    const { userId } = await auth()
-    if (userId) {
-      const dawsonUser = await client.users.getUser(userId)
-      const name = `${dawsonUser.firstName ?? ''} ${dawsonUser.lastName ?? ''}`.trim()
-      if (name) invitedByName = name
-    }
-  } catch {
-    // keep the fallback
-  }
+  const invitedByName = await resolveDawsonActorName()
 
   // 5. Stamps. The Airtable automation that used to write Invited Date is
   // switched off — the code owns these timestamps now.
