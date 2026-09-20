@@ -23,9 +23,12 @@
 // only ever shows the one donor just scanned.
 //
 // Checking someone in from a search result reuses the exact same write
-// path the phone uses (POST /api/donor-checkin with a bare record id,
-// which lib/donors/parse-scan-input.ts already accepts) — one write path
-// for the whole feature, not a second one for this surface.
+// path the phone's confirm tap uses (POST /api/donor-checkin with the
+// record id) — one write path for the whole feature, not a second one
+// for this surface. The desk has no separate "lookup" step because the
+// search result the volunteer is looking at already IS the confirmation
+// — there's no scan-then-wait in between, so there's nothing here for a
+// lookup call to buy.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import BrandMark from '@/components/donor/BrandMark'
@@ -107,7 +110,7 @@ export default function DonorCheckinDeskPage() {
       const res = await fetch('/api/donor-checkin', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ input: id }),
+        body: JSON.stringify({ id }),
       })
       const body = await res.json().catch(() => ({}))
       if (res.ok) {
