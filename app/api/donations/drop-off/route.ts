@@ -25,10 +25,14 @@
 //     Airtable automation still does this after the row lands.
 //   - No Donor ID or Zip Linked write — same automations, same reason.
 //   - Caps are advisory: an over-cap quantity does not block the
-//     submission, it's flagged in Notes (see
-//     lib/donors/drop-off-intake.ts) and still recorded. Drop-off has
-//     never had caps before this; this is a deliberate behaviour change,
-//     not a bug fix.
+//     submission, and the donation still records in full. The overage
+//     is computed (see lib/donors/drop-off-intake.ts) and returned in
+//     the response — NOT yet written to Airtable anywhere. Ben is
+//     adding a dedicated field for it (Notes is reserved for the
+//     donor's own text, verbatim onto their tax receipt); wiring the
+//     write in is a one-line change once that field exists. Drop-off
+//     has never had caps before this; this is a deliberate behaviour
+//     change, not a bug fix.
 
 import { NextResponse } from 'next/server'
 import { createDropOffDonation, type DropOffQuantities } from '@/lib/donors/drop-off-intake'
@@ -103,17 +107,21 @@ export async function POST(req: Request) {
     return json(req, 201, { ok: true })
   }
 
-  const firstName = str(body.firstName)
-  const lastName = str(body.lastName)
+  // Flat, snake_case — the real form's own field names (`first_name`,
+  // `address_street`, `donation_date`, ...), not a shape invented here.
+  // A page posting to this route sends exactly what its inputs are
+  // named, no client-side remapping required.
+  const firstName = str(body.first_name)
+  const lastName = str(body.last_name)
   const email = str(body.email)
-  const formDate = str(body.formDate)
-  const cellNumber = str(body.cellNumber) || null
-  const streetAddress = str(body.streetAddress) || null
-  const streetAddress2 = str(body.streetAddress2) || null
-  const city = str(body.city) || null
-  const state = str(body.state) || null
-  const zip = str(body.zip) || null
-  const notes = str(body.notes) || null
+  const formDate = str(body.donation_date)
+  const cellNumber = str(body.cell_number) || null
+  const streetAddress = str(body.address_street) || null
+  const streetAddress2 = str(body.address_street2) || null
+  const city = str(body.address_city) || null
+  const state = str(body.address_state) || null
+  const zip = str(body.address_zip) || null
+  const notes = str(body.item_notes) || null
 
   // First/last/email/date required. Email specifically isn't just form
   // courtesy: Primary Match Key on the donations table is
@@ -134,24 +142,32 @@ export async function POST(req: Request) {
     return json(req, 400, { error: 'That donation date is not valid.' })
   }
 
-  // Quantities — every key must be a real item on the catalog, and every
-  // value a non-negative whole number. This is NOT the cap check (caps
-  // are advisory, checked inside createDropOffDonation) — this is
-  // rejecting garbage input outright: an unknown key or a negative/
-  // fractional/non-numeric value is malformed, not "over the limit."
-  const rawItems = body.items
+  // Tax-valuation acknowledgement — required to submit, matching the
+  // real form's own checkbox, but not written anywhere: no Airtable
+  // field holds it, and none gets invented here. If that ever needs to
+  // be recorded, it needs a field first, the same rule as the over-cap
+  // flag below.
+  if (body.check_tax !== true) {
+    return json(req, 400, { error: 'Please acknowledge the tax valuation notice before submitting.' })
+  }
+
+  // Quantities — read directly off the flat body by the catalog's own
+  // keys (qty_couch, qty_chair, ...), not a nested sub-object. The real
+  // form's <select> uses value="" for "not donating this," same as a
+  // field never being filled in at all — both mean 0, not an error.
+  // What IS an error: a value present but not a non-negative whole
+  // number. This is NOT the cap check (caps are advisory, checked
+  // inside createDropOffDonation) — this is rejecting garbage input
+  // outright.
   const quantities: DropOffQuantities = {}
-  if (rawItems && typeof rawItems === 'object') {
-    for (const [key, value] of Object.entries(rawItems as Record<string, unknown>)) {
-      if (!(key in DROP_OFF_ITEM_BY_KEY)) {
-        return json(req, 400, { error: `Unrecognized item: ${key}.` })
-      }
-      const n = typeof value === 'number' ? value : Number(value)
-      if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
-        return json(req, 400, { error: `Invalid quantity for ${DROP_OFF_ITEM_BY_KEY[key].label}.` })
-      }
-      quantities[key] = n
+  for (const item of Object.values(DROP_OFF_ITEM_BY_KEY)) {
+    const raw = body[item.key]
+    if (raw === undefined || raw === null || raw === '') continue
+    const n = typeof raw === 'number' ? raw : Number(raw)
+    if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
+      return json(req, 400, { error: `Invalid quantity for ${item.label}.` })
     }
+    if (n > 0) quantities[item.key] = n
   }
 
   try {
@@ -163,7 +179,10 @@ export async function POST(req: Request) {
     // the whole point of this migration. If createDropOffDonation threw,
     // execution never reaches here; the catch below returns a real error
     // instead.
-    return json(req, 201, { ok: true, id: result.id, overCap: result.overCap })
+    // overages travels in the response so the page can show it, but
+    // nothing about it is written to Airtable yet — see
+    // formatOverCapNote's own header in lib/donors/drop-off-intake.ts.
+    return json(req, 201, { ok: true, id: result.id, overCap: result.overCap, overages: result.overages })
   } catch (e) {
     console.error('drop-off intake: create failed:', e)
     return json(req, 500, { error: 'Could not save your donation. Please try again, or contact us directly.' })

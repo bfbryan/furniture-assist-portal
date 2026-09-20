@@ -21,6 +21,13 @@
 // by URL, and allowlisted as public in proxy.ts the same way
 // /api/donations/drop-off itself is — no Clerk session gates either one.
 //
+// NOT the same thing as the real replacement page. That's a separate,
+// self-contained HTML/CSS/JS file (see the PR description) built to
+// match the real pickup form's visual language, for Ben to paste
+// directly into WordPress — it never runs through this Next.js app at
+// all. This page exists purely so the ROUTE can be exercised from a
+// browser against the live table without needing WordPress access.
+//
 // The one thing this page is actually testing, beyond the write itself:
 // the success screen only ever shows after the route returns 2xx. The
 // bug this migration fixes is the old JotForm/Zapier path showing
@@ -41,10 +48,12 @@ const CREAM = '#F7F5F1'
 
 type Quantities = Record<string, number>
 
+type Overage = { key: string; label: string; field: string; qty: number; cap: number }
+
 type Result =
   | { kind: 'idle' }
   | { kind: 'submitting' }
-  | { kind: 'success'; id: string; overCap: boolean }
+  | { kind: 'success'; id: string; overages: Overage[] }
   | { kind: 'error'; message: string }
 
 export default function DropOffTestPage() {
@@ -60,6 +69,7 @@ export default function DropOffTestPage() {
   const [formDate, setFormDate] = useState('')
   const [notes, setNotes] = useState('')
   const [quantities, setQuantities] = useState<Quantities>({})
+  const [checkTax, setCheckTax] = useState(false)
   const [hp, setHp] = useState('') // honeypot — a real visitor never sees or fills this
   const [result, setResult] = useState<Result>({ kind: 'idle' })
 
@@ -75,19 +85,38 @@ export default function DropOffTestPage() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
+    if (!checkTax) {
+      setResult({ kind: 'error', message: 'Please acknowledge the tax valuation notice before submitting.' })
+      return
+    }
     setResult({ kind: 'submitting' })
     try {
+      // Flat, snake_case, qty_* item keys spread directly onto the body —
+      // exactly the real form's own field names, matching the route's
+      // actual contract. No client-side remapping.
       const res = await fetch('/api/donations/drop-off', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          firstName, lastName, email, cellNumber, streetAddress, streetAddress2,
-          city, state, zip, formDate, notes, items: quantities, hp,
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          cell_number: cellNumber,
+          address_street: streetAddress,
+          address_street2: streetAddress2,
+          address_city: city,
+          address_state: state,
+          address_zip: zip,
+          donation_date: formDate,
+          item_notes: notes,
+          check_tax: checkTax,
+          hp,
+          ...quantities,
         }),
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.ok) {
-        setResult({ kind: 'success', id: data.id, overCap: !!data.overCap })
+        setResult({ kind: 'success', id: data.id, overages: Array.isArray(data.overages) ? data.overages : [] })
       } else {
         setResult({ kind: 'error', message: data.error || `Request failed (${res.status}).` })
       }
@@ -103,9 +132,12 @@ export default function DropOffTestPage() {
         <div style={{ marginTop: '10px', fontSize: '16px', color: 'rgba(255,255,255,0.85)' }}>
           Record id: {result.id}
         </div>
-        {result.overCap && (
+        {result.overages.length > 0 && (
           <div style={{ marginTop: '10px', fontSize: '15px', color: GOLD, fontWeight: 700 }}>
-            One or more items were over the advisory cap — flagged in Notes on the record.
+            Over the advisory cap — {result.overages.map(o => `${o.label}: ${o.qty} (cap ${o.cap})`).join('; ')}
+            <div style={{ marginTop: '4px', fontWeight: 600, fontSize: '13px', color: 'rgba(255,255,255,0.75)' }}>
+              Not written to the record yet — no Airtable field for this exists.
+            </div>
           </div>
         )}
         <div style={{ marginTop: '24px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
@@ -180,6 +212,18 @@ export default function DropOffTestPage() {
             ))}
           </Section>
         ))}
+
+        <label style={{
+          display: 'flex', alignItems: 'flex-start', gap: '12px', marginTop: '20px',
+          background: 'white', borderRadius: '10px', padding: '16px 18px',
+          boxShadow: '0 1px 3px rgba(27,43,75,0.08)', cursor: 'pointer',
+        }}>
+          <input type="checkbox" checked={checkTax} onChange={e => setCheckTax(e.target.checked)} style={{ width: '18px', height: '18px', marginTop: '2px' }} />
+          <span style={{ fontSize: '13px', color: GREY, lineHeight: 1.5 }}>
+            <strong style={{ color: NAVY, display: 'block', marginBottom: '2px' }}>Tax Valuation Notice</strong>
+            I understand Furniture Assist can&apos;t provide valuations for donated items — determining fair market value for tax purposes is my responsibility.
+          </span>
+        </label>
 
         {/* Honeypot — off-screen, never shown to a real visitor. A filled
             value here makes the route report success without writing

@@ -58,24 +58,23 @@ export function checkCaps(quantities: DropOffQuantities): CapOverage[] {
   return overages
 }
 
-// The flag goes into Notes — see the PR description for why: it's the
-// only existing free-text field on this record (no new Airtable field
-// introduced), already carries the donor's own optional description, so
-// this appends rather than overwrites, clearly marked so it reads as a
-// system note and not something the donor typed.
-function formatOverCapNote(overages: CapOverage[]): string | null {
+// Formats the overage detail for whichever field ends up holding it —
+// NOT WIRED TO A WRITE. Ben is adding a dedicated Airtable field for
+// this rather than having it share Notes, which prints verbatim on the
+// donor's tax receipt and is reserved for their own text — nothing else
+// may write to it. Keeping this formatter ready (same "Item: qty (cap
+// N)" shape as before) so wiring it in once the field exists and its
+// name is known is a one-line addition here, not a redesign. Until
+// then: computed, returned to the caller as `overCap`/`overages` for
+// visibility (the test page's own banner reads it), never sent to
+// Airtable.
+export function formatOverCapNote(overages: CapOverage[]): string | null {
   if (overages.length === 0) return null
   const lines = overages.map(o => `${o.label}: ${o.qty} (cap ${o.cap})`)
-  return `⚠ Over cap — ${lines.join('; ')}`
+  return `Over cap — ${lines.join('; ')}`
 }
 
-function buildNotes(donorNotes: string | null, overages: CapOverage[]): string | null {
-  const flag = formatOverCapNote(overages)
-  const parts = [donorNotes?.trim() || null, flag].filter((s): s is string => !!s)
-  return parts.length ? parts.join('\n\n') : null
-}
-
-export type CreateDropOffResult = { id: string; overCap: boolean }
+export type CreateDropOffResult = { id: string; overCap: boolean; overages: CapOverage[] }
 
 export async function createDropOffDonation(
   contact: DropOffContact,
@@ -93,6 +92,10 @@ export async function createDropOffDonation(
     // route requires it for exactly this reason, not just form courtesy.
     Email: contact.email,
     'Form Date': contact.formDate,
+    // Exactly "Pending" — one of three real choices on this field
+    // (Pending / Received / No Show). The pickup form's own current
+    // page sends "Pending Review", which isn't a valid option; flagged
+    // as a trap to avoid, not copied here.
     Status: 'Pending',
     'Manual or Automatic': ['Automatic'],
     'Pickup or Drop Off': 'Drop Off',
@@ -105,8 +108,10 @@ export async function createDropOffDonation(
   if (contact.state) fields.State = contact.state
   if (contact.zip) fields.Zip = contact.zip
 
-  const notes = buildNotes(contact.notes, overages)
-  if (notes) fields.Notes = notes
+  // Notes carries ONLY the donor's own text, verbatim — it prints as-is
+  // on their tax receipt, so nothing else may write to it. The over-cap
+  // flag does not go here; see formatOverCapNote's own header.
+  if (contact.notes?.trim()) fields.Notes = contact.notes.trim()
 
   for (const [key, qty] of Object.entries(quantities)) {
     if (!(qty > 0)) continue
@@ -116,5 +121,5 @@ export async function createDropOffDonation(
   }
 
   const data = await donorFetch('', { method: 'POST', body: { fields } })
-  return { id: data.id, overCap: overages.length > 0 }
+  return { id: data.id, overCap: overages.length > 0, overages }
 }
