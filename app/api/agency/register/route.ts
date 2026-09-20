@@ -8,8 +8,11 @@
 //
 // No Clerk session, no agency context — this is the one route in the app
 // reachable by anyone with the URL that also writes. See:
-//   - CORS_ORIGINS below — PLACEHOLDER, needs Ben's confirmed WordPress
-//     origin before the form can actually be pointed here.
+//   - CORS_ORIGINS below — confirmed with Ben (2026-09). The form's home
+//     is https://furnitureassist.com/agency-registration/, but the www
+//     host serves the same page rather than redirecting to the apex, so
+//     both origins have to be allowed or a visitor who lands on www gets
+//     their submission blocked by their own browser.
 //   - lib/rate-limit.ts — best-effort, in-process, proportionate to a
 //     nonprofit's actual registration volume, not a login endpoint's.
 //   - The honeypot field (`hp`) below — a bot that fills every input fills
@@ -60,20 +63,35 @@ import { sendPortalAccountEmail } from '@/lib/notifications/portal-account-email
 const BASE_ID = process.env.AIRTABLE_BASE_ID!
 const API_KEY = process.env.AIRTABLE_API_KEY!
 
-// PLACEHOLDER — Ben is confirming the exact WordPress origin, including
-// whether `www.` answers separately from the bare domain. Every other
-// furnitureassist.com reference in this codebase (agencies@, ben@, the
-// logo asset) points at the bare domain, distinct from this app's own
-// portal.furnitureassist.com — that's the basis for the guess below, not
-// a confirmed fact. DO NOT switch the WordPress form over to this route
-// until this list is confirmed correct; until then, requests from the
-// real origin may be silently blocked by the browser, which is the safe
-// failure direction.
+// Confirmed with Ben (2026-09) — both hosts serve the form, so both are
+// real, not a bare-domain-vs-www guess.
 const CORS_ORIGINS = [
   'https://furnitureassist.com',
   'https://www.furnitureassist.com',
 ]
 
+// Access-Control-Allow-Origin takes exactly one value, never a list — an
+// allowlist works by CHECKING against multiple origins and ECHOING BACK
+// only the one the request actually carried, never all of them at once.
+//
+// No Origin header at all (the common case for a non-browser caller — a
+// server-to-server request, curl, a same-origin navigation — browsers
+// always send Origin on a cross-origin fetch/XHR, including the preflight)
+// falls through to the same `{}` as an origin that IS present but isn't on
+// the list: no CORS headers either way. That's the correct default in
+// both cases, but for two different reasons —
+//   - no Origin header: CORS is irrelevant, nothing to allow or deny.
+//   - an origin present but unlisted: deny by default. The browser will
+//     refuse to expose the response to the page's own JS once it sees no
+//     Access-Control-Allow-Origin.
+// THE PART WORTH BEING HONEST ABOUT: that refusal happens in the
+// browser, after this route has already run. CORS is not server-side
+// access control — the request still reaches this handler and, absent
+// the validation/rate-limit/honeypot checks below, would still write.
+// A non-browser client (or a browser script that doesn't care whether
+// its own page can read the response) is not stopped by an Origin
+// check at all. The actual defenses against abuse here are the
+// rate limit, the honeypot, and the duplicate flag — not this.
 function corsHeaders(req: Request): Record<string, string> {
   const origin = req.headers.get('origin')
   if (origin && CORS_ORIGINS.includes(origin)) {
@@ -85,9 +103,6 @@ function corsHeaders(req: Request): Record<string, string> {
       Vary: 'Origin',
     }
   }
-  // Unknown origin: no CORS headers at all, so the browser blocks the
-  // response on its own — deny by default rather than echo back
-  // something unconfirmed.
   return {}
 }
 
