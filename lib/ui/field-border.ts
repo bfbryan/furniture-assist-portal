@@ -47,6 +47,14 @@
 //                                                   independently; pointed at
 //                                                   this constant rather than
 //                                                   re-deriving a value
+//   app/donor-drop-off-test/page.tsx                drop-off intake test
+//                                                   harness — a new form on
+//                                                   the same white-on-cream
+//                                                   pattern, pointed here
+//                                                   from the start rather
+//                                                   than picking a value
+//                                                   and needing this same
+//                                                   fix again later
 //
 // #EDE9E1 is still doing several other jobs across the app - card edges,
 // dividers, panel outlines, secondary button borders - and none of those are
