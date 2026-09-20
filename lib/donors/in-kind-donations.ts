@@ -13,11 +13,19 @@
 //     moment Status flips — confirmed with Ben. Never written here; writing
 //     it from this route would duplicate that automation and could diverge
 //     from it.
-//   - Last Updated (lastModifiedTime) is not a dedicated "checked in at"
-//     field — it reflects the last change to the row for ANY reason. Good
-//     enough for a same-day "already received at 11:42" read on the desk
-//     view (nothing else touches a Pending/just-Received row same-day), not
-//     something to treat as an authoritative check-in timestamp longer-term.
+//   - Last Updated (lastModifiedTime) is scoped in the base's own schema to
+//     watch Status specifically, not "any field" — checked via the Meta
+//     API. But it's absent on a real fraction of Received rows regardless:
+//     checked live, 555 of 795 Received records (69.8%) carry a value: the
+//     rest were evidently brought to Received without a tracked edit (a
+//     bulk import setting Status directly, not an edit lastModifiedTime
+//     caught). Donation Date has no such gap — 795 of 795 (100%) — so it's
+//     the field to show "when was this received," with Last Updated used
+//     only where present, for the extra time-of-day precision on a
+//     check-in from earlier today. Both read this way in the search
+//     results (see formatCheckinWhen in app/(donor)/desk/page.tsx); an
+//     earlier round used Last Updated alone, which is why some results
+//     rendered with no date at all.
 //   - Manual or Automatic = 'Automatic' AND Status = 'Pending' is the
 //     ~108-record subset (checked live) the desk's primary search is scoped
 //     to, matching how these donations actually arrived (versus a
@@ -87,6 +95,12 @@ export type DonationSearchResult = {
   status: string | null
   formDate: string | null
   lastUpdated: string | null
+  /** Stamped by the same existing automation this whole feature already
+   *  defers to (see the file header) — date-only, no time. Present on
+   *  100% of Received records base-wide (checked live, 795/795), unlike
+   *  Last Updated (see below), so this is the reliable field for "when
+   *  was this received," not lastUpdated. */
+  donationDate: string | null
   /** last 4 digits of Cell Number, for disambiguating two same-named
    *  results — never the full number. See the desk-exposure note below. */
   phoneLast4: string | null
@@ -117,12 +131,13 @@ function shapeSearchResult(record: { id: string; fields: Record<string, unknown>
     status: (f['Status'] as string) ?? null,
     formDate: (f['Form Date'] as string) ?? null,
     lastUpdated: (f['Last Updated'] as string) ?? null,
+    donationDate: (f['Donation Date'] as string) ?? null,
     phoneLast4: digits.length >= 4 ? digits.slice(-4) : null,
     lglNotes: (f['LGL Notes'] as string) || null,
   }
 }
 
-const SEARCH_FIELDS = ['First Name', 'Last Name', 'Status', 'Form Date', 'Last Updated', 'Cell Number', 'Manual or Automatic', 'LGL Notes']
+const SEARCH_FIELDS = ['First Name', 'Last Name', 'Status', 'Form Date', 'Last Updated', 'Donation Date', 'Cell Number', 'Manual or Automatic', 'LGL Notes']
 
 function fieldsParam(): string {
   return SEARCH_FIELDS.map(f => `&fields[]=${encodeURIComponent(f)}`).join('')

@@ -48,6 +48,7 @@ type SearchResult = {
   status: string | null
   formDate: string | null
   lastUpdated: string | null
+  donationDate: string | null
   phoneLast4: string | null
   lglNotes: string | null
 }
@@ -70,18 +71,31 @@ function formatTime(iso: string | null): string {
 // happened today — the tier-2 fallback search can surface a donation
 // received weeks ago (that's the whole point of tier 2: say "already
 // received," not a bare "no results"), and a bare time on an old record
-// reads as if it happened this afternoon. Same today-in-Eastern check as
-// the rest of this app's date handling.
-function formatCheckinWhen(iso: string | null): string {
-  if (!iso) return ''
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return ''
-  const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-  const whenKey = d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
-  if (whenKey === todayKey) {
-    return `Checked in at ${formatTime(iso)}`
+// reads as if it happened this afternoon.
+//
+// Prefers lastUpdated (an instant, so it can say "today" vs. a specific
+// date, and give a time for today) but that field is absent on ~30% of
+// Received records base-wide — checked live, 555 of 795 (see the header
+// on lib/donors/in-kind-donations.ts for why) — so this falls back to
+// donationDate, which is present on 100% of them, for a date-only result
+// rather than the bare "Already checked in" an earlier round fell back
+// to whenever lastUpdated alone was missing.
+function formatCheckinWhen(lastUpdated: string | null, donationDate: string | null): string {
+  if (lastUpdated) {
+    const d = new Date(lastUpdated)
+    if (!Number.isNaN(d.getTime())) {
+      const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+      const whenKey = d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+      if (whenKey === todayKey) {
+        return `Checked in at ${formatTime(lastUpdated)}`
+      }
+      return `Checked in ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })}`
+    }
   }
-  return `Checked in ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })}`
+  if (donationDate) {
+    return `Checked in ${formatFormDate(donationDate)}`
+  }
+  return ''
 }
 
 // LGL Notes is a formula field built for the Little Green Light export —
@@ -215,7 +229,7 @@ export default function DonorCheckinDeskPage() {
             autoFocus
             style={{
               width: '100%', boxSizing: 'border-box', padding: '14px 16px', fontSize: '18px',
-              borderRadius: '8px', border: FIELD_BORDER_STYLE, outline: 'none',
+              borderRadius: '8px', border: FIELD_BORDER_STYLE, background: 'white', outline: 'none',
             }}
           />
 
@@ -252,7 +266,7 @@ export default function DonorCheckinDeskPage() {
                   </div>
                   {already ? (
                     <div style={{ fontSize: '14px', fontWeight: 700, color: GOLD, textAlign: 'right', flexShrink: 0 }}>
-                      {r.lastUpdated ? formatCheckinWhen(r.lastUpdated) : 'Already checked in'}
+                      {formatCheckinWhen(r.lastUpdated, r.donationDate) || 'Already checked in'}
                     </div>
                   ) : (
                     <button
