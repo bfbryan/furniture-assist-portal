@@ -1,8 +1,13 @@
 // lib/auth/donor-checkin-access.ts
 //
 // Gate for the donor check-in surfaces — the phone kiosk page and the
-// Chromebook desk page (app/donor-checkin, app/donor-checkin-desk) and
-// their API routes. Device-authenticated, not user-authenticated: one
+// Chromebook desk page (app/(donor)/checkin, app/(donor)/desk — one
+// shared layout, app/(donor)/layout.tsx, calls isDonorCheckinDevice
+// directly rather than each page calling requireDonorCheckinAccess
+// separately, now that both use the identical device-session model) and
+// their API routes, which still call requireDonorCheckinAccess
+// individually below — a layout only ever gates pages, never API routes.
+// Device-authenticated, not user-authenticated: one
 // Clerk sign-in token gets redeemed once per physical device (however many
 // phones, plus the Chromebook — Clerk supports multiple concurrent
 // sessions under one user, so all of them can share a single "device"

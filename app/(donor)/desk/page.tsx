@@ -1,6 +1,8 @@
 'use client'
 
-// app/donor-checkin-desk/page.tsx
+// app/(donor)/desk/page.tsx — the URL is /desk, not /donor/desk; (donor)
+// is a route group and doesn't appear in the path. Auth lives in
+// app/(donor)/layout.tsx, shared with checkin/, not here.
 //
 // The Chromebook: today's live check-in list (polled — the volume, a few
 // dozen a week, doesn't justify anything heavier) plus a search box for a

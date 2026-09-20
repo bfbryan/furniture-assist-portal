@@ -1,6 +1,8 @@
 'use client'
 
-// app/donor-checkin/page.tsx
+// app/(donor)/checkin/page.tsx — the URL is /checkin, not /donor/checkin;
+// (donor) is a route group and doesn't appear in the path. Auth lives in
+// app/(donor)/layout.tsx, shared with desk/, not here.
 //
 // The phone kiosk. One job: scan, confirm, next. Two inputs feed one
 // handler — the camera (BarcodeDetector, native on the target Android
