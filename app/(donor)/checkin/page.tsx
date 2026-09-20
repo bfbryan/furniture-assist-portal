@@ -40,6 +40,16 @@
 // is set, for the same reason — a second scan arriving mid-confirmation
 // must not silently bump the donor already on screen.
 //
+// The pending screen also has to make the tap feel required, not
+// optional — the real failure mode isn't a wrong tap, it's no tap at
+// all: a volunteer who walks away without confirming leaves the
+// donation sitting Pending, and six weeks later the no-show script
+// flips it and emails the donor to say their donation never arrived.
+// So the screen asks the question the volunteer is actually answering
+// ("Is this the donor in front of you?"), then states the stakes in
+// plain terms ("Nothing is recorded until you tap Received") — not
+// "tap to confirm," which reads as optional when it isn't.
+//
 // A donor whose code scans but who turns out to be the wrong person, or a
 // code scanned by accident, needs a way out that writes nothing — "Not
 // this donor" does that. It's deliberately smaller, lower, and lighter
@@ -52,16 +62,17 @@
 // no Received button on it (a Received tap there would just be a second,
 // pointless write of the same value).
 //
-// Five full-screen result states after a write or a settled lookup, all
-// visually distinct, large type / high contrast for arm's-length daylight
-// reading: success (teal, only after a real write), already received
-// (gold — NOT an error, a routine double scan), not found (red — a
-// genuine problem), invalid (red), offline (grey — a connectivity state,
-// not a data problem). "Offline" is never something the server says; it's
-// the fetch itself failing to reach it. The 2.5s auto-return applies to
-// all five of these settled states, starting only once the state is
-// reached — for success specifically, that means after the write
-// succeeds, never after the scan or lookup. It never applies to `pending`.
+// Every state has its own background so two of them can never be
+// mistaken for each other at a glance: idle scanning is white, pending
+// is navy (an answer is owed, not yet settled either way), a completed
+// write is teal, already-received is gold, not-found/invalid are red,
+// offline is grey. Pending, done, and already-received in particular
+// have to read as different at a distance, without anyone reading the
+// words — navy vs. teal vs. gold are three different hues, not shades
+// of the same one. The 2.5s auto-return applies to the five settled
+// results, starting only once the state is reached — for a completed
+// write specifically, that means after the write succeeds, never after
+// the scan or lookup. It never applies to `pending`.
 //
 // The target experience this page serves: pick up the phone, it's
 // already on the scanner, point it at the QR code, the donor's name
@@ -324,7 +335,11 @@ export default function DonorCheckinPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const bg = pending ? '#ffffff' : backgroundFor(result)
+  // Pending gets its own full-navy background — not white (shared with
+  // idle scanning) and not teal or gold (the two settled outcomes it
+  // must never be mistaken for from across a room). See PendingScreen's
+  // own header for why.
+  const bg = pending ? NAVY : backgroundFor(result)
 
   return (
     <div style={{
@@ -435,12 +450,29 @@ export default function DonorCheckinPage() {
 // volunteer who steps away mid-transaction finds this exact screen again,
 // not a scanner that moved on without them.
 //
-// White background, same as idle scanning: nothing has happened yet, so
-// there's no outcome to color. Received is the large, primary action.
-// "Not this donor" is deliberately smaller, lighter, and set apart with
-// real space below Received — different position, different weight — so
-// a volunteer moving quickly can tap Received without a stray tap
-// anywhere near it landing on the exit instead.
+// Full navy background — not white (shared with idle scanning, which
+// would make this screen read as "nothing's happening yet" when
+// something very much is) and not teal or gold (the two settled
+// outcomes below, which this must never be mistaken for at a glance).
+// White-on-navy text reuses the same contrast pattern ResultScreen
+// already uses for every settled state, just on a fourth background.
+//
+// Three lines, top to bottom: the question the volunteer is actually
+// answering, the donor's name (the thing they're checking against the
+// person in front of them), and the stakes of not answering it. That
+// last line exists because the real failure isn't a volunteer who taps
+// the wrong button — it's one who doesn't tap anything at all, walks
+// away, and the donation sits Pending until the six-week no-show script
+// flips it and emails the donor to say their donation never arrived.
+// "Tap to confirm" was considered and dropped — it reads as optional.
+// "Nothing is recorded until you tap Received" says plainly what's true:
+// no tap, no record, regardless of how sure the volunteer already feels.
+//
+// Received is the large, primary action. "Not this donor" is
+// deliberately smaller, lighter, and set apart with real space below it
+// — different position, different weight — so a volunteer moving
+// quickly can tap Received without a stray tap anywhere near it landing
+// on the exit instead.
 function PendingScreen({
   pending, confirming, confirmError, onConfirm, onDismiss,
 }: {
@@ -451,16 +483,24 @@ function PendingScreen({
   onDismiss: () => void
 }) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '36px', width: '100%' }}>
-      <div style={{ fontSize: '44px', fontWeight: 800, color: NAVY, textAlign: 'center', lineHeight: 1.15 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '20px', width: '100%' }}>
+      <div style={{ fontSize: '19px', fontWeight: 700, color: 'rgba(255,255,255,0.85)', textAlign: 'center' }}>
+        Is this the donor in front of you?
+      </div>
+
+      <div style={{ fontSize: '44px', fontWeight: 800, color: '#ffffff', textAlign: 'center', lineHeight: 1.15 }}>
         {pending.donorName || 'Donor'}
+      </div>
+
+      <div style={{ fontSize: '16px', fontWeight: 600, color: 'rgba(255,255,255,0.85)', textAlign: 'center', maxWidth: '340px' }}>
+        Nothing is recorded until you tap Received.
       </div>
 
       <button
         onClick={onConfirm}
         disabled={confirming}
         style={{
-          padding: '22px 64px', borderRadius: '14px', border: 'none', background: TEAL,
+          marginTop: '16px', padding: '22px 64px', borderRadius: '14px', border: 'none', background: TEAL,
           color: 'white', fontFamily: 'var(--font-montserrat), Arial, sans-serif', fontWeight: 800,
           fontSize: '26px', cursor: confirming ? 'default' : 'pointer', opacity: confirming ? 0.7 : 1,
         }}
@@ -469,19 +509,21 @@ function PendingScreen({
       </button>
 
       {confirmError && (
-        <div style={{ fontSize: '14px', color: RED, textAlign: 'center', maxWidth: '340px', marginTop: '-20px' }}>
+        <div style={{ fontSize: '14px', color: RED, textAlign: 'center', maxWidth: '340px' }}>
           {confirmError}
         </div>
       )}
 
+      {/* Muted white on navy, the same treatment SessionPill already
+          uses in this page's own footer — not a new grey-on-navy
+          pattern invented for this one button. */}
       <button
         onClick={onDismiss}
         disabled={confirming}
         style={{
-          padding: '10px 20px', borderRadius: '8px', border: 'none', background: 'transparent',
-          color: GREY, fontFamily: 'var(--font-montserrat), Arial, sans-serif', fontWeight: 700,
+          marginTop: '4px', padding: '10px 20px', borderRadius: '8px', border: 'none', background: 'transparent',
+          color: 'rgba(255,255,255,0.6)', fontFamily: 'var(--font-montserrat), Arial, sans-serif', fontWeight: 700,
           fontSize: '15px', textDecoration: 'underline', cursor: confirming ? 'default' : 'pointer',
-          marginTop: '-8px',
         }}
       >
         Not this donor
@@ -496,8 +538,8 @@ function ResultScreen({ result, onDismiss }: { result: ScanResult; onDismiss: ()
 
   switch (result.kind) {
     case 'success':
-      heading = result.donorName || 'Checked in'
-      sub = 'Checked in'
+      heading = result.donorName || 'Donation received'
+      sub = 'Donation received'
       break
     case 'already-received':
       heading = result.donorName || 'Already checked in'
