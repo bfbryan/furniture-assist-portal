@@ -158,17 +158,22 @@ export async function PATCH(
       membershipDecidedAt: now,
     })
 
-    // "Agency Registration Approval" hardcodes its own sign-in URL around
-    // a bare `token` placeholder — NOT the `magicLink` shape the other
-    // two welcome templates use. Ships Enabled unchecked like every other
-    // automation before go-live.
+    // v2 of "Agency Registration Approval" (checked live, 2026-09) takes
+    // `magicLink` as a COMPLETE href, same convention as the other two
+    // welcome templates — NOT a bare token dropped into a hardcoded URL,
+    // which was v1's shape and this route's own first draft. The
+    // template's own comment states the contract directly: "The sending
+    // route must pass magicLink: portalSignInLink(signInToken), not
+    // token: signInToken" — provisionAgencyPortalAccess already computes
+    // this (provisioned.magicLink); this was just sending the wrong key.
+    // Ships Enabled unchecked like every other automation before go-live.
     const email = await sendPortalAccountEmail({
       automationName: 'Agency Registration Approval',
       to: adminEmail,
       tokens: {
         'First Name': adminFirstName,
         'Agency Name': agencyName,
-        token: provisioned.signInToken,
+        magicLink: provisioned.magicLink,
       },
       agencyRecordId: id,
     })
