@@ -298,7 +298,13 @@ function agePhrase(iso: string | null, todayISO: string): string | null {
 // ---------------------------------------------------------------------------
 // Lifecycle timeline
 // ---------------------------------------------------------------------------
-// Five segments. "Reached" is driven by each segment's OWN field being
+// Two shapes, branched on Source — CompactTimeline just draws whatever
+// TimelineSegment[] it's handed (it already renders a differently-shaped
+// four-segment strip for the staff page), so this needed no change there.
+//
+// CSV-import / referral / manual lifecycle (everything except Self
+// Registered): Created → Invited → Claimed → Approved (or Rejected) →
+// Referrals live. "Reached" is driven by each segment's OWN field being
 // present, not inferred purely from the current Status — the Pending →
 // Approved manual path can reach Approved without Invited/Claimed dates ever
 // being set (no invite was needed), so keying Invited/Claimed on Status would
@@ -307,27 +313,51 @@ function agePhrase(iso: string | null, todayISO: string): string | null {
 // Inactive agency was still approved once, so that segment stays reached with
 // its real date.
 //
-// The rendering itself (CompactTimeline) moved to components/internal/
-// CompactTimeline.tsx (staff-detail-reshape) so app/dawson/staff/[id]/page.tsx
-// can render an identical strip for its own, differently-shaped four-segment
-// timeline — this function stays here because the segments themselves (what
-// counts as "reached," which date, Rejected-replaces-Approved) are specific
-// to an Agency, not something a shared function should know about.
+// Self-registered lifecycle: Registered → Approved (or Rejected) → Claimed →
+// Referrals live. No Invited segment — nobody invites a self-registered
+// agency; the Pending → Approved click provisions Clerk directly (see
+// status/route.ts), so "Invited — not yet" would read as a permanently
+// outstanding step for every one of them. Approved comes BEFORE Claimed
+// here, reversed from the other lifecycle — provisioning happens at
+// Approve, and Claimed (the admin's first sign-in) only ever follows it.
+// "Registered" reuses the exact same field the other lifecycle's "Created"
+// uses (agency.registrationDate, itself Record Creation Date — verified
+// live, 2026-09, that no separate Registration Date field exists) — for
+// this lifecycle the row's creation IS the registration event, so this
+// is a relabel, not a different value.
 function buildTimeline(agency: Agency): TimelineSegment[] {
   const rejected = agency.status === 'Rejected'
+  const approvedOrRejected: TimelineSegment = rejected
+    ? { label: 'Rejected', reached: true, date: agency.rejectedDate ? formatInstantShort(agency.rejectedDate) : null, tone: 'red' }
+    : {
+        label: 'Approved',
+        reached: agency.status === 'Approved' || agency.status === 'Inactive',
+        date: agency.approvalDate ? formatDateShort(agency.approvalDate) : null,
+        tone: 'teal',
+      }
+  const claimed: TimelineSegment = {
+    label: 'Claimed',
+    reached: !!agency.claimedDate,
+    date: agency.claimedDate ? formatInstantShort(agency.claimedDate) : null,
+    tone: 'teal',
+  }
+  const referralsLive: TimelineSegment = { label: 'Referrals live', reached: agency.liveReferrals, date: null, tone: 'teal' }
+
+  if (agency.source === 'Self Registered') {
+    return [
+      { label: 'Registered', reached: true, date: formatDateShort(agency.registrationDate), tone: 'teal' },
+      approvedOrRejected,
+      claimed,
+      referralsLive,
+    ]
+  }
+
   return [
     { label: 'Created', reached: true, date: formatDateShort(agency.registrationDate), tone: 'teal' },
     { label: 'Invited', reached: !!agency.invitedDate, date: agency.invitedDate ? formatInstantShort(agency.invitedDate) : null, tone: 'teal' },
-    { label: 'Claimed', reached: !!agency.claimedDate, date: agency.claimedDate ? formatInstantShort(agency.claimedDate) : null, tone: 'teal' },
-    rejected
-      ? { label: 'Rejected', reached: true, date: agency.rejectedDate ? formatInstantShort(agency.rejectedDate) : null, tone: 'red' }
-      : {
-          label: 'Approved',
-          reached: agency.status === 'Approved' || agency.status === 'Inactive',
-          date: agency.approvalDate ? formatDateShort(agency.approvalDate) : null,
-          tone: 'teal',
-        },
-    { label: 'Referrals live', reached: agency.liveReferrals, date: null, tone: 'teal' },
+    claimed,
+    approvedOrRejected,
+    referralsLive,
   ]
 }
 
