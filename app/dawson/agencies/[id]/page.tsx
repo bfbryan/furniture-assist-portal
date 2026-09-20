@@ -835,13 +835,24 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
       setAgency({ ...agency, status: 'Invited', invitedDate: new Date().toISOString() })
       setConfirm(null)
 
+      // Three-way, not skipped-vs-everything-else: `skipped === false &&
+      // sent === false` only covers an actual send failure. A DISABLED
+      // automation returns `{ skipped: true }` — that used to fall
+      // through to the `else` and show "Invite sent." even though
+      // nothing went out. Same mislabelling as handleStatusChange had,
+      // fixed the same way.
       const email = body?.email
-      if (email && email.skipped === false && email.sent === false) {
+      if (email?.skipped === true) {
+        setInviteNote({
+          kind: 'warn',
+          text: `${agency.name} is marked Invited, but no email went out — the "Agency Welcome to Portal - Claimed" template is disabled in Airtable.`,
+        })
+      } else if (email?.skipped === false && email?.sent === false) {
         setInviteNote({
           kind: 'warn',
           text: `${agency.name} is marked Invited, but the email did not send: ${email.error ?? 'unknown error'}. Use Resend Invite once that is fixed.`,
         })
-      } else {
+      } else if (email?.skipped === false && email?.sent === true) {
         setInviteNote({ kind: 'ok', text: 'Invite sent.' })
       }
     } catch {
