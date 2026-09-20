@@ -172,7 +172,10 @@ export async function logAgencyEmailSend(params: {
   agencyRecordId: string | null;
   recipientEmail: string;
   resendMessageId?: string;
-  status: "Sent" | "Delivered" | "Bounced" | "Complained" | "Failed" | "Withheld";
+  // "Skipped" added to the live Status option list 2026-09, for a send
+  // that never left sendPortalAccountEmail because the automation's
+  // Enabled flag was off — see the disabled branch there.
+  status: "Sent" | "Delivered" | "Bounced" | "Complained" | "Failed" | "Withheld" | "Skipped";
   bounceReason?: string;
 }): Promise<void> {
   await base(EMAIL_LOG_TABLE).create(
