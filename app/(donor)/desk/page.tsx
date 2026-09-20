@@ -33,6 +33,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import BrandMark from '@/components/donor/BrandMark'
 import SessionPill from '@/components/donor/SessionPill'
+import { FIELD_BORDER_STYLE } from '@/lib/ui/field-border'
 
 const NAVY = '#1B2B4B'
 const TEAL = '#2A7F6F'
@@ -48,6 +49,7 @@ type SearchResult = {
   formDate: string | null
   lastUpdated: string | null
   phoneLast4: string | null
+  lglNotes: string | null
 }
 
 type TodayEntry = {
@@ -62,6 +64,41 @@ function formatTime(iso: string | null): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })
+}
+
+// "Already checked in at 9:12 PM" is only meaningful for a check-in that
+// happened today — the tier-2 fallback search can surface a donation
+// received weeks ago (that's the whole point of tier 2: say "already
+// received," not a bare "no results"), and a bare time on an old record
+// reads as if it happened this afternoon. Same today-in-Eastern check as
+// the rest of this app's date handling.
+function formatCheckinWhen(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const todayKey = new Date().toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+  const whenKey = d.toLocaleDateString('en-CA', { timeZone: 'America/New_York' })
+  if (whenKey === todayKey) {
+    return `Checked in at ${formatTime(iso)}`
+  }
+  return `Checked in ${d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'America/New_York' })}`
+}
+
+// LGL Notes is a formula field built for the Little Green Light export —
+// "Category: qty" pairs joined with ", ", meant to be read in LGL, not
+// scanned on a card. Sampled live (2026-09, 100 records): min 6 / median
+// 39 / p75 70 / p90 121 / max 252 characters — short enough to show whole
+// most of the time, long enough on a big multi-category donation that
+// showing it whole would make the card as hard to scan as showing
+// nothing. Cut at a ", " boundary near 90 characters rather than a hard
+// character cut, so a truncated line still ends on a whole item rather
+// than a word sliced in half.
+const LGL_NOTES_TRUNCATE_AT = 90
+function truncateNotes(notes: string | null): string {
+  if (!notes) return ''
+  if (notes.length <= LGL_NOTES_TRUNCATE_AT) return notes
+  const cut = notes.lastIndexOf(', ', LGL_NOTES_TRUNCATE_AT)
+  return `${notes.slice(0, cut > 0 ? cut : LGL_NOTES_TRUNCATE_AT)}…`
 }
 
 function formatFormDate(iso: string | null): string {
@@ -178,7 +215,7 @@ export default function DonorCheckinDeskPage() {
             autoFocus
             style={{
               width: '100%', boxSizing: 'border-box', padding: '14px 16px', fontSize: '18px',
-              borderRadius: '8px', border: '1px solid #EDE9E1', outline: 'none',
+              borderRadius: '8px', border: FIELD_BORDER_STYLE, outline: 'none',
             }}
           />
 
@@ -198,16 +235,24 @@ export default function DonorCheckinDeskPage() {
                   background: 'white', borderRadius: '10px', padding: '14px 18px',
                   boxShadow: '0 1px 3px rgba(27,43,75,0.08)',
                 }}>
-                  <div>
+                  <div style={{ minWidth: 0 }}>
                     <div style={{ fontSize: '17px', fontWeight: 700, color: NAVY }}>{name || '(no name on file)'}</div>
                     <div style={{ fontSize: '13px', color: GREY, marginTop: '2px' }}>
                       {[formatFormDate(r.formDate) ? `Scheduled ${formatFormDate(r.formDate)}` : null, r.phoneLast4 ? `…${r.phoneLast4}` : null]
                         .filter(Boolean).join(' · ')}
                     </div>
+                    {/* Two forms from the same donor, same day, land as two
+                        rows with identical name + date — this is what tells
+                        them apart. */}
+                    {r.lglNotes && (
+                      <div style={{ fontSize: '13px', color: GREY, marginTop: '4px', fontStyle: 'italic' }}>
+                        {truncateNotes(r.lglNotes)}
+                      </div>
+                    )}
                   </div>
                   {already ? (
-                    <div style={{ fontSize: '14px', fontWeight: 700, color: GOLD, textAlign: 'right' }}>
-                      Already checked in{r.lastUpdated ? ` at ${formatTime(r.lastUpdated)}` : ''}
+                    <div style={{ fontSize: '14px', fontWeight: 700, color: GOLD, textAlign: 'right', flexShrink: 0 }}>
+                      {r.lastUpdated ? formatCheckinWhen(r.lastUpdated) : 'Already checked in'}
                     </div>
                   ) : (
                     <button

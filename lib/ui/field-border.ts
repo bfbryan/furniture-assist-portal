@@ -35,11 +35,18 @@
 // ---------------------------------------------------------------------------
 // Scope
 // ---------------------------------------------------------------------------
-// This is the FIELD outline only, and only on the Add Referral screens:
+// This is the FIELD outline only, on these screens:
 //
 //   app/dawson/referrals/new/page.tsx              internal Add Referral
 //   components/agency/NewReferralForm.tsx          agency Add Referral
 //   components/internal/modals/AddAgencyStaffModal named from the first
+//   app/(donor)/desk/page.tsx                      donor check-in search box —
+//                                                   same #EDE9E1-on-cream
+//                                                   invisibility, reported
+//                                                   directly rather than found
+//                                                   independently; pointed at
+//                                                   this constant rather than
+//                                                   re-deriving a value
 //
 // #EDE9E1 is still doing several other jobs across the app - card edges,
 // dividers, panel outlines, secondary button borders - and none of those are

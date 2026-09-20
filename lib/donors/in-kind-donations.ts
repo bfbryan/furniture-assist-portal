@@ -25,6 +25,7 @@
 //     already-resolved).
 
 import { donorFetch } from './client'
+import { addDaysISO, easternTodayISO } from '@/lib/dates'
 
 export type Donation = {
   id: string
@@ -89,6 +90,12 @@ export type DonationSearchResult = {
   /** last 4 digits of Cell Number, for disambiguating two same-named
    *  results — never the full number. See the desk-exposure note below. */
   phoneLast4: string | null
+  /** "Category: qty, Category: qty, ..." — an existing formula field built
+   *  for the Little Green Light export, repurposed here to tell apart two
+   *  forms from the same donor (e.g. two different Saturdays, or two
+   *  submissions for the same date with different items) that a name and
+   *  a date alone can't distinguish. */
+  lglNotes: string | null
 }
 
 // Desk-view exposure: the Chromebook's search reaches names across ~108
@@ -111,26 +118,61 @@ function shapeSearchResult(record: { id: string; fields: Record<string, unknown>
     formDate: (f['Form Date'] as string) ?? null,
     lastUpdated: (f['Last Updated'] as string) ?? null,
     phoneLast4: digits.length >= 4 ? digits.slice(-4) : null,
+    lglNotes: (f['LGL Notes'] as string) || null,
   }
 }
 
-const SEARCH_FIELDS = ['First Name', 'Last Name', 'Status', 'Form Date', 'Last Updated', 'Cell Number', 'Manual or Automatic']
+const SEARCH_FIELDS = ['First Name', 'Last Name', 'Status', 'Form Date', 'Last Updated', 'Cell Number', 'Manual or Automatic', 'LGL Notes']
 
 function fieldsParam(): string {
   return SEARCH_FIELDS.map(f => `&fields[]=${encodeURIComponent(f)}`).join('')
 }
 
+// Both search tiers are scoped to a window on Form Date: 6 weeks back, 3
+// weeks forward. Back matches the threshold of the six-week no-show
+// script that flips a stale Pending row to No Show — that script is an
+// Airtable automation, outside this repo, so 42 is asserted here as its
+// mirror, not derived from it; if Ben ever changes the automation's own
+// window this constant needs updating by hand. Anything older than that
+// has already aged out and isn't a live check-in candidate. Forward
+// coverage exists because donors sometimes put a future date on the
+// form — confirmed live, a test record carries a Form Date a week ahead
+// of today — so a same-week search still needs to find it.
+//
+// Checked live (2026-09-20): this window holds 248 records of any
+// status, 95 of which are Pending+Automatic (tier 1's own scope, itself
+// ~108 unwindowed) — narrowing the universe a name is searched against,
+// same as tier 1's Status/Manual scoping already does, so a common
+// surname still comes back as one or two rows instead of a decade of
+// unrelated donations.
+const SEARCH_WINDOW_DAYS_BACK = 42
+const SEARCH_WINDOW_DAYS_FORWARD = 21
+
+/** `AND(IS_AFTER(...), IS_BEFORE(...))` on Form Date, open one day past each
+ *  edge so the edges themselves stay inclusive. IS_AFTER/IS_BEFORE, not a
+ *  plain `=` or string range — this codebase already found a bare `{field}
+ *  = "..."` comparison silently fails against a `date`-type field
+ *  (getTodaysCheckins's own header has the details); the Airtable date
+ *  functions are the ones confirmed to work. */
+function formDateWindowClause(): string {
+  const today = easternTodayISO()
+  const lowerExclusive = addDaysISO(addDaysISO(today, -SEARCH_WINDOW_DAYS_BACK), -1)
+  const upperExclusive = addDaysISO(addDaysISO(today, SEARCH_WINDOW_DAYS_FORWARD), 1)
+  return `AND(IS_AFTER({Form Date}, "${lowerExclusive}"), IS_BEFORE({Form Date}, "${upperExclusive}"))`
+}
+
 /**
  * Tier 1 — the primary search. Scoped to Manual or Automatic = 'Automatic'
  * AND Status = 'Pending', matching how a donation that's actually still
- * awaiting check-in looks (a hand-entered 'Manual' row is never Pending).
- * ~108 records rather than 1,056, so a search returns one or two results.
+ * awaiting check-in looks (a hand-entered 'Manual' row is never Pending),
+ * plus the Form Date window above. Small enough that a search returns one
+ * or two results.
  */
 export async function searchPendingByLastName(query: string): Promise<DonationSearchResult[]> {
   const safe = escapeFormulaString(query.trim())
   if (!safe) return []
   const formula = encodeURIComponent(
-    `AND(SEARCH("${safe.toLowerCase()}", LOWER({Last Name})), {Status} = "Pending", {Manual or Automatic} = "Automatic")`
+    `AND(SEARCH("${safe.toLowerCase()}", LOWER({Last Name})), {Status} = "Pending", {Manual or Automatic} = "Automatic", ${formDateWindowClause()})`
   )
   const data = await donorFetch(`?filterByFormula=${formula}&maxRecords=10${fieldsParam()}`)
   return (data.records ?? []).map(shapeSearchResult)
@@ -139,14 +181,18 @@ export async function searchPendingByLastName(query: string): Promise<DonationSe
 /**
  * Tier 2 — only called when tier 1 comes back empty. No Status/Manual
  * filter, so it can find an already-Received (or No Show) row and let the
- * desk say "already received at 11:42" instead of a bare "no results" —
- * which reads as "not in the system at all," the wrong and alarming
- * message for someone who's actually already been checked in.
+ * desk say "already received" instead of a bare "no results" — which
+ * reads as "not in the system at all," the wrong and alarming message for
+ * someone who's actually already been checked in. Still scoped to the
+ * same Form Date window as tier 1 — a donation from months ago shouldn't
+ * surface as a live check-in candidate just because tier 1 came up empty.
  */
 export async function searchAnyByLastName(query: string): Promise<DonationSearchResult[]> {
   const safe = escapeFormulaString(query.trim())
   if (!safe) return []
-  const formula = encodeURIComponent(`SEARCH("${safe.toLowerCase()}", LOWER({Last Name}))`)
+  const formula = encodeURIComponent(
+    `AND(SEARCH("${safe.toLowerCase()}", LOWER({Last Name})), ${formDateWindowClause()})`
+  )
   const data = await donorFetch(`?filterByFormula=${formula}&maxRecords=10${fieldsParam()}`)
   return (data.records ?? []).map(shapeSearchResult)
 }
