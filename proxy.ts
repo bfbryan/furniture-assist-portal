@@ -7,6 +7,7 @@ const isPublicRoute = createRouteMatcher([
   '/sign-up(.*)',
   '/api/referrals/submit(.*)',
   '/inactive(.*)',
+  '/donor-checkin-unauthorized(.*)',
   '/agency/claim(.*)',
   '/api/agency/claim(.*)',
   '/api/agency/register(.*)',
