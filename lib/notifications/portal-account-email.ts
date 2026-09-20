@@ -85,6 +85,23 @@ export async function sendPortalAccountEmail(params: {
       return { skipped: true, reason: "no automation row" };
     }
     if (!automation.fields.Enabled) {
+      // The one branch in this function that used to leave literally
+      // nothing behind — no console line, no Email Log row — quieter
+      // than even the no-automation-row case above it. "Skipped" is a
+      // real Status option now (added 2026-09, confirmed against the
+      // live field before this was written — not typecast-created; a
+      // mismatched string here should 422, not invent a second option).
+      // Non-blocking, same posture as every other Email Log write below:
+      // the send outcome (skipped) doesn't change on a failed log write.
+      await logAgencyEmailSend({
+        automationRecordId: automation.id,
+        agencyRecordId,
+        recipientEmail: to,
+        status: "Skipped",
+        bounceReason: "Automation disabled",
+      }).catch((logErr) =>
+        console.error(`${automationName}: skipped (disabled), and the Email Log row could not be written:`, logErr)
+      );
       return { skipped: true, reason: "disabled" };
     }
 

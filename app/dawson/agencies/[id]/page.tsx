@@ -298,7 +298,13 @@ function agePhrase(iso: string | null, todayISO: string): string | null {
 // ---------------------------------------------------------------------------
 // Lifecycle timeline
 // ---------------------------------------------------------------------------
-// Five segments. "Reached" is driven by each segment's OWN field being
+// Two shapes, branched on Source — CompactTimeline just draws whatever
+// TimelineSegment[] it's handed (it already renders a differently-shaped
+// four-segment strip for the staff page), so this needed no change there.
+//
+// CSV-import / referral / manual lifecycle (everything except Self
+// Registered): Created → Invited → Claimed → Approved (or Rejected) →
+// Referrals live. "Reached" is driven by each segment's OWN field being
 // present, not inferred purely from the current Status — the Pending →
 // Approved manual path can reach Approved without Invited/Claimed dates ever
 // being set (no invite was needed), so keying Invited/Claimed on Status would
@@ -307,27 +313,51 @@ function agePhrase(iso: string | null, todayISO: string): string | null {
 // Inactive agency was still approved once, so that segment stays reached with
 // its real date.
 //
-// The rendering itself (CompactTimeline) moved to components/internal/
-// CompactTimeline.tsx (staff-detail-reshape) so app/dawson/staff/[id]/page.tsx
-// can render an identical strip for its own, differently-shaped four-segment
-// timeline — this function stays here because the segments themselves (what
-// counts as "reached," which date, Rejected-replaces-Approved) are specific
-// to an Agency, not something a shared function should know about.
+// Self-registered lifecycle: Registered → Approved (or Rejected) → Claimed →
+// Referrals live. No Invited segment — nobody invites a self-registered
+// agency; the Pending → Approved click provisions Clerk directly (see
+// status/route.ts), so "Invited — not yet" would read as a permanently
+// outstanding step for every one of them. Approved comes BEFORE Claimed
+// here, reversed from the other lifecycle — provisioning happens at
+// Approve, and Claimed (the admin's first sign-in) only ever follows it.
+// "Registered" reuses the exact same field the other lifecycle's "Created"
+// uses (agency.registrationDate, itself Record Creation Date — verified
+// live, 2026-09, that no separate Registration Date field exists) — for
+// this lifecycle the row's creation IS the registration event, so this
+// is a relabel, not a different value.
 function buildTimeline(agency: Agency): TimelineSegment[] {
   const rejected = agency.status === 'Rejected'
+  const approvedOrRejected: TimelineSegment = rejected
+    ? { label: 'Rejected', reached: true, date: agency.rejectedDate ? formatInstantShort(agency.rejectedDate) : null, tone: 'red' }
+    : {
+        label: 'Approved',
+        reached: agency.status === 'Approved' || agency.status === 'Inactive',
+        date: agency.approvalDate ? formatDateShort(agency.approvalDate) : null,
+        tone: 'teal',
+      }
+  const claimed: TimelineSegment = {
+    label: 'Claimed',
+    reached: !!agency.claimedDate,
+    date: agency.claimedDate ? formatInstantShort(agency.claimedDate) : null,
+    tone: 'teal',
+  }
+  const referralsLive: TimelineSegment = { label: 'Referrals live', reached: agency.liveReferrals, date: null, tone: 'teal' }
+
+  if (agency.source === 'Self Registered') {
+    return [
+      { label: 'Registered', reached: true, date: formatDateShort(agency.registrationDate), tone: 'teal' },
+      approvedOrRejected,
+      claimed,
+      referralsLive,
+    ]
+  }
+
   return [
     { label: 'Created', reached: true, date: formatDateShort(agency.registrationDate), tone: 'teal' },
     { label: 'Invited', reached: !!agency.invitedDate, date: agency.invitedDate ? formatInstantShort(agency.invitedDate) : null, tone: 'teal' },
-    { label: 'Claimed', reached: !!agency.claimedDate, date: agency.claimedDate ? formatInstantShort(agency.claimedDate) : null, tone: 'teal' },
-    rejected
-      ? { label: 'Rejected', reached: true, date: agency.rejectedDate ? formatInstantShort(agency.rejectedDate) : null, tone: 'red' }
-      : {
-          label: 'Approved',
-          reached: agency.status === 'Approved' || agency.status === 'Inactive',
-          date: agency.approvalDate ? formatDateShort(agency.approvalDate) : null,
-          tone: 'teal',
-        },
-    { label: 'Referrals live', reached: agency.liveReferrals, date: null, tone: 'teal' },
+    claimed,
+    approvedOrRejected,
+    referralsLive,
   ]
 }
 
@@ -700,8 +730,14 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
   // silent no-op on failure, same shape inviteNote used to fix for Invite.
   // Went from a latent gap to a routine one once Approve on a Pending
   // (self-registered) agency started actually provisioning Clerk access
-  // and could fail on a real, expected reason ("not reconciled yet").
-  const [statusNote, setStatusNote] = useState<{ kind: 'error'; text: string } | null>(null)
+  // and could fail on a real, expected reason ("not reconciled yet"), and
+  // widened past 'error' once Approve also started returning an `email`
+  // result the same way handleInvite's response always has — a disabled
+  // "Agency Registration Approval" automation returns { skipped: true }
+  // and the PATCH itself still succeeds, so without reading it the same
+  // way inviteNote does, an agency shows Approved with no sign the email
+  // never went out.
+  const [statusNote, setStatusNote] = useState<{ kind: 'ok' | 'warn' | 'error'; text: string } | null>(null)
   const [agencyId, setAgencyId] = useState<string>('')
   const [notesModal, setNotesModal] = useState(false)
   const [notesSaving, setNotesSaving] = useState(false)
@@ -757,6 +793,28 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
       }
       setAgency({ ...agency, status: newStatus })
       setConfirm(null)
+
+      // Only the Pending -> Approved branch returns `email` (see
+      // status/route.ts) — Reject, Inactive and Reinstate don't send from
+      // here today, so this stays silent for those, same as before.
+      // Distinguishing skipped from failed matters more once the
+      // Registration templates are enabled: once they are, a skip means
+      // the Enabled flag got switched back off, which is exactly the
+      // thing worth catching immediately rather than after the fact.
+      const email = body?.email
+      if (email?.skipped === true) {
+        setStatusNote({
+          kind: 'warn',
+          text: `${agency.name} is now Approved, but no email went out — the "Agency Registration Approval" template is disabled in Airtable.`,
+        })
+      } else if (email?.skipped === false && email?.sent === false) {
+        setStatusNote({
+          kind: 'warn',
+          text: `${agency.name} is now Approved, but the approval email did not send: ${email.error ?? 'unknown error'}.`,
+        })
+      } else if (email?.skipped === false && email?.sent === true) {
+        setStatusNote({ kind: 'ok', text: 'Approval email sent.' })
+      }
     } catch {
       setStatusNote({ kind: 'error', text: 'Network error. Please try again.' })
     } finally { setStatusLoading(false) }
@@ -777,13 +835,24 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
       setAgency({ ...agency, status: 'Invited', invitedDate: new Date().toISOString() })
       setConfirm(null)
 
+      // Three-way, not skipped-vs-everything-else: `skipped === false &&
+      // sent === false` only covers an actual send failure. A DISABLED
+      // automation returns `{ skipped: true }` — that used to fall
+      // through to the `else` and show "Invite sent." even though
+      // nothing went out. Same mislabelling as handleStatusChange had,
+      // fixed the same way.
       const email = body?.email
-      if (email && email.skipped === false && email.sent === false) {
+      if (email?.skipped === true) {
+        setInviteNote({
+          kind: 'warn',
+          text: `${agency.name} is marked Invited, but no email went out — the "Agency Welcome to Portal - Claimed" template is disabled in Airtable.`,
+        })
+      } else if (email?.skipped === false && email?.sent === false) {
         setInviteNote({
           kind: 'warn',
           text: `${agency.name} is marked Invited, but the email did not send: ${email.error ?? 'unknown error'}. Use Resend Invite once that is fixed.`,
         })
-      } else {
+      } else if (email?.skipped === false && email?.sent === true) {
         setInviteNote({ kind: 'ok', text: 'Invite sent.' })
       }
     } catch {
@@ -1136,9 +1205,14 @@ export default function AgencyDetailPage({ params }: { params: Promise<{ id: str
           {statusNote && (
             <div style={{
               margin: '0 24px 16px', padding: '12px 16px', borderRadius: '8px', fontSize: '13px',
-              background: 'rgba(192,57,43,0.08)',
+              background: statusNote.kind === 'warn' ? 'rgba(201,168,76,0.12)' : statusNote.kind === 'ok' ? 'rgba(42,127,111,0.08)' : 'rgba(192,57,43,0.08)',
             }}>
-              <span style={{ fontWeight: 700, color: '#C0392B' }}>{statusNote.text}</span>
+              <span style={{
+                fontWeight: statusNote.kind === 'ok' ? 400 : 700,
+                color: statusNote.kind === 'warn' ? '#8A6D1F' : statusNote.kind === 'ok' ? '#2A7F6F' : '#C0392B',
+              }}>
+                {statusNote.text}
+              </span>
             </div>
           )}
         </div>
