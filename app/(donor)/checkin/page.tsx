@@ -26,8 +26,30 @@
 // not found (red — a genuine problem), offline (grey — a connectivity
 // state, not a data problem). "Offline" is never something the server
 // says; it's the fetch itself failing to reach it.
+//
+// The target experience this page serves: pick up the phone, it's
+// already on the scanner, point it at the QR code, the donor's name
+// fills the screen, tap Received, back to scanning. Nothing here should
+// need explaining to a volunteer who's never seen it — the navy header
+// (logo + wordmark, nothing else) and the one instruction line under the
+// heading are the whole onboarding. No Log Out, no nav, no account chip
+// — a kiosk; a volunteer tapping one strands the device until Ben
+// reprovisions it. SessionPill at the foot is a passive status light,
+// not a control.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import BrandMark from '@/components/donor/BrandMark'
+import SessionPill from '@/components/donor/SessionPill'
+
+// 2.5s, matching the old GoDaddy page's own timing — right for a
+// volunteer working through a queue, who shouldn't have to tap through
+// every result by hand. The "Next"/"Received" button still exists for
+// anyone who'd rather not wait; this is the fallback, not a replacement
+// for it. Applied uniformly across all four result states (success,
+// already-received, not-found, offline) rather than only the success
+// case — a volunteer with a queue doesn't want to get stuck on an error
+// screen any more than a success one; they'll just scan again.
+const AUTO_RETURN_MS = 2500
 
 type ScanResult =
   | { kind: 'success'; donorName: string }
@@ -120,6 +142,17 @@ export default function DonorCheckinPage() {
     refocus()
   }
 
+  // Auto-return — see AUTO_RETURN_MS above. Cleared on unmount and
+  // whenever `result` changes (a manual dismiss, or a fresh scan
+  // superseding the current one), so it can never fire against a result
+  // that's no longer on screen.
+  useEffect(() => {
+    if (!result) return
+    const id = window.setTimeout(dismiss, AUTO_RETURN_MS)
+    return () => window.clearTimeout(id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [result])
+
   // Keep the hidden input focused. Runs on mount and any time the page
   // regains focus/visibility (switching back from another app, screen
   // waking) — a kiosk left alone for a while should still be ready
@@ -196,48 +229,86 @@ export default function DonorCheckinPage() {
   return (
     <div style={{
       minHeight: '100dvh', width: '100%', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center', background: bg,
-      fontFamily: 'var(--font-montserrat), Arial, sans-serif', transition: 'background 0.15s',
-      padding: '24px', boxSizing: 'border-box',
+      fontFamily: 'var(--font-montserrat), Arial, sans-serif', boxSizing: 'border-box',
     }}>
-      {/* Hidden-but-real input — always mounted, always focused, catches the
-          HID scanner's typed-and-Enter string. Not visually hidden via
-          display:none (some input methods behave oddly on a display:none
-          field); moved off-screen instead, same technique as a form
-          honeypot but for the opposite reason — this one must always
-          receive real input. */}
-      <input
-        ref={inputRef}
-        onKeyDown={onKeyDown}
-        onBlur={refocus}
-        autoFocus
-        style={{ position: 'absolute', top: '-9999px', left: '-9999px', width: '1px', height: '1px' }}
-        aria-hidden="true"
-        tabIndex={-1}
-      />
+      {/* Navy header band — logo + wordmark, nothing else. No title, no
+          nav, no account chip: this screen has exactly one job and
+          nothing here should look tappable except the confirm button
+          three states down. Height and the teal bottom rule match
+          DawsonPageBar's own top-bar convention, the closest existing
+          "internal portal header" in this app — reused, not a new size. */}
+      <div style={{
+        minHeight: '64px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: NAVY, borderBottom: '4px solid #2A7F6F', flexShrink: 0,
+      }}>
+        <BrandMark />
+      </div>
 
-      {!result && (
-        <>
-          <div style={{ width: '100%', maxWidth: '420px', aspectRatio: '1', borderRadius: '16px', overflow: 'hidden', background: '#000', position: 'relative' }}>
-            <video ref={videoRef} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            <div style={{
-              position: 'absolute', inset: '10%', border: '3px solid rgba(255,255,255,0.85)', borderRadius: '16px', pointerEvents: 'none',
-            }} />
-          </div>
-          <div style={{ marginTop: '28px', fontSize: '22px', fontWeight: 700, color: NAVY, textAlign: 'center' }}>
-            {busy ? 'Checking…' : 'Scan a donor’s code'}
-          </div>
-          {cameraError && (
-            <div style={{ marginTop: '14px', fontSize: '16px', color: GREY, textAlign: 'center', maxWidth: '380px' }}>
-              {cameraError}
+      <div style={{
+        flex: 1, width: '100%', display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', background: bg,
+        transition: 'background 0.15s', padding: '24px', boxSizing: 'border-box',
+      }}>
+        {/* Hidden-but-real input — always mounted, always focused, catches the
+            HID scanner's typed-and-Enter string. Not visually hidden via
+            display:none (some input methods behave oddly on a display:none
+            field); moved off-screen instead, same technique as a form
+            honeypot but for the opposite reason — this one must always
+            receive real input. */}
+        <input
+          ref={inputRef}
+          onKeyDown={onKeyDown}
+          onBlur={refocus}
+          autoFocus
+          style={{ position: 'absolute', top: '-9999px', left: '-9999px', width: '1px', height: '1px' }}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+
+        {!result && (
+          <>
+            {/* A first-time volunteer sees what this screen is (the
+                heading) and what to do (the one instruction line) with
+                nothing else to read. "Point the camera" is deliberately
+                not "use your phone camera to scan" — the old GoDaddy page's
+                wording described handing off to the native Camera app,
+                which this page never does; scanning happens in-page. */}
+            <div style={{ fontSize: '20px', fontWeight: 800, color: NAVY, textAlign: 'center', marginBottom: '6px' }}>
+              Donor Check-In
             </div>
-          )}
-        </>
-      )}
+            <div style={{ fontSize: '15px', fontWeight: 600, color: GREY, textAlign: 'center', marginBottom: '20px' }}>
+              Point the camera at the donor’s QR code.
+            </div>
 
-      {result && (
-        <ResultScreen result={result} onDismiss={dismiss} />
-      )}
+            <div style={{ width: '100%', maxWidth: '420px', aspectRatio: '1', borderRadius: '16px', overflow: 'hidden', background: '#000', position: 'relative' }}>
+              <video ref={videoRef} muted playsInline style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <div style={{
+                position: 'absolute', inset: '10%', border: '3px solid rgba(255,255,255,0.85)', borderRadius: '16px', pointerEvents: 'none',
+              }} />
+            </div>
+            <div style={{ marginTop: '28px', fontSize: '22px', fontWeight: 700, color: NAVY, textAlign: 'center' }}>
+              {busy ? 'Checking…' : ' '}
+            </div>
+            {cameraError && (
+              <div style={{ marginTop: '14px', fontSize: '16px', color: GREY, textAlign: 'center', maxWidth: '380px' }}>
+                {cameraError}
+              </div>
+            )}
+          </>
+        )}
+
+        {result && (
+          <ResultScreen result={result} onDismiss={dismiss} />
+        )}
+      </div>
+
+      {/* Fixed navy, not the state color — the pill's own contrast (white
+          text/dot at low opacity) assumes a dark backdrop, and the idle
+          scanning state's background is white. Bookends the page with the
+          header rather than shifting with each result. */}
+      <div style={{ display: 'flex', justifyContent: 'center', padding: '14px', background: NAVY, flexShrink: 0 }}>
+        <SessionPill />
+      </div>
     </div>
   )
 }
@@ -245,11 +316,19 @@ export default function DonorCheckinPage() {
 function ResultScreen({ result, onDismiss }: { result: ScanResult; onDismiss: () => void }) {
   let heading: string
   let sub: string | null = null
+  // "Received" only for the state it actually describes — the write
+  // already happened server-side by the time this renders, but "tap
+  // Received" is the mental model a volunteer confirming a donation
+  // actually has. Every other state gets the generic "Next": nothing was
+  // received in an already-received/error/offline result, so the button
+  // shouldn't claim otherwise.
+  let buttonLabel = 'Next'
 
   switch (result.kind) {
     case 'success':
       heading = result.donorName || 'Checked in'
       sub = 'Checked in'
+      buttonLabel = 'Received'
       break
     case 'already-received':
       heading = result.donorName || 'Already checked in'
@@ -283,7 +362,7 @@ function ResultScreen({ result, onDismiss }: { result: ScanResult; onDismiss: ()
           fontSize: '24px', cursor: 'pointer',
         }}
       >
-        Next
+        {buttonLabel}
       </button>
     </div>
   )

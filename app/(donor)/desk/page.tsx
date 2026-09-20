@@ -28,6 +28,8 @@
 // for the whole feature, not a second one for this surface.
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import BrandMark from '@/components/donor/BrandMark'
+import SessionPill from '@/components/donor/SessionPill'
 
 const NAVY = '#1B2B4B'
 const TEAL = '#2A7F6F'
@@ -140,7 +142,27 @@ export default function DonorCheckinDeskPage() {
   }, [])
 
   return (
-    <div style={{ minHeight: '100vh', background: CREAM, fontFamily: 'var(--font-montserrat), Arial, sans-serif', padding: '32px', boxSizing: 'border-box' }}>
+    <div style={{ minHeight: '100vh', background: CREAM, fontFamily: 'var(--font-montserrat), Arial, sans-serif', boxSizing: 'border-box' }}>
+      {/* Same navy header treatment as the phone kiosk (logo + wordmark,
+          same DawsonPageBar-matching band/rule), but the desk has the
+          room the phone doesn't: a page label and the session pill sit
+          in the band itself rather than needing a separate footer strip.
+          Still nothing tappable here — same kiosk rule as the phone, any
+          volunteer operates this too, no per-person login to log out of. */}
+      <div style={{
+        minHeight: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        background: NAVY, borderBottom: '4px solid #2A7F6F', padding: '0 32px',
+      }}>
+        <BrandMark />
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          <span style={{ fontSize: '13px', fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.5)' }}>
+            Donor Check-In — Desk
+          </span>
+          <SessionPill />
+        </div>
+      </div>
+
+      <div style={{ padding: '32px', boxSizing: 'border-box' }}>
       <div style={{ display: 'grid', gridTemplateColumns: '1.2fr 1fr', gap: '32px', maxWidth: '1200px', margin: '0 auto' }}>
 
         {/* Search */}
@@ -224,6 +246,7 @@ export default function DonorCheckinDeskPage() {
             ))}
           </div>
         </div>
+      </div>
       </div>
     </div>
   )
