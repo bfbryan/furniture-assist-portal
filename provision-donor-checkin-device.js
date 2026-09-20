@@ -4,8 +4,16 @@
  * donor-checkin kiosk device (a phone, or the Chromebook).
  *
  * USAGE:
- *   node provision-donor-checkin-device.js "Phone 1"        # dry-run (safe)
- *   node provision-donor-checkin-device.js "Phone 1" --go   # mints for real
+ *   node provision-donor-checkin-device.js "Phone 1"                    # dry-run (safe)
+ *   node provision-donor-checkin-device.js "Phone 1" --go               # mints for real, production key required
+ *   node provision-donor-checkin-device.js "Phone 1" --go --allow-dev   # mints for real against a dev/test key, deliberately
+ *
+ *   Production key for a real --go: put it on the command itself, not in
+ *   .env.local (that would point every other local dev session at
+ *   production Clerk until someone noticed and reverted it):
+ *     CLERK_SECRET_KEY=sk_live_... node provision-donor-checkin-device.js "Phone 1" --go
+ *   Get the value with: vercel env pull --environment=production .env.production.local
+ *   (this repo is already linked — .vercel/repo.json has the project/org id).
  *
  * WHY THIS EXISTS: lib/auth/donor-checkin-access.ts gates both donor-
  * checkin surfaces on DONOR_CHECKIN_DEVICE_USER_IDS, a Clerk user id
@@ -57,7 +65,35 @@
  * tells you whether the name would reuse an existing device or create a
  * new one — nothing is actually created or minted until --go.
  *
- * REQUIRES: CLERK_SECRET_KEY in .env.local (already present).
+ * PRODUCTION GUARD: --go refuses to run unless CLERK_SECRET_KEY starts
+ * with sk_live_, unless --allow-dev is also passed. This exists because
+ * the printed sign-in URL always shows the production portal origin
+ * (portal.furnitureassist.com) no matter which Clerk instance actually
+ * backed the mint — a dev-instance token is visually indistinguishable
+ * from a production one in the script's own output. Without the guard,
+ * the only thing standing between a real device and a dev-instance token
+ * is remembering to override CLERK_SECRET_KEY before typing --go — and
+ * the failure wouldn't surface until the device hit the real site,
+ * likely after Ray had already set it up (a Chromebook kiosk may need a
+ * full wipe to redo at that point, not just a re-sign-in).
+ *
+ * The instance the script would use (or did use) is also always printed,
+ * dry-run included, so it's visible before --go is ever added, not just
+ * enforced after.
+ *
+ * Deliberately NOT solved by putting the instance in the printed URL
+ * itself instead of relying on this guard — a label embedded in the URL
+ * would be exactly as easy to get wrong as today's silence, just with a
+ * false sense of having checked something; Clerk's sign-in flow doesn't
+ * verify a label like that, so a URL claiming "production" would prove
+ * nothing about which instance actually issued the token. The guard, and
+ * the instance line printed next to the URL at the moment it's minted,
+ * are the trustworthy version of the same information — not a marker
+ * baked into a string that then travels unverified into a notes doc.
+ *
+ * REQUIRES: CLERK_SECRET_KEY — from .env.local for dry-run and dev
+ * testing; from a production key supplied inline (see USAGE above) for
+ * a real --go.
  *
  * DOES NOT touch .env.local or Vercel itself — those stay Ben's to edit;
  * this only prints what belongs in them.
@@ -77,11 +113,40 @@ if (!CLERK_SECRET_KEY) {
 const args = process.argv.slice(2)
 const deviceName = args.find(a => !a.startsWith('--'))
 const LIVE = args.includes('--go')
+const ALLOW_DEV = args.includes('--allow-dev')
 
 if (!deviceName) {
-  console.error('Usage: node provision-donor-checkin-device.js "<device name>" [--go]')
+  console.error('Usage: node provision-donor-checkin-device.js "<device name>" [--go] [--allow-dev]')
   console.error('  e.g. node provision-donor-checkin-device.js "Phone 1"')
   console.error('       node provision-donor-checkin-device.js "Chromebook" --go')
+  process.exit(1)
+}
+
+// Which Clerk instance CLERK_SECRET_KEY actually points at. Clerk's own
+// prefix convention: sk_live_ is production, sk_test_ is the dev/test
+// instance. See the header's PRODUCTION GUARD section for why this is
+// checked and printed rather than trusted silently.
+function clerkKeyInstance(key) {
+  if (key.startsWith('sk_live_')) return { label: 'production', production: true }
+  if (key.startsWith('sk_test_')) return { label: 'development/test', production: false }
+  return { label: 'unrecognized (neither sk_live_ nor sk_test_)', production: false }
+}
+const instance = clerkKeyInstance(CLERK_SECRET_KEY)
+console.log(`\nClerk instance: ${instance.label}  (key starts "${CLERK_SECRET_KEY.slice(0, 8)}...")`)
+
+if (LIVE && !instance.production && !ALLOW_DEV) {
+  console.error(`\n❌ Refusing --go against the ${instance.label} Clerk instance.`)
+  console.error('   The printed sign-in URL always shows the production portal origin')
+  console.error('   no matter which instance backed the mint, so a dev-instance token')
+  console.error('   looks identical to a production one in this script\'s own output —')
+  console.error('   this would only surface once the device hit the real site.')
+  console.error('')
+  console.error('   To mint for production, supply the production key for this one')
+  console.error('   command (not in .env.local, which every other local session reads):')
+  console.error(`     CLERK_SECRET_KEY=sk_live_... node provision-donor-checkin-device.js "${deviceName}" --go`)
+  console.error('   Get that value with: vercel env pull --environment=production .env.production.local')
+  console.error('')
+  console.error('   To deliberately test against the dev instance instead, add --allow-dev.')
   process.exit(1)
 }
 
@@ -166,6 +231,7 @@ async function main() {
   const rule = '-'.repeat(66)
   console.log(`\n${rule}`)
   console.log(`  DEVICE: ${deviceName}`)
+  console.log(`  CLERK INSTANCE: ${instance.label}`)
   console.log(rule)
   console.log(`Clerk user id for "${deviceName}" (add to DONOR_CHECKIN_DEVICE_USER_IDS):`)
   console.log(`  ${user.id}`)
@@ -173,6 +239,7 @@ async function main() {
   console.log(`Sign-in link for "${deviceName}" — open ONCE, in that device's own`)
   console.log(`browser, then leave it signed in. Do not open this anywhere else:`)
   console.log(`  ${signInUrl}`)
+  console.log(`  (minted against: ${instance.label})`)
   console.log(rule)
   console.log(`This link expires in 30 days if never opened. Once opened, "${deviceName}"'s`)
   console.log(`session lifetime is governed by Clerk's own dashboard settings, not`)
