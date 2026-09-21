@@ -90,7 +90,10 @@ const NAVY = '#1B2B4B'
 // 600) to unclamp the rail; col 3 dropping from 312 (it lost the Reject button)
 // funds most of that and leaves col2 at ~247px — comfortably over the longest
 // info line, "Requested: Flexible — no date given" (~215px).
-const ROW_GRID = '200px minmax(0, 1fr) 240px'
+//
+// The grid itself lives in globals.css now (.fa-na-row), not inline — it
+// needs a stack breakpoint (below 1279.98px: client, then info, then
+// actions at full width, one column) that an inline style can't carry.
 
 const SECTION_TITLE: React.CSSProperties = {
   fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: 800,
@@ -166,7 +169,7 @@ function CardSection({
       <div style={{ marginBottom: '4px' }}>
         <span style={{ ...SECTION_TITLE, color: a.heading }}>{title}</span>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: ROW_GRID, gap: '16px', padding: '6px 0' }}>
+      <div className="fa-na-row fa-na-row-headers" style={{ padding: '6px 0' }}>
         {columns.map((c, i) => <div key={i} style={COL_HEADER}>{c}</div>)}
       </div>
       {children}
@@ -176,10 +179,7 @@ function CardSection({
 
 function RowShell({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{
-      display: 'grid', gridTemplateColumns: ROW_GRID, gap: '16px', alignItems: 'start',
-      borderTop: '1px solid #F3F0EA', padding: '12px 0',
-    }}>
+    <div className="fa-na-row" style={{ alignItems: 'start', borderTop: '1px solid #F3F0EA', padding: '12px 0' }}>
       {children}
     </div>
   )
@@ -219,10 +219,15 @@ function NameCell({ href, name, sub, extra }: {
   )
 }
 
-const VAL: React.CSSProperties = {
-  fontSize: '12px', lineHeight: 1.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-}
-const SUBLINE: React.CSSProperties = { fontSize: '11px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }
+// Decision data — the "Currently:"/"Requested:"/"Appointment:" dates and
+// times these hold are exactly what a card's Accept turns on, and this used
+// to truncate them on a narrow window ("Currently: Sep 19, …" with the time
+// hidden). Wraps now instead: no whiteSpace:nowrap, no ellipsis, on any of
+// these three. Same principle NameCell's own `sub` line already applies to
+// an agency name — extended here to the actual decision values, which is
+// the part that was still cutting off.
+const VAL: React.CSSProperties = { fontSize: '12px', lineHeight: 1.5, overflowWrap: 'anywhere' }
+const SUBLINE: React.CSSProperties = { fontSize: '11px', lineHeight: 1.4, overflowWrap: 'anywhere' }
 const AGE: React.CSSProperties = { ...SUBLINE, fontStyle: 'italic', color: '#9AA6B2', marginTop: '2px' }
 
 // Col 3 — one horizontal line, flush to the column's right edge: secondary
@@ -233,7 +238,7 @@ const AGE: React.CSSProperties = { ...SUBLINE, fontStyle: 'italic', color: '#9AA
 // col 3 is sized to the widest line.
 function Actions({ children }: { children: React.ReactNode }) {
   return (
-    <div style={{ display: 'flex', flexWrap: 'nowrap', gap: '8px', alignItems: 'center', justifyContent: 'flex-end' }}>
+    <div className="fa-na-actions">
       {children}
     </div>
   )
@@ -484,7 +489,7 @@ function AgencyRow({ a, todayISO }: { a: Agency; todayISO: string }) {
 
       <div style={{ minWidth: 0 }}>
         {contactLine && (
-          <div style={{ ...VAL, color: NAVY }} title={contactLine}>{contactLine}</div>
+          <div style={{ ...VAL, color: NAVY }}>{contactLine}</div>
         )}
 
         {webHref ? (
@@ -737,6 +742,21 @@ export default function NeedsActionPage() {
     }
   }, [reschedules, newReferrals, awaiting, agencies])
 
+  // The latest Saturday any pending request on THIS page asks for — a
+  // reschedule's preferredDate, or a new referral's, both real requests to
+  // hold a specific Saturday. Awaiting Outcome references a PAST
+  // appointment, not a request, and an agency application has no date at
+  // all; neither counts. Feeds the rail's minDate below so a request
+  // further out than the usual window still lands on the grid it's judged
+  // against, instead of the grid silently ending before it.
+  const latestRequestedDate = useMemo(() => {
+    const dates = [
+      ...sorted.reschedules.map((r) => r.preferredDate),
+      ...sorted.newReferrals.map((r) => r.preferredDate),
+    ].filter((d): d is string => !!d)
+    return dates.length === 0 ? null : dates.reduce((max, d) => (d > max ? d : max))
+  }, [sorted.reschedules, sorted.newReferrals])
+
   const flagged = getFlaggedDuplicates()
   const total =
     sorted.reschedules.length + sorted.newReferrals.length +
@@ -841,9 +861,17 @@ export default function NeedsActionPage() {
               fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '12px',
               letterSpacing: '0.06em', textTransform: 'uppercase', color: GREY, marginBottom: '10px',
             }}>
-              Next 4 Saturdays
+              {/* No fixed count in the label any more — minDate can push the
+                  grid past the 6-week floor, and a label promising "6" while
+                  8 render would be its own small lie. */}
+              Upcoming Saturdays
             </div>
-            <SaturdayCapacityGrid mode="readonly" weeks={4} refreshToken={gridRefresh} />
+            <SaturdayCapacityGrid
+              mode="readonly"
+              weeks={6}
+              minDate={latestRequestedDate}
+              refreshToken={gridRefresh}
+            />
           </div>
         </div>
       </div>

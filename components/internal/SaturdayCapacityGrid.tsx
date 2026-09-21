@@ -40,8 +40,18 @@ type Props = {
   value?: SlotSelection | null
   onChange?: (sel: SlotSelection) => void
 
-  /** How many BOOKABLE (non-blackout, on/after lead) Saturdays to show. */
+  /** How many BOOKABLE (non-blackout, on/after lead) Saturdays to show — a
+   *  floor, not a fixed count, when `minDate` is also given (see it). */
   weeks?: number
+  /**
+   * 'YYYY-MM-DD' — if a pending request asks for a date further out than
+   * `weeks` alone would reach, the grid keeps going past `weeks` until it
+   * covers this date too. The fetch window extends the same way, so the
+   * extra rows carry real booking data rather than rendering empty — see
+   * the windowEnd comment below. Omit when nothing needs to reach past the
+   * usual window.
+   */
+  minDate?: string | null
   /** Earliest selectable date = today + leadDays. Select sites pass 1. */
   leadDays?: number
   /** Window start, 'YYYY-MM-DD'. Defaults to today. */
@@ -203,6 +213,7 @@ export default function SaturdayCapacityGrid({
   weeks = 4,
   leadDays = 0,
   fromDate,
+  minDate,
   excludeReferralId,
   enforceCap = false,
   showSoft = true,
@@ -223,7 +234,13 @@ export default function SaturdayCapacityGrid({
   // reaches the agency grid; Blackouts beyond it still render struck.
   const windowStart = fromDate ?? (binary ? firstBookable : today)
   // Over-fetch by four weeks so interleaved blackouts can't starve the window.
-  const windowEnd = addDaysISO(windowStart, (weeks + 4) * 7)
+  const weeksWindowEnd = addDaysISO(windowStart, (weeks + 4) * 7)
+  // When minDate reaches past the usual window, extend the fetch to cover
+  // it too — same four-week blackout buffer, anchored past minDate instead
+  // of past `weeks`. Without this, selectBookableWindow's walk could reach
+  // minDate but find no fetched rows past it to actually show.
+  const windowEnd =
+    minDate && minDate > weeksWindowEnd ? addDaysISO(minDate, 28) : weeksWindowEnd
 
   const [data, setData] = useState<SaturdayGridResponse | null>(
     initialData
@@ -270,8 +287,9 @@ export default function SaturdayCapacityGrid({
       weeks,
       fromISO: windowStart,
       firstBookableISO: firstBookable,
+      minDate,
     })
-  }, [data, weeks, windowStart, firstBookable])
+  }, [data, weeks, windowStart, firstBookable, minDate])
 
   // Over-cap warning: a selected cell that is at/over its cap while the cap is
   // soft (Dawson). enforceCap makes such a cell unselectable, so it can't arise
