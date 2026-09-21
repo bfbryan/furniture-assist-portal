@@ -35,6 +35,7 @@ import {
 import { getNoShowPending, markNoShowEmailSent } from "@/lib/notifications/no-show-notice";
 import { PORTAL_ORIGIN } from "@/lib/auth/portal-sign-in-link";
 import { withinNoShowRescheduleWindow } from "@/lib/referrals/no-show-window";
+import { buildAgencyMailtoFallback } from "@/lib/notifications/agency-mailto-fallback";
 
 // Aug 2026: same fix as the other two cron routes -- without this, Next.js
 // can serve a cached response for this GET route instead of invoking the
@@ -55,12 +56,10 @@ const REPLY_TO_ADDRESS =
   process.env.REMINDER_REPLY_TO_ADDRESS || "agencies@furnitureassist.com";
 
 // Hybrid-rollout fallback for a no-show recipient without portal access —
-// same literal/reasoning as appointment-reminders/route.ts and
-// appointment-slip-notice/route.ts: a literal, not REPLY_TO_ADDRESS (an
-// env var could otherwise make the sentence in the email disagree with
-// itself). Remove alongside getPortalReadyEmails() once every agency is on
-// the portal.
-const CHANGE_FALLBACK_URL = "mailto:agencies@furnitureassist.com";
+// the "missed" purpose of buildAgencyMailtoFallback
+// (lib/notifications/agency-mailto-fallback.ts), a prefilled subject/body,
+// not the bare mailbox literal the reminder and confirmation crons used to
+// carry too.
 // This email's OWN label strings, not the reminder's cancel-or-reschedule
 // phrase — a missed appointment can't be cancelled, and the button text
 // has to read correctly on its own. Per the Client No Show template's own
@@ -355,7 +354,13 @@ async function runClientNoShow(req: NextRequest, day: string, hour: string) {
     const recipientsReady =
       toList.length > 0 &&
       toList.every((addr) => portalReadyEmails.has(String(addr).trim().toLowerCase()));
-    const changeUrl = recipientsReady ? `${PORTAL_ORIGIN}/referrals/${record.id}` : CHANGE_FALLBACK_URL;
+    const changeUrl = recipientsReady
+      ? `${PORTAL_ORIGIN}/referrals/${record.id}`
+      : buildAgencyMailtoFallback("missed", {
+          clientFirstName: toTokenValue(f["First Name"]),
+          clientLastName: toTokenValue(f["Last Name"]),
+          apptDateStr,
+        });
     const changeLabel = recipientsReady ? NO_SHOW_CHANGE_LABEL_PORTAL : NO_SHOW_CHANGE_LABEL_FALLBACK;
 
     try {

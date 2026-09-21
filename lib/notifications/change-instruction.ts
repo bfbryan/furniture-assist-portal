@@ -19,10 +19,16 @@
 
 import { PORTAL_ORIGIN } from '@/lib/auth/portal-sign-in-link'
 import { getAgencyUserByEmail } from '@/lib/airtable/agency-users'
+import {
+  buildAgencyMailtoFallback,
+  type AgencyMailtoInfo,
+  type AgencyMailtoPurpose,
+} from '@/lib/notifications/agency-mailto-fallback'
 
-// Same literals as app/api/cron/appointment-reminders/route.ts and
+// Same fallback label as app/api/cron/appointment-reminders/route.ts and
 // appointment-slip-notice/route.ts, so all four emails read identically.
-const CHANGE_FALLBACK_URL = 'mailto:agencies@furnitureassist.com'
+// The URL itself is no longer a bare literal — see
+// lib/notifications/agency-mailto-fallback.ts.
 const CHANGE_FALLBACK_LABEL = 'email agencies@furnitureassist.com'
 const PORTAL_CHANGE_LABEL = 'cancel or reschedule it in the Agency Portal'
 
@@ -43,15 +49,26 @@ export type ChangeInstruction = {
  * `logContext` is the caller's name, used in the console.error on a failed or
  * empty lookup. A lookup that throws or finds no user falls back to the mailto
  * variant — it must never stop the notice from sending.
+ *
+ * `mailtoPurpose`/`mailtoInfo` are the fallback mailto's own shape and the
+ * client/appointment detail it prefills — see
+ * lib/notifications/agency-mailto-fallback.ts. Neither current caller
+ * passes 'missed' — that's the no-show send's own direct call to
+ * buildAgencyMailtoFallback, not through this function — but this doesn't
+ * hardcode either of the other two, since reschedule-notice.ts
+ * ('upcoming': the new appointment) and cancellation-notice.ts
+ * ('cancelled': the one that just ended) genuinely differ.
  */
 export async function resolveChangeInstruction(
   recipientEmail: string,
   referralRecordId: string,
   logContext: string,
+  mailtoPurpose: AgencyMailtoPurpose,
+  mailtoInfo: AgencyMailtoInfo,
 ): Promise<ChangeInstruction> {
   const mailto: ChangeInstruction = {
     variant: 'mailto',
-    changeUrl: CHANGE_FALLBACK_URL,
+    changeUrl: buildAgencyMailtoFallback(mailtoPurpose, mailtoInfo),
     changeLabel: CHANGE_FALLBACK_LABEL,
   }
 

@@ -236,11 +236,22 @@ export async function sendRescheduleNotice(
     const subject = automation.fields["Subject Line"] || "Appointment Rescheduled";
 
     // Hybrid rollout: portal deep link if this recipient is Active + Claimed,
-    // else the shared mailbox. Single targeted lookup — this is event-fired to
-    // one recipient, not a batch. Never throws; a failed lookup returns the
-    // mailto variant. The Airtable template hard-codes the <a> around these two
-    // tokens; until it does, fillTemplate ignores them and this is a no-op.
-    const change = await resolveChangeInstruction(toList[0], recordId, "Reschedule Notice");
+    // else the shared mailbox with a prefilled subject/body — see
+    // lib/notifications/agency-mailto-fallback.ts. Single targeted lookup —
+    // this is event-fired to one recipient, not a batch. Never throws; a
+    // failed lookup returns the mailto variant. The Airtable template
+    // hard-codes the <a> around these two tokens; until it does, fillTemplate
+    // ignores them and this is a no-op.
+    //
+    // The NEW appointment (newApptDateStr / Appointment Time), not the
+    // previous one — this is the appointment that might still need to
+    // change further.
+    const change = await resolveChangeInstruction(toList[0], recordId, "Reschedule Notice", "upcoming", {
+      clientFirstName: f["First Name"],
+      clientLastName: f["Last Name"],
+      apptDateStr: newApptDateStr,
+      apptTime: f["Appointment Time"],
+    });
 
     const html = fillTemplate(template, {
       ReferringStaff: toTokenValue(f["Referring Staff"]),
