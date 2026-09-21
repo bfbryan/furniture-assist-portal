@@ -49,22 +49,26 @@ export type SaturdayGridResponse = {
 }
 
 /**
- * The "four bookable Saturdays" walk.
+ * The "N bookable Saturdays" walk — `weeks` is a FLOOR, not a fixed count,
+ * when `minDate` is given.
  *
  * Rows ascending by date from `fromISO` (the window start, normally today).
  * A row counts toward the target only when it is BOOKABLE — not a blackout,
  * and on or after `firstBookableISO` (today + leadDays). Non-bookable rows in
  * the span are still shown: a blackout struck through, a pre-lead Saturday
- * greyed. Collecting stops once `weeks` bookable rows have been taken, so
- * trailing blackouts after the last bookable one are dropped and a closure
- * never costs a bookable week.
+ * greyed. Collecting stops once BOTH `weeks` bookable rows have been taken
+ * AND the last of them is on or after `minDate` (when given) — so a pending
+ * request further out than the usual window still lands inside it. Without
+ * `minDate` this is exactly the old "stop at `weeks`" behaviour.
  *
  * `bookableShown < weeks` on return means the schedule table ran out before
- * the window filled — the caller shows a "published through {date}" note.
+ * even the floor filled — the caller shows a "published through {date}"
+ * note. Reaching `minDate` runs bookableShown past `weeks`; that's expected,
+ * not a sign anything ran short.
  */
 export function selectBookableWindow(
   rows: SaturdayGridRow[],
-  opts: { weeks: number; fromISO: string; firstBookableISO: string },
+  opts: { weeks: number; fromISO: string; firstBookableISO: string; minDate?: string | null },
 ): { visible: SaturdayGridRow[]; bookableShown: number } {
   const sorted = rows
     .filter(r => r.date >= opts.fromISO)
@@ -72,10 +76,17 @@ export function selectBookableWindow(
 
   const visible: SaturdayGridRow[] = []
   let bookableShown = 0
+  let lastBookableDate: string | null = null
   for (const row of sorted) {
     const bookable = row.status !== 'Blackout' && row.date >= opts.firstBookableISO
     visible.push(row)
-    if (bookable && ++bookableShown === opts.weeks) break
+    if (bookable) {
+      bookableShown++
+      lastBookableDate = row.date
+      const metFloor = bookableShown >= opts.weeks
+      const metMinDate = !opts.minDate || lastBookableDate >= opts.minDate
+      if (metFloor && metMinDate) break
+    }
   }
   return { visible, bookableShown }
 }

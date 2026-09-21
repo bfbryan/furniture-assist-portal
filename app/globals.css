@@ -588,6 +588,59 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
+/* Needs Action card rows — client | info | actions, the row shape shared by
+   CardSection's own header row and every RowShell. Same three-column idea
+   as .fa-active-row above, but nothing here needs that one's nth-child
+   reordering: all three children already sit in the order the stacked
+   layout wants (client, then the decision info, then actions), so a plain
+   single column is enough.
+
+   Stacks at 1699.98px, NOT the 1279.98 .fa-active-row/.fa-team-row already
+   use — checked live in a browser (Playwright, real gridTemplateColumns
+   measurements) before picking this, because 1279.98 alone leaves a real
+   gap: .fa-needs-action-grid (above) puts the 600px rail beside the cards
+   starting at exactly 1440px, and from 1440px up to roughly 1650px the
+   card column is narrower than it is even at 1280px, where the rail has
+   already dropped below and cards get the full row's width. Measured at
+   1440px specifically: the middle (info) column collapsed to 4px — the
+   original bug, but reproducible at a WIDER viewport than the sidebar
+   breakpoint alone would suggest, not just below it. 1699.98 is where the
+   middle column clears ~260px with the rail still beside it — comfortable
+   again. Below it the info column (dates/times — see the VAL comment in
+   needs-action/page.tsx) had nowhere near enough room at 200px client +
+   240px actions either side of it; squeezing three columns is what cut the
+   time off "Currently: Sep 19, …" on Dawson's own laptop. */
+.fa-na-row {
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr) 240px;
+  gap: 16px;
+}
+.fa-na-actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+@media (max-width: 1699.98px) {
+  .fa-na-row {
+    grid-template-columns: 1fr;
+    row-gap: 10px;
+  }
+  /* Column headers ("Client" / "Currently / Requested" / "") describe
+     columns that no longer exist once the row stacks — same reasoning
+     .fa-active-row--head is hidden at its own breakpoint. Each stacked
+     block already carries its own "Currently:"/"Requested:" prefix in the
+     text itself, so nothing here goes unlabeled. */
+  .fa-na-row-headers {
+    display: none;
+  }
+  .fa-na-actions {
+    width: 100%;
+  }
+}
+
 /* ==========================================================================
    Below 1280px — stack
    ========================================================================== */
