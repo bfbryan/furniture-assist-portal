@@ -43,7 +43,14 @@
 //   3. Links the new Saturday Schedule row, writes the time, and sets
 //      Appointment Status = 'Scheduled'.
 //   4. Re-arms the Monday reminder by clearing 'Reminder Email Sent'.
-//   5. Fires the Reschedule Notice — regenerates the slip PDF for the new
+//   5. Resets post-appointment state: 'Ready for Post-Appt Email', 'Post
+//      Appt Email Sent' (+ At), 'No Show Email Sent At' — whatever the
+//      previous appointment's outcome was, it cannot carry into this one.
+//      Always applied, not just on a genuine move: a first-time booking has
+//      nothing to reset, but a Pending Schedule/Reschedule referral that
+//      somehow already carries one of these (a corrected record, a manual
+//      Airtable edit) shouldn't either.
+//   6. Fires the Reschedule Notice — regenerates the slip PDF for the new
 //      date and emails the referring agency — but only when step 1 actually
 //      snapshotted something, i.e. this is a genuine move rather than a
 //      first-time scheduling.
@@ -368,6 +375,24 @@ export async function rescheduleReferral({
     // this a referral that was already reminded never re-enters the view.
     'Reminder Email Sent': false,
     'Reminder Sent At': null,
+    // Post-appointment state reset. A reschedule makes this effectively a
+    // new referral, so whatever the LAST appointment's outcome was — sent,
+    // unsent, ticked, not yet reviewed — cannot carry forward: a
+    // rescheduled referral that misses its new appointment must be able to
+    // get a second no-show email, and one that completes must be able to
+    // get its receipt. This is the one place all four booking paths
+    // (Needs Action Accept/Pick another, Approve, the Dawson Add Referral
+    // reschedule branch, and the OCR scan pipeline) already go through, so
+    // it covers every one of them by construction — see this file's own
+    // header for the full list.
+    //
+    // Client Receipt and Client No Show keep separate markers on purpose
+    // (see lib/notifications/no-show-notice.ts's header) — both get reset
+    // here regardless of which one the referral's last cycle actually used.
+    'Ready for Post-Appt Email': false,
+    'Post Appt Email Sent': false,
+    'Post Appt Email Sent At': null,
+    'No Show Email Sent At': null,
   }
 
   if (shouldSnapshot) {
