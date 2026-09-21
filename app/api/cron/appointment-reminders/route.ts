@@ -19,6 +19,7 @@ import {
 } from "@/lib/airtable/reminders";
 import { fillTemplate, formatApptDate, toTokenValue } from "@/lib/notifications/template";
 import { PORTAL_ORIGIN } from "@/lib/auth/portal-sign-in-link";
+import { buildAgencyMailtoFallback } from "@/lib/notifications/agency-mailto-fallback";
 
 // Aug 2026: without this, Next.js can serve a cached response for this GET
 // route instead of actually invoking the function on every cron call --
@@ -38,11 +39,12 @@ const REPLY_TO_ADDRESS =
   process.env.REMINDER_REPLY_TO_ADDRESS || "agencies@furnitureassist.com";
 
 // Hybrid-rollout fallback for recipients without portal access: the last
-// checklist item points them at the shared mailbox instead of a portal link.
-// Kept as a literal (not REPLY_TO_ADDRESS, which an env var can override) so
-// the sentence in the email is deterministic. Remove alongside
-// getPortalReadyEmails() once every agency is on the portal.
-const CHANGE_FALLBACK_URL = "mailto:agencies@furnitureassist.com";
+// checklist item points them at the shared mailbox instead of a portal
+// link, with a prefilled subject/body — see
+// lib/notifications/agency-mailto-fallback.ts. The label stays a literal
+// (not REPLY_TO_ADDRESS, which an env var can override) so the sentence in
+// the email is deterministic. Remove alongside getPortalReadyEmails() once
+// every agency is on the portal.
 const CHANGE_FALLBACK_LABEL = "email agencies@furnitureassist.com";
 
 // Created on first use rather than at import. The Resend constructor throws
@@ -180,16 +182,23 @@ export async function GET(req: NextRequest) {
         portalReadyEmails.has(String(addr).trim().toLowerCase())
       );
     const variant: "portal" | "mailto" = recipientsReady ? "portal" : "mailto";
+
+    // "Appointment Date" is also a lookup field, so it comes back as an array.
+    // Computed before changeUrl now — the mailto fallback's body needs it.
+    const rawApptDate = f["Appointment Date"];
+    const apptDateStr = Array.isArray(rawApptDate) ? rawApptDate[0] : rawApptDate;
+
     const changeUrl = recipientsReady
       ? `${PORTAL_ORIGIN}/referrals/${record.id}`
-      : CHANGE_FALLBACK_URL;
+      : buildAgencyMailtoFallback("upcoming", {
+          clientFirstName: f["First Name"],
+          clientLastName: f["Last Name"],
+          apptDateStr,
+          apptTime: f["Appointment Time"],
+        });
     const changeLabel = recipientsReady
       ? "cancel or reschedule it in the Agency Portal"
       : CHANGE_FALLBACK_LABEL;
-
-    // "Appointment Date" is also a lookup field, so it comes back as an array.
-    const rawApptDate = f["Appointment Date"];
-    const apptDateStr = Array.isArray(rawApptDate) ? rawApptDate[0] : rawApptDate;
 
     const html = fillTemplate(template, {
       ReferringStaff: toTokenValue(f["Referring Staff"]),

@@ -19,10 +19,12 @@
 
 import { PORTAL_ORIGIN } from '@/lib/auth/portal-sign-in-link'
 import { getAgencyUserByEmail } from '@/lib/airtable/agency-users'
+import { buildAgencyMailtoFallback, type AgencyMailtoInfo } from '@/lib/notifications/agency-mailto-fallback'
 
-// Same literals as app/api/cron/appointment-reminders/route.ts and
+// Same fallback label as app/api/cron/appointment-reminders/route.ts and
 // appointment-slip-notice/route.ts, so all four emails read identically.
-const CHANGE_FALLBACK_URL = 'mailto:agencies@furnitureassist.com'
+// The URL itself is no longer a bare literal — see
+// lib/notifications/agency-mailto-fallback.ts.
 const CHANGE_FALLBACK_LABEL = 'email agencies@furnitureassist.com'
 const PORTAL_CHANGE_LABEL = 'cancel or reschedule it in the Agency Portal'
 
@@ -43,15 +45,23 @@ export type ChangeInstruction = {
  * `logContext` is the caller's name, used in the console.error on a failed or
  * empty lookup. A lookup that throws or finds no user falls back to the mailto
  * variant — it must never stop the notice from sending.
+ *
+ * `mailtoInfo` is the client/appointment detail the fallback mailto's body
+ * prefills — see lib/notifications/agency-mailto-fallback.ts. Both current
+ * callers (reschedule-notice.ts, cancellation-notice.ts) are about an
+ * appointment that exists or just did, never a no-show, so this always
+ * builds the 'upcoming' variant — 'missed' is the no-show send's own
+ * direct call to buildAgencyMailtoFallback, not through this function.
  */
 export async function resolveChangeInstruction(
   recipientEmail: string,
   referralRecordId: string,
   logContext: string,
+  mailtoInfo: AgencyMailtoInfo,
 ): Promise<ChangeInstruction> {
   const mailto: ChangeInstruction = {
     variant: 'mailto',
-    changeUrl: CHANGE_FALLBACK_URL,
+    changeUrl: buildAgencyMailtoFallback('upcoming', mailtoInfo),
     changeLabel: CHANGE_FALLBACK_LABEL,
   }
 

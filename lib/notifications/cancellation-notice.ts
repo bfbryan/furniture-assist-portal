@@ -127,11 +127,26 @@ export async function sendCancellationNotice(
       automation.fields["Subject Line"] || "Appointment Cancellation Confirmed";
 
     // Hybrid rollout: portal deep link if this recipient is Active + Claimed,
-    // else the shared mailbox. Single targeted lookup — this is event-fired to
-    // one recipient, not a batch. Never throws; a failed lookup returns the
-    // mailto variant. The Airtable template hard-codes the <a> around these two
-    // tokens; until it does, fillTemplate ignores them and this is a no-op.
-    const change = await resolveChangeInstruction(toList[0], recordId, "Cancellation Notice");
+    // else the shared mailbox with a prefilled subject/body — see
+    // lib/notifications/agency-mailto-fallback.ts. Single targeted lookup —
+    // this is event-fired to one recipient, not a batch. Never throws; a
+    // failed lookup returns the mailto variant. The Airtable template
+    // hard-codes the <a> around these two tokens; until it does, fillTemplate
+    // ignores them and this is a no-op.
+    //
+    // originalApptDate/Time — the only appointment detail there is by this
+    // point (the cancel route already cleared Saturday Schedule/Appointment
+    // Time on the record itself). The mailto body's own "Change needed
+    // (cancel or new date)" phrasing was written for an appointment that
+    // still exists; here it's describing one that no longer does. Flagged
+    // in the PR rather than decided unilaterally — a third body variant
+    // just for cancellations wasn't asked for.
+    const change = await resolveChangeInstruction(toList[0], recordId, "Cancellation Notice", {
+      clientFirstName: f["First Name"],
+      clientLastName: f["Last Name"],
+      apptDateStr: originalApptDate,
+      apptTime: originalApptTime,
+    });
 
     const html = fillTemplate(template, {
       ReferringStaff: toTokenValue(f["Referring Staff"]),
