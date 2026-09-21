@@ -1,0 +1,286 @@
+'use client'
+
+// app/(donor-public)/donor-drop-off-test/page.tsx — the URL is
+// /donor-drop-off-test, not /donor-public/donor-drop-off-test; (donor-public)
+// is a route group and doesn't appear in the path. Lives in this group
+// rather than (donor) specifically because it must stay public —
+// (donor)'s own layout.tsx gates on Clerk device-auth, which would make
+// this unusable as a stand-in for what an anonymous donor's browser
+// actually does. See (donor-public)/layout.tsx's own header.
+//
+// A TEST HARNESS for POST /api/donations/drop-off — not the real form.
+// The real form lives on WordPress (furnitureassist.com/drop-off-form/)
+// and won't post here until Ben switches it over. This page exists so
+// the route can be exercised end to end, through a browser, against the
+// LIVE donor base, before that switch happens.
+//
+// This is deliberate: a submission through this page writes a real
+// Pending In Kind Donations record, which means the real automations
+// fire — the match-or-create against Donors, the Zip/county lookup, and
+// the QR code + confirmation email send to whatever address is entered.
+// That's the point (see the PR description) — a route that only "looks"
+// right in isolation isn't verified; a route whose write triggers the
+// exact same downstream behaviour as a Zap-written row is. Submit with
+// an address you control, not a placeholder.
+//
+// Not linked from anywhere in the app's own navigation. Reachable only
+// by URL, and allowlisted as public in proxy.ts the same way
+// /api/donations/drop-off itself is — no Clerk session gates either one.
+//
+// NOT the same thing as the real replacement page. That's a separate,
+// self-contained HTML/CSS/JS file (see the PR description) built to
+// match the real pickup form's visual language, for Ben to paste
+// directly into WordPress — it never runs through this Next.js app at
+// all. This page exists purely so the ROUTE can be exercised from a
+// browser against the live table without needing WordPress access.
+//
+// The one thing this page is actually testing, beyond the write itself:
+// the success screen only ever shows after the route returns 2xx. The
+// bug this migration fixes is the old JotForm/Zapier path showing
+// success unconditionally, whether or not the Zap run actually
+// succeeded — so a failed submission here has to visibly fail, not
+// silently render the same "thank you" a real success would.
+
+import { useState } from 'react'
+import { DROP_OFF_CATALOG } from '@/lib/donors/drop-off-catalog'
+import { FIELD_BORDER_STYLE } from '@/lib/ui/field-border'
+
+const NAVY = '#1B2B4B'
+const TEAL = '#2A7F6F'
+const RED = '#C0392B'
+const GREY = '#7A8899'
+const CREAM = '#F7F5F1'
+
+type Quantities = Record<string, number>
+
+type Result =
+  | { kind: 'idle' }
+  | { kind: 'submitting' }
+  | { kind: 'success'; id: string }
+  | { kind: 'error'; message: string }
+
+export default function DropOffTestPage() {
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [email, setEmail] = useState('')
+  const [cellNumber, setCellNumber] = useState('')
+  const [streetAddress, setStreetAddress] = useState('')
+  const [streetAddress2, setStreetAddress2] = useState('')
+  const [city, setCity] = useState('')
+  const [state, setState] = useState('')
+  const [zip, setZip] = useState('')
+  const [formDate, setFormDate] = useState('')
+  const [notes, setNotes] = useState('')
+  const [quantities, setQuantities] = useState<Quantities>({})
+  const [checkTax, setCheckTax] = useState(false)
+  const [hp, setHp] = useState('') // honeypot — a real visitor never sees or fills this
+  const [result, setResult] = useState<Result>({ kind: 'idle' })
+
+  function setQty(key: string, value: string) {
+    const n = Number(value)
+    setQuantities(prev => {
+      const next = { ...prev }
+      if (n > 0) next[key] = n
+      else delete next[key]
+      return next
+    })
+  }
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    if (!checkTax) {
+      setResult({ kind: 'error', message: 'Please acknowledge the tax valuation notice before submitting.' })
+      return
+    }
+    setResult({ kind: 'submitting' })
+    try {
+      // Flat, snake_case, qty_* item keys spread directly onto the body —
+      // exactly the real form's own field names, matching the route's
+      // actual contract. No client-side remapping.
+      const res = await fetch('/api/donations/drop-off', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          first_name: firstName,
+          last_name: lastName,
+          email,
+          cell_number: cellNumber,
+          address_street: streetAddress,
+          address_street2: streetAddress2,
+          address_city: city,
+          address_state: state,
+          address_zip: zip,
+          donation_date: formDate,
+          item_notes: notes,
+          check_tax: checkTax,
+          hp,
+          ...quantities,
+        }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (res.ok && data.ok) {
+        setResult({ kind: 'success', id: data.id })
+      } else {
+        setResult({ kind: 'error', message: data.error || `Request failed (${res.status}).` })
+      }
+    } catch {
+      setResult({ kind: 'error', message: 'Could not reach the server. Check your connection and try again.' })
+    }
+  }
+
+  if (result.kind === 'success') {
+    return (
+      <Banner bg={TEAL}>
+        <div style={{ fontSize: '28px', fontWeight: 800, color: 'white' }}>Donation recorded</div>
+        <div style={{ marginTop: '10px', fontSize: '16px', color: 'rgba(255,255,255,0.85)' }}>
+          Record id: {result.id}
+        </div>
+        <div style={{ marginTop: '24px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+          This is a test harness — this record is real and live in the donor base.
+        </div>
+        <button onClick={() => location.reload()} style={buttonStyle(CREAM, NAVY)}>Submit another</button>
+      </Banner>
+    )
+  }
+
+  if (result.kind === 'error') {
+    return (
+      <Banner bg={RED}>
+        <div style={{ fontSize: '26px', fontWeight: 800, color: 'white' }}>Submission failed</div>
+        <div style={{ marginTop: '10px', fontSize: '16px', color: 'rgba(255,255,255,0.9)' }}>{result.message}</div>
+        <div style={{ marginTop: '24px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
+          Nothing was written — a failed request here never shows success.
+        </div>
+        <button onClick={() => setResult({ kind: 'idle' })} style={buttonStyle(CREAM, NAVY)}>Back to form</button>
+      </Banner>
+    )
+  }
+
+  return (
+    <div style={{ minHeight: '100vh', background: CREAM, fontFamily: 'var(--font-montserrat), Arial, sans-serif' }}>
+      <div style={{ background: NAVY, borderBottom: `4px solid ${TEAL}`, padding: '20px 24px' }}>
+        <div style={{ color: 'white', fontWeight: 800, fontSize: '18px' }}>Drop-Off Intake — Test Harness</div>
+        <div style={{ color: 'rgba(255,255,255,0.65)', fontSize: '13px', marginTop: '4px' }}>
+          Not the real form. Writes live to the donor base — real QR email, possible new Donor row, six-week clock start.
+        </div>
+      </div>
+
+      <form onSubmit={onSubmit} style={{ maxWidth: '760px', margin: '0 auto', padding: '32px 24px' }}>
+        <Section title="Donor">
+          <Field label="First name *"><input required value={firstName} onChange={e => setFirstName(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Last name *"><input required value={lastName} onChange={e => setLastName(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Email *"><input required type="email" value={email} onChange={e => setEmail(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Cell number"><input value={cellNumber} onChange={e => setCellNumber(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Street address"><input value={streetAddress} onChange={e => setStreetAddress(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Street address 2"><input value={streetAddress2} onChange={e => setStreetAddress2(e.target.value)} style={inputStyle} /></Field>
+          <Field label="City"><input value={city} onChange={e => setCity(e.target.value)} style={inputStyle} /></Field>
+          <Field label="State"><input value={state} onChange={e => setState(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Zip"><input value={zip} onChange={e => setZip(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Donation date *"><input required type="date" value={formDate} onChange={e => setFormDate(e.target.value)} style={inputStyle} /></Field>
+          <Field label="Notes (what you're donating)">
+            <textarea value={notes} onChange={e => setNotes(e.target.value)} rows={3} style={{ ...inputStyle, resize: 'vertical' as const }} />
+          </Field>
+        </Section>
+
+        {DROP_OFF_CATALOG.map(group => (
+          <Section key={group.key} title={group.title}>
+            {group.items.map(item => (
+              <Field key={item.key} label={item.label}>
+                <select
+                  value={quantities[item.key] ?? 0}
+                  onChange={e => setQty(item.key, e.target.value)}
+                  style={inputStyle}
+                >
+                  {/* 0..cap, generated from the catalog's own cap —
+                      caps are hard now, so the dropdown never offers a
+                      value the route would reject. */}
+                  {Array.from({ length: item.cap + 1 }, (_, n) => n).map(n => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </Field>
+            ))}
+          </Section>
+        ))}
+
+        <label style={{
+          display: 'flex', alignItems: 'flex-start', gap: '12px', marginTop: '20px',
+          background: 'white', borderRadius: '10px', padding: '16px 18px',
+          boxShadow: '0 1px 3px rgba(27,43,75,0.08)', cursor: 'pointer',
+        }}>
+          <input type="checkbox" checked={checkTax} onChange={e => setCheckTax(e.target.checked)} style={{ width: '18px', height: '18px', marginTop: '2px' }} />
+          <span style={{ fontSize: '13px', color: GREY, lineHeight: 1.5 }}>
+            <strong style={{ color: NAVY, display: 'block', marginBottom: '2px' }}>Tax Valuation Notice</strong>
+            I understand Furniture Assist can&apos;t provide valuations for donated items — determining fair market value for tax purposes is my responsibility.
+          </span>
+        </label>
+
+        {/* Honeypot — off-screen, never shown to a real visitor. A filled
+            value here makes the route report success without writing
+            anything, same as agency/register's own hp field. */}
+        <input
+          type="text"
+          value={hp}
+          onChange={e => setHp(e.target.value)}
+          tabIndex={-1}
+          autoComplete="off"
+          aria-hidden="true"
+          style={{ position: 'absolute', left: '-9999px', width: '1px', height: '1px' }}
+        />
+
+        <button
+          type="submit"
+          disabled={result.kind === 'submitting'}
+          style={{
+            marginTop: '24px', padding: '16px 32px', borderRadius: '10px', border: 'none',
+            background: TEAL, color: 'white', fontWeight: 800, fontSize: '17px',
+            cursor: result.kind === 'submitting' ? 'default' : 'pointer',
+            opacity: result.kind === 'submitting' ? 0.7 : 1,
+          }}
+        >
+          {result.kind === 'submitting' ? 'Submitting…' : 'Submit donation'}
+        </button>
+      </form>
+    </div>
+  )
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div style={{ background: 'white', borderRadius: '12px', padding: '20px 24px', marginBottom: '20px', boxShadow: '0 1px 3px rgba(27,43,75,0.08)' }}>
+      <div style={{ fontSize: '15px', fontWeight: 800, color: NAVY, marginBottom: '14px' }}>{title}</div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px 20px' }}>
+        {children}
+      </div>
+    </div>
+  )
+}
+
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: '4px', fontSize: '13px', color: GREY, fontWeight: 700 }}>
+      {label}
+      {children}
+    </label>
+  )
+}
+
+function Banner({ bg, children }: { bg: string; children: React.ReactNode }) {
+  return (
+    <div style={{ minHeight: '100vh', background: bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', textAlign: 'center', padding: '24px', fontFamily: 'var(--font-montserrat), Arial, sans-serif' }}>
+      {children}
+    </div>
+  )
+}
+
+const inputStyle: React.CSSProperties = {
+  width: '100%', boxSizing: 'border-box', padding: '9px 12px', borderRadius: '7px',
+  border: FIELD_BORDER_STYLE, fontSize: '14px', color: '#2C3A4A', background: 'white', outline: 'none',
+}
+
+function buttonStyle(bg: string, color: string): React.CSSProperties {
+  return {
+    marginTop: '24px', padding: '14px 28px', borderRadius: '10px', border: 'none',
+    background: bg, color, fontWeight: 800, fontSize: '15px', cursor: 'pointer',
+  }
+}

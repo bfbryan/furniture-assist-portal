@@ -12,6 +12,8 @@ const isPublicRoute = createRouteMatcher([
   '/api/agency/claim(.*)',
   '/api/agency/register(.*)',
   '/api/cron(.*)',
+  '/api/donations/drop-off(.*)',
+  '/donor-drop-off-test(.*)',
 ])
 
 
