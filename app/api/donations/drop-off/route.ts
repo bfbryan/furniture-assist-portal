@@ -24,15 +24,13 @@
 //   - No donor lookup, no dedupe, no match-or-create. The existing
 //     Airtable automation still does this after the row lands.
 //   - No Donor ID or Zip Linked write — same automations, same reason.
-//   - Caps are advisory: an over-cap quantity does not block the
-//     submission, and the donation still records in full. The overage
-//     is computed (see lib/donors/drop-off-intake.ts) and returned in
-//     the response — NOT yet written to Airtable anywhere. Ben is
-//     adding a dedicated field for it (Notes is reserved for the
-//     donor's own text, verbatim onto their tax receipt); wiring the
-//     write in is a one-line change once that field exists. Drop-off
-//     has never had caps before this; this is a deliberate behaviour
-//     change, not a bug fix.
+//   - Caps ARE enforced, hard, as plain validation below — same as any
+//     other bad field, a 400 before anything is written. Drop-off has
+//     never had caps before this; this is a deliberate behaviour
+//     change, not a bug fix. (An earlier round made these advisory with
+//     an over-cap flag; dropped — no soft-cap path, no flag, nothing
+//     recorded about an over-cap attempt at all, since it never
+//     becomes a donation.)
 
 import { NextResponse } from 'next/server'
 import { createDropOffDonation, type DropOffQuantities } from '@/lib/donors/drop-off-intake'
@@ -155,10 +153,11 @@ export async function POST(req: Request) {
   // keys (qty_couch, qty_chair, ...), not a nested sub-object. The real
   // form's <select> uses value="" for "not donating this," same as a
   // field never being filled in at all — both mean 0, not an error.
-  // What IS an error: a value present but not a non-negative whole
-  // number. This is NOT the cap check (caps are advisory, checked
-  // inside createDropOffDonation) — this is rejecting garbage input
-  // outright.
+  // Two ways a value can be rejected, both plain 400s: not a
+  // non-negative whole number at all (garbage input), or a real number
+  // over that item's cap. Caps are hard — this is the enforcement,
+  // there's no soft path or flag; an over-cap submission never becomes
+  // a donation.
   const quantities: DropOffQuantities = {}
   for (const item of Object.values(DROP_OFF_ITEM_BY_KEY)) {
     const raw = body[item.key]
@@ -166,6 +165,9 @@ export async function POST(req: Request) {
     const n = typeof raw === 'number' ? raw : Number(raw)
     if (!Number.isFinite(n) || n < 0 || !Number.isInteger(n)) {
       return json(req, 400, { error: `Invalid quantity for ${item.label}.` })
+    }
+    if (n > item.cap) {
+      return json(req, 400, { error: `${item.label}: ${n} is over the limit of ${item.cap}.` })
     }
     if (n > 0) quantities[item.key] = n
   }
@@ -179,10 +181,7 @@ export async function POST(req: Request) {
     // the whole point of this migration. If createDropOffDonation threw,
     // execution never reaches here; the catch below returns a real error
     // instead.
-    // overages travels in the response so the page can show it, but
-    // nothing about it is written to Airtable yet — see
-    // formatOverCapNote's own header in lib/donors/drop-off-intake.ts.
-    return json(req, 201, { ok: true, id: result.id, overCap: result.overCap, overages: result.overages })
+    return json(req, 201, { ok: true, id: result.id })
   } catch (e) {
     console.error('drop-off intake: create failed:', e)
     return json(req, 500, { error: 'Could not save your donation. Please try again, or contact us directly.' })

@@ -1,6 +1,12 @@
 'use client'
 
-// app/donor-drop-off-test/page.tsx
+// app/(donor-public)/donor-drop-off-test/page.tsx — the URL is
+// /donor-drop-off-test, not /donor-public/donor-drop-off-test; (donor-public)
+// is a route group and doesn't appear in the path. Lives in this group
+// rather than (donor) specifically because it must stay public —
+// (donor)'s own layout.tsx gates on Clerk device-auth, which would make
+// this unusable as a stand-in for what an anonymous donor's browser
+// actually does. See (donor-public)/layout.tsx's own header.
 //
 // A TEST HARNESS for POST /api/donations/drop-off — not the real form.
 // The real form lives on WordPress (furnitureassist.com/drop-off-form/)
@@ -41,19 +47,16 @@ import { FIELD_BORDER_STYLE } from '@/lib/ui/field-border'
 
 const NAVY = '#1B2B4B'
 const TEAL = '#2A7F6F'
-const GOLD = '#C9A84C'
 const RED = '#C0392B'
 const GREY = '#7A8899'
 const CREAM = '#F7F5F1'
 
 type Quantities = Record<string, number>
 
-type Overage = { key: string; label: string; field: string; qty: number; cap: number }
-
 type Result =
   | { kind: 'idle' }
   | { kind: 'submitting' }
-  | { kind: 'success'; id: string; overages: Overage[] }
+  | { kind: 'success'; id: string }
   | { kind: 'error'; message: string }
 
 export default function DropOffTestPage() {
@@ -116,7 +119,7 @@ export default function DropOffTestPage() {
       })
       const data = await res.json().catch(() => ({}))
       if (res.ok && data.ok) {
-        setResult({ kind: 'success', id: data.id, overages: Array.isArray(data.overages) ? data.overages : [] })
+        setResult({ kind: 'success', id: data.id })
       } else {
         setResult({ kind: 'error', message: data.error || `Request failed (${res.status}).` })
       }
@@ -132,14 +135,6 @@ export default function DropOffTestPage() {
         <div style={{ marginTop: '10px', fontSize: '16px', color: 'rgba(255,255,255,0.85)' }}>
           Record id: {result.id}
         </div>
-        {result.overages.length > 0 && (
-          <div style={{ marginTop: '10px', fontSize: '15px', color: GOLD, fontWeight: 700 }}>
-            Over the advisory cap — {result.overages.map(o => `${o.label}: ${o.qty} (cap ${o.cap})`).join('; ')}
-            <div style={{ marginTop: '4px', fontWeight: 600, fontSize: '13px', color: 'rgba(255,255,255,0.75)' }}>
-              Not written to the record yet — no Airtable field for this exists.
-            </div>
-          </div>
-        )}
         <div style={{ marginTop: '24px', fontSize: '14px', color: 'rgba(255,255,255,0.7)' }}>
           This is a test harness — this record is real and live in the donor base.
         </div>
@@ -196,16 +191,11 @@ export default function DropOffTestPage() {
                   onChange={e => setQty(item.key, e.target.value)}
                   style={inputStyle}
                 >
+                  {/* 0..cap, generated from the catalog's own cap —
+                      caps are hard now, so the dropdown never offers a
+                      value the route would reject. */}
                   {Array.from({ length: item.cap + 1 }, (_, n) => n).map(n => (
                     <option key={n} value={n}>{n}</option>
-                  ))}
-                  {/* Above-cap options — the dropdown is a courtesy, not
-                      the enforcement; the route accepts and flags an
-                      over-cap value regardless of what this select
-                      offers, which is why this list goes a few past the
-                      cap rather than hard-stopping there. */}
-                  {[item.cap + 1, item.cap + 2, item.cap + 3].map(n => (
-                    <option key={n} value={n}>{n} (over cap of {item.cap})</option>
                   ))}
                 </select>
               </Field>

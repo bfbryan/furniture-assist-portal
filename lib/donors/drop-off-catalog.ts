@@ -26,11 +26,10 @@
 // alphabetical, not the Airtable field-creation order. Keeping it means
 // a diff against the real form stays legible.
 //
-// Caps are advisory only (see lib/donors/drop-off-intake.ts) — a donor
-// picking a value above the cap still submits; the route flags it (see
-// that file's own header for where the flag currently goes — nowhere
-// yet, pending an Airtable field). These numbers match the pickup form's
-// own caps, given directly, not measured.
+// Caps are hard — the route rejects a submission over the cap as plain
+// validation, the same as any other bad field (see
+// app/api/donations/drop-off/route.ts). These numbers match the pickup
+// form's own caps, given directly, not measured.
 
 export type DropOffItem = {
   /** Payload key — the pickup form's own field name, e.g. "qty_couch".

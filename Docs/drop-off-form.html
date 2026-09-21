@@ -43,11 +43,19 @@
       it (or the confirmation email) whenever the drop-off happens, or
       get in touch if it can't be found.
 
-  PLACEHOLDER — SEARCH FOR THIS BEFORE PASTING ANYWHERE:
-    The Sunday-hours banner's calendar link has no real URL. I don't have
-    one and didn't invent one — the href is the literal string
-    "REPLACE-WITH-CALENDAR-LINK" so a stray unpasted placeholder is
-    obvious rather than a dead link that looks real.
+  The Sunday-hours banner's calendar link is https://furnitureassist.com/calendar/.
+
+  Item dropdown options are NOT hand-typed. A JS object (ITEM_CATALOG,
+  in the <script> below) carries each item's key/label/cap — the same
+  data lib/donors/drop-off-catalog.ts holds — and populates every
+  <select>'s options at load time. Changing a cap is one edit, to that
+  object, in this file. This IS a second copy of that data: a static
+  HTML file with no build step can't import a TypeScript module, so
+  there's no way to make this file and the real catalog constant
+  literally the same source. If a cap or field ever changes in one,
+  it has to change in the other by hand — there's no way around that
+  given the constraint, but at least it's one number per item here,
+  not a hand-typed option list AND a cap living separately.
 
   The submit handler's field-by-field validation (setErr/clearErr,
   required-field checks, scroll-to-first-error) is written fresh here,
@@ -243,7 +251,7 @@
         <strong>Drop-off hours: Sundays, 10am–2pm</strong>
         <span>
           <!-- PLACEHOLDER — see the file header. Replace before publishing. -->
-          <a href="REPLACE-WITH-CALENDAR-LINK" target="_blank">Check the calendar</a> for this Sunday's drop-off, and confirm your items are on the
+          <a href="https://furnitureassist.com/calendar/" target="_blank">Check the calendar</a> for this Sunday's drop-off, and confirm your items are on the
           <a href="https://furnitureassist.com/wp-content/uploads/2026/03/furniture-assist-accepted-items.pdf" target="_blank">accepted items list</a> before you come.
         </span>
       </div>
@@ -364,56 +372,10 @@
         </div>
         <p style="font-size:13px; color:var(--hint); margin-bottom:20px; line-height:1.6;">Select quantities for each item you're donating. Leave blank if not donating that item.</p>
 
-        <div class="items-grid">
-          <div class="items-category">
-            <h4>Living Room Furniture</h4>
-            <div class="item-row"><span class="item-label">Couch / Loveseat / Futon</span><select class="qty-select" name="qty_couch"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-            <div class="item-row"><span class="item-label">Chair</span><select class="qty-select" name="qty_chair"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option></select></div>
-            <div class="item-row"><span class="item-label">Coffee Table</span><select class="qty-select" name="qty_coffee_table"><option value="">—</option><option>1</option><option>2</option></select></div>
-            <div class="item-row"><span class="item-label">End Table / TV Stand</span><select class="qty-select" name="qty_end_table"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
-            <div class="item-row"><span class="item-label">Bookcase / Storage</span><select class="qty-select" name="qty_bookcase"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-            <div class="item-row"><span class="item-label">Student Desk</span><select class="qty-select" name="qty_desk"><option value="">—</option><option>1</option><option>2</option></select></div>
-            <div class="item-row"><span class="item-label">Lamp</span><select class="qty-select" name="qty_lamp"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-            <div class="item-row"><span class="item-label">Picture / Other Decor</span><select class="qty-select" name="qty_decor"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-            <div class="item-row"><span class="item-label">Rug</span><select class="qty-select" name="qty_rug"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-            <div class="item-row"><span class="item-label">TV / Electronics</span><select class="qty-select" name="qty_tv"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-          </div>
-          <div class="items-category">
-            <h4>Kitchen / Linen</h4>
-            <div class="item-row"><span class="item-label">Small Appliance</span><select class="qty-select" name="qty_appliance"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-            <div class="item-row"><span class="item-label">Dishes (# of boxes)</span><select class="qty-select" name="qty_dishes"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-            <div class="item-row"><span class="item-label">Cookbook (# of boxes)</span><select class="qty-select" name="qty_cookbooks"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-            <div class="item-row"><span class="item-label">Linen (# of bags)</span><select class="qty-select" name="qty_linen"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-            <div class="item-row"><span class="item-label">Pots / Pans / Utensils (# of boxes)</span><select class="qty-select" name="qty_pots"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
-            <div class="item-row"><span class="item-label">General Household</span><select class="qty-select" name="qty_general_household"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-            <div class="item-row"><span class="item-label">Bathroom</span><select class="qty-select" name="qty_bathroom"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-            <div class="item-row"><span class="item-label">Home Office</span><select class="qty-select" name="qty_home_office"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-          </div>
-          <div class="items-category">
-            <h4>Bedroom Furniture</h4>
-            <div class="item-row"><span class="item-label">Mattress / Boxspring</span><select class="qty-select" name="qty_mattress"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-            <div class="item-row"><span class="item-label">Bedframe</span><select class="qty-select" name="qty_bedframe"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-            <div class="item-row"><span class="item-label">Dresser</span><select class="qty-select" name="qty_dresser"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-            <div class="item-row"><span class="item-label">Nightstand</span><select class="qty-select" name="qty_nightstand"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option></select></div>
-          </div>
-          <div class="items-category">
-            <h4>Baby / Kids</h4>
-            <div class="item-row"><span class="item-label">Crib / Bassinet</span><select class="qty-select" name="qty_crib"><option value="">—</option><option>1</option><option>2</option></select></div>
-            <div class="item-row"><span class="item-label">Toys / Books / School (# of boxes)</span><select class="qty-select" name="qty_toys"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-            <div class="item-row"><span class="item-label">General Baby</span><select class="qty-select" name="qty_general_baby"><option value="">—</option><option>1</option><option>2</option><option>3</option></select></div>
-            <div class="item-row"><span class="item-label">Baby Clothes (# of bags)</span><select class="qty-select" name="qty_baby_clothes"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-          </div>
-          <div class="items-category">
-            <h4>Dining Room Furniture</h4>
-            <div class="item-row"><span class="item-label">Dining Table</span><select class="qty-select" name="qty_dining_table"><option value="">—</option><option>1</option></select></div>
-            <div class="item-row"><span class="item-label">Chair</span><select class="qty-select" name="qty_dining_chair"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option></select></div>
-          </div>
-          <div class="items-category">
-            <h4>Clothes</h4>
-            <div class="item-row"><span class="item-label">Clothes (# of bags)</span><select class="qty-select" name="qty_clothes"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option><option>6</option><option>7</option><option>8</option><option>9</option><option>10</option></select></div>
-            <div class="item-row"><span class="item-label">Shoes (# of bags)</span><select class="qty-select" name="qty_shoes"><option value="">—</option><option>1</option><option>2</option><option>3</option><option>4</option><option>5</option></select></div>
-          </div>
-        </div>
+        <!-- Populated entirely by JS from ITEM_CATALOG below — no
+             category, row, or <option> is hand-typed here. Changing a
+             cap, a label, or adding an item is one edit to that object. -->
+        <div class="items-grid" id="items-grid"></div>
 
         <!-- ITEM NOTES -->
         <div style="margin-top:28px;">
@@ -529,6 +491,102 @@
   // POST. The route's CORS allowlist (app/api/donations/drop-off/route.ts)
   // covers furnitureassist.com and www.furnitureassist.com explicitly.
   var SUBMIT_URL = 'https://portal.furnitureassist.com/api/donations/drop-off';
+
+  // Single source for the items section — key (the payload field name
+  // this route expects), label, and cap. Mirrors
+  // lib/donors/drop-off-catalog.ts's DROP_OFF_CATALOG; see this file's
+  // own header comment for why a static page can't literally share that
+  // source. Changing a cap or a label is one edit, here.
+  var ITEM_CATALOG = [
+    { title: 'Living Room Furniture', items: [
+      { key: 'qty_couch', label: 'Couch / Loveseat / Futon', cap: 3 },
+      { key: 'qty_chair', label: 'Chair', cap: 6 },
+      { key: 'qty_coffee_table', label: 'Coffee Table', cap: 2 },
+      { key: 'qty_end_table', label: 'End Table / TV Stand', cap: 4 },
+      { key: 'qty_bookcase', label: 'Bookcase / Storage', cap: 3 },
+      { key: 'qty_desk', label: 'Student Desk', cap: 2 },
+      { key: 'qty_lamp', label: 'Lamp', cap: 5 },
+      { key: 'qty_decor', label: 'Picture / Other Decor', cap: 5 },
+      { key: 'qty_rug', label: 'Rug', cap: 3 },
+      { key: 'qty_tv', label: 'TV / Electronics', cap: 3 }
+    ]},
+    { title: 'Kitchen / Linen', items: [
+      { key: 'qty_appliance', label: 'Small Appliance', cap: 5 },
+      { key: 'qty_dishes', label: 'Dishes (# of boxes)', cap: 5 },
+      { key: 'qty_cookbooks', label: 'Cookbook (# of boxes)', cap: 3 },
+      { key: 'qty_linen', label: 'Linen (# of bags)', cap: 5 },
+      { key: 'qty_pots', label: 'Pots / Pans / Utensils (# of boxes)', cap: 4 },
+      { key: 'qty_general_household', label: 'General Household', cap: 5 },
+      { key: 'qty_bathroom', label: 'Bathroom', cap: 3 },
+      { key: 'qty_home_office', label: 'Home Office', cap: 3 }
+    ]},
+    { title: 'Bedroom Furniture', items: [
+      { key: 'qty_mattress', label: 'Mattress / Boxspring', cap: 3 },
+      { key: 'qty_bedframe', label: 'Bedframe', cap: 3 },
+      { key: 'qty_dresser', label: 'Dresser', cap: 3 },
+      { key: 'qty_nightstand', label: 'Nightstand', cap: 4 }
+    ]},
+    { title: 'Baby / Kids', items: [
+      { key: 'qty_crib', label: 'Crib / Bassinet', cap: 2 },
+      { key: 'qty_toys', label: 'Toys / Books / School (# of boxes)', cap: 5 },
+      { key: 'qty_general_baby', label: 'General Baby', cap: 3 },
+      { key: 'qty_baby_clothes', label: 'Baby Clothes (# of bags)', cap: 5 }
+    ]},
+    { title: 'Dining Room Furniture', items: [
+      { key: 'qty_dining_table', label: 'Dining Table', cap: 1 },
+      { key: 'qty_dining_chair', label: 'Chair', cap: 8 }
+    ]},
+    { title: 'Clothes', items: [
+      { key: 'qty_clothes', label: 'Clothes (# of bags)', cap: 10 },
+      { key: 'qty_shoes', label: 'Shoes (# of bags)', cap: 5 }
+    ]}
+  ];
+
+  // Builds the whole items-grid from ITEM_CATALOG: one category block
+  // per group, one row per item, one <select> with options 0..cap
+  // generated (never hand-typed) from that item's own cap.
+  (function renderItems() {
+    var grid = document.getElementById('items-grid');
+    ITEM_CATALOG.forEach(function (group) {
+      var category = document.createElement('div');
+      category.className = 'items-category';
+
+      var h4 = document.createElement('h4');
+      h4.textContent = group.title;
+      category.appendChild(h4);
+
+      group.items.forEach(function (item) {
+        var row = document.createElement('div');
+        row.className = 'item-row';
+
+        var labelSpan = document.createElement('span');
+        labelSpan.className = 'item-label';
+        labelSpan.textContent = item.label;
+        row.appendChild(labelSpan);
+
+        var select = document.createElement('select');
+        select.className = 'qty-select';
+        select.name = item.key;
+
+        var blank = document.createElement('option');
+        blank.value = '';
+        blank.textContent = '—';
+        select.appendChild(blank);
+
+        for (var n = 1; n <= item.cap; n++) {
+          var opt = document.createElement('option');
+          opt.value = String(n);
+          opt.textContent = String(n);
+          select.appendChild(opt);
+        }
+
+        row.appendChild(select);
+        category.appendChild(row);
+      });
+
+      grid.appendChild(category);
+    });
+  })();
 
   document.getElementById('donation-date').value = new Date().toISOString().split('T')[0];
 

@@ -38,50 +38,18 @@ export type DropOffContact = {
 }
 
 /** key -> quantity. Only positive entries matter; 0/negative/missing are
- *  the same as "didn't select this item." */
+ *  the same as "didn't select this item." Every entry here is already
+ *  cap-checked by the route before this function ever sees it — caps
+ *  are hard, enforced as plain validation (see the route's own
+ *  comments), not something this layer re-checks or works around. */
 export type DropOffQuantities = Record<string, number>
 
-export type CapOverage = { key: string; label: string; field: string; qty: number; cap: number }
-
-/** Advisory only — see drop-off-catalog.ts's header. Never blocks a
- *  submission; the route decides what to do with the result. */
-export function checkCaps(quantities: DropOffQuantities): CapOverage[] {
-  const overages: CapOverage[] = []
-  for (const [key, qty] of Object.entries(quantities)) {
-    if (!(qty > 0)) continue
-    const item = DROP_OFF_ITEM_BY_KEY[key]
-    if (!item) continue // unknown keys are the route's problem, not this function's
-    if (qty > item.cap) {
-      overages.push({ key, label: item.label, field: item.field, qty, cap: item.cap })
-    }
-  }
-  return overages
-}
-
-// Formats the overage detail for whichever field ends up holding it —
-// NOT WIRED TO A WRITE. Ben is adding a dedicated Airtable field for
-// this rather than having it share Notes, which prints verbatim on the
-// donor's tax receipt and is reserved for their own text — nothing else
-// may write to it. Keeping this formatter ready (same "Item: qty (cap
-// N)" shape as before) so wiring it in once the field exists and its
-// name is known is a one-line addition here, not a redesign. Until
-// then: computed, returned to the caller as `overCap`/`overages` for
-// visibility (the test page's own banner reads it), never sent to
-// Airtable.
-export function formatOverCapNote(overages: CapOverage[]): string | null {
-  if (overages.length === 0) return null
-  const lines = overages.map(o => `${o.label}: ${o.qty} (cap ${o.cap})`)
-  return `Over cap — ${lines.join('; ')}`
-}
-
-export type CreateDropOffResult = { id: string; overCap: boolean; overages: CapOverage[] }
+export type CreateDropOffResult = { id: string }
 
 export async function createDropOffDonation(
   contact: DropOffContact,
   quantities: DropOffQuantities,
 ): Promise<CreateDropOffResult> {
-  const overages = checkCaps(quantities)
-
   const fields: Record<string, unknown> = {
     'First Name': contact.firstName,
     'Last Name': contact.lastName,
@@ -109,8 +77,7 @@ export async function createDropOffDonation(
   if (contact.zip) fields.Zip = contact.zip
 
   // Notes carries ONLY the donor's own text, verbatim — it prints as-is
-  // on their tax receipt, so nothing else may write to it. The over-cap
-  // flag does not go here; see formatOverCapNote's own header.
+  // on their tax receipt, so nothing else may write to it.
   if (contact.notes?.trim()) fields.Notes = contact.notes.trim()
 
   for (const [key, qty] of Object.entries(quantities)) {
@@ -121,5 +88,5 @@ export async function createDropOffDonation(
   }
 
   const data = await donorFetch('', { method: 'POST', body: { fields } })
-  return { id: data.id, overCap: overages.length > 0, overages }
+  return { id: data.id }
 }
