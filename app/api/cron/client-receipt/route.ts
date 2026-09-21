@@ -34,6 +34,7 @@ import {
 } from "@/lib/notifications/client-receipt";
 import { getNoShowPending, markNoShowEmailSent } from "@/lib/notifications/no-show-notice";
 import { PORTAL_ORIGIN } from "@/lib/auth/portal-sign-in-link";
+import { withinNoShowRescheduleWindow } from "@/lib/referrals/no-show-window";
 
 // Aug 2026: same fix as the other two cron routes -- without this, Next.js
 // can serve a cached response for this GET route instead of invoking the
@@ -287,6 +288,36 @@ async function runClientNoShow(req: NextRequest, day: string, hour: string) {
     return { sent: 0 };
   }
 
+  const results: { recordId: string; status: string; error?: string }[] = [];
+
+  // Outside the no-show reschedule window (lib/referrals/no-show-window.ts
+  // — the same shared check the agency reschedule route and referral page
+  // use, not a second copy of the day count): the email's own call to
+  // action is "reschedule in the portal", and past the window that link
+  // lands on a closed reschedule (the agency route refuses it with a 409).
+  // Skipped here rather than caught downstream, because "Ready" is a
+  // manual tick — nothing else stops an old no-show from being ticked by
+  // accident, and past the window this email should never go regardless.
+  // Writes nothing: no marker, no Ready change, so nothing about this
+  // record's state changes from being skipped. Reported in the run
+  // summary as its own status so a skip is visible, not silent.
+  const eligible: { record: (typeof pending)[number]; apptDateStr: string | undefined }[] = [];
+  for (const record of pending) {
+    const f = record.fields;
+    const rawApptDate = f["Appointment Date"];
+    const apptDateStr = Array.isArray(rawApptDate) ? rawApptDate[0] : rawApptDate;
+
+    if (!withinNoShowRescheduleWindow(apptDateStr)) {
+      results.push({ recordId: record.id, status: "skipped-outside-window" });
+      continue;
+    }
+    eligible.push({ record, apptDateStr });
+  }
+
+  if (eligible.length === 0) {
+    return { sent: 0, results };
+  }
+
   const template = automation.fields.Template || "";
   const subject = automation.fields["Subject Line"] || "Furniture Assist - Missed Appointment";
 
@@ -304,9 +335,7 @@ async function runClientNoShow(req: NextRequest, day: string, hour: string) {
     portalReadyEmails = new Set();
   }
 
-  const results: { recordId: string; status: string; error?: string }[] = [];
-
-  for (const record of pending) {
+  for (const { record, apptDateStr } of eligible) {
     const f = record.fields;
 
     const rawAgencyEmail = f["Agency Email"];
@@ -328,9 +357,6 @@ async function runClientNoShow(req: NextRequest, day: string, hour: string) {
       toList.every((addr) => portalReadyEmails.has(String(addr).trim().toLowerCase()));
     const changeUrl = recipientsReady ? `${PORTAL_ORIGIN}/referrals/${record.id}` : CHANGE_FALLBACK_URL;
     const changeLabel = recipientsReady ? NO_SHOW_CHANGE_LABEL_PORTAL : NO_SHOW_CHANGE_LABEL_FALLBACK;
-
-    const rawApptDate = f["Appointment Date"];
-    const apptDateStr = Array.isArray(rawApptDate) ? rawApptDate[0] : rawApptDate;
 
     try {
       const html = fillTemplate(template, {
