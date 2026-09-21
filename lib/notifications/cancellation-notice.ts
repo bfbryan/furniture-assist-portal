@@ -134,14 +134,14 @@ export async function sendCancellationNotice(
     // hard-codes the <a> around these two tokens; until it does, fillTemplate
     // ignores them and this is a no-op.
     //
-    // originalApptDate/Time — the only appointment detail there is by this
-    // point (the cancel route already cleared Saturday Schedule/Appointment
-    // Time on the record itself). The mailto body's own "Change needed
-    // (cancel or new date)" phrasing was written for an appointment that
-    // still exists; here it's describing one that no longer does. Flagged
-    // in the PR rather than decided unilaterally — a third body variant
-    // just for cancellations wasn't asked for.
-    const change = await resolveChangeInstruction(toList[0], recordId, "Cancellation Notice", {
+    // 'cancelled' — its own purpose now, not a reuse of 'upcoming'. The
+    // body reads "Cancelled appointment: <date>, <time>" / "Preferred new
+    // date:", not "Change needed (cancel or new date)" — that phrasing
+    // was written for an appointment that still exists, and this one no
+    // longer does. originalApptDate/Time are the only appointment detail
+    // there is by this point (the cancel route already cleared Saturday
+    // Schedule/Appointment Time on the record itself).
+    const change = await resolveChangeInstruction(toList[0], recordId, "Cancellation Notice", "cancelled", {
       clientFirstName: f["First Name"],
       clientLastName: f["Last Name"],
       apptDateStr: originalApptDate,

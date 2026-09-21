@@ -19,7 +19,11 @@
 
 import { PORTAL_ORIGIN } from '@/lib/auth/portal-sign-in-link'
 import { getAgencyUserByEmail } from '@/lib/airtable/agency-users'
-import { buildAgencyMailtoFallback, type AgencyMailtoInfo } from '@/lib/notifications/agency-mailto-fallback'
+import {
+  buildAgencyMailtoFallback,
+  type AgencyMailtoInfo,
+  type AgencyMailtoPurpose,
+} from '@/lib/notifications/agency-mailto-fallback'
 
 // Same fallback label as app/api/cron/appointment-reminders/route.ts and
 // appointment-slip-notice/route.ts, so all four emails read identically.
@@ -46,22 +50,25 @@ export type ChangeInstruction = {
  * empty lookup. A lookup that throws or finds no user falls back to the mailto
  * variant — it must never stop the notice from sending.
  *
- * `mailtoInfo` is the client/appointment detail the fallback mailto's body
- * prefills — see lib/notifications/agency-mailto-fallback.ts. Both current
- * callers (reschedule-notice.ts, cancellation-notice.ts) are about an
- * appointment that exists or just did, never a no-show, so this always
- * builds the 'upcoming' variant — 'missed' is the no-show send's own
- * direct call to buildAgencyMailtoFallback, not through this function.
+ * `mailtoPurpose`/`mailtoInfo` are the fallback mailto's own shape and the
+ * client/appointment detail it prefills — see
+ * lib/notifications/agency-mailto-fallback.ts. Neither current caller
+ * passes 'missed' — that's the no-show send's own direct call to
+ * buildAgencyMailtoFallback, not through this function — but this doesn't
+ * hardcode either of the other two, since reschedule-notice.ts
+ * ('upcoming': the new appointment) and cancellation-notice.ts
+ * ('cancelled': the one that just ended) genuinely differ.
  */
 export async function resolveChangeInstruction(
   recipientEmail: string,
   referralRecordId: string,
   logContext: string,
+  mailtoPurpose: AgencyMailtoPurpose,
   mailtoInfo: AgencyMailtoInfo,
 ): Promise<ChangeInstruction> {
   const mailto: ChangeInstruction = {
     variant: 'mailto',
-    changeUrl: buildAgencyMailtoFallback('upcoming', mailtoInfo),
+    changeUrl: buildAgencyMailtoFallback(mailtoPurpose, mailtoInfo),
     changeLabel: CHANGE_FALLBACK_LABEL,
   }
 

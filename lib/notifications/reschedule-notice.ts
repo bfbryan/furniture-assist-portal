@@ -246,7 +246,7 @@ export async function sendRescheduleNotice(
     // The NEW appointment (newApptDateStr / Appointment Time), not the
     // previous one — this is the appointment that might still need to
     // change further.
-    const change = await resolveChangeInstruction(toList[0], recordId, "Reschedule Notice", {
+    const change = await resolveChangeInstruction(toList[0], recordId, "Reschedule Notice", "upcoming", {
       clientFirstName: f["First Name"],
       clientLastName: f["Last Name"],
       apptDateStr: newApptDateStr,

@@ -12,26 +12,32 @@
 // independently — before this, each of the five had its own bare
 // "mailto:agencies@furnitureassist.com" literal with no subject or body.
 //
-// Two purposes, not one shape:
-//   'missed'   — the no-show send. The client didn't come; ask for a new
-//                date. No time in the body — a missed appointment's time
-//                doesn't matter to what happens next.
-//   'upcoming' — everyone else. An appointment exists (reminder,
-//                confirmation, reschedule) or existed until just now
-//                (cancellation) and might need to change.
+// Three purposes, not one shape:
+//   'missed'    — the no-show send. The client didn't come; ask for a new
+//                 date. No time in the body — a missed appointment's time
+//                 doesn't matter to what happens next.
+//   'cancelled' — the Cancellation Notice. The appointment is gone; ask
+//                 for a new date, same trailing prompt as 'missed', but
+//                 the appointment line itself needs date AND time (unlike
+//                 'missed') — cancellation-notice.ts still has both, from
+//                 the original appointment, captured before its own cancel
+//                 PATCH cleared them off the record.
+//   'upcoming'  — everyone else. An appointment exists (reminder,
+//                 confirmation, reschedule) and might need to change.
 
 import { formatDateOnly } from "@/lib/dates";
 
 const CHANGE_FALLBACK_ADDRESS = "agencies@furnitureassist.com";
 
-export type AgencyMailtoPurpose = "missed" | "upcoming";
+export type AgencyMailtoPurpose = "missed" | "cancelled" | "upcoming";
 
 export type AgencyMailtoInfo = {
   clientFirstName?: string | null;
   clientLastName?: string | null;
   /** 'YYYY-MM-DD'. */
   apptDateStr?: string | null;
-  /** e.g. '10am' — only used for 'upcoming'; 'missed' never shows a time. */
+  /** e.g. '10am' — used for 'cancelled' and 'upcoming'; 'missed' never
+   *  shows a time. */
   apptTime?: string | null;
 };
 
@@ -45,9 +51,10 @@ export type AgencyMailtoInfo = {
  * required to see it.
  *
  * Every data line is dropped outright, not shown half-filled, when its
- * value is missing: no "Client: " with nothing after it, and for
- * 'upcoming' no "Appointment:" line unless BOTH date and time are known —
- * one without the other is still a half-filled version of the
+ * value is missing: no "Client: " with nothing after it, no "Missed
+ * appointment:" without a date, and for 'cancelled'/'upcoming' no
+ * appointment line at all unless BOTH date and time are known — one
+ * without the other is still a half-filled version of the
  * "<Mon D>, <time>" shape, not a genuinely useful partial line. The
  * trailing prompt line ("Preferred new date:" / "Change needed…") carries
  * no variable data and always appears.
@@ -71,7 +78,7 @@ export function buildAgencyMailtoFallback(
   purpose: AgencyMailtoPurpose,
   info: AgencyMailtoInfo
 ): string {
-  const subject = purpose === "missed" ? "Reschedule request" : "Appointment change request";
+  const subject = purpose === "upcoming" ? "Appointment change request" : "Reschedule request";
 
   const lines: string[] = [];
 
@@ -87,13 +94,15 @@ export function buildAgencyMailtoFallback(
 
   if (purpose === "missed") {
     if (dateLabel) lines.push(`Missed appointment: ${dateLabel}`);
-    lines.push("Preferred new date:");
-  } else {
-    if (dateLabel && info.apptTime) {
-      lines.push(`Appointment: ${dateLabel}, ${info.apptTime}`);
-    }
-    lines.push("Change needed (cancel or new date):");
+  } else if (dateLabel && info.apptTime) {
+    // 'cancelled' and 'upcoming' both need date AND time, or the whole
+    // line drops — half of "<Mon D>, <time>" isn't a genuinely useful
+    // partial line.
+    const label = purpose === "cancelled" ? "Cancelled appointment" : "Appointment";
+    lines.push(`${label}: ${dateLabel}, ${info.apptTime}`);
   }
+
+  lines.push(purpose === "upcoming" ? "Change needed (cancel or new date):" : "Preferred new date:");
 
   const body = lines.join("\n");
   return `mailto:${CHANGE_FALLBACK_ADDRESS}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
