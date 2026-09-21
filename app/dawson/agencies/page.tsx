@@ -13,8 +13,12 @@
 // filter pills with counts, then cards. Consistency between Dawson's two list
 // pages matters more than optimising either.
 //
-//   Card 1 — Active + Unclaimed, one alphabetical list (not sub-grouped;
-//            status lives in the pill). His task is finding an agency.
+//   Card 1 — Active + Invited + Unclaimed, one alphabetical list (not
+//            sub-grouped; status lives in the pill). His task is finding
+//            an agency. Invited has its own pill, between Active and
+//            Unclaimed — an invite having gone out is a different state
+//            from one that hasn't, even though both used to read as
+//            "unclaimed" together.
 //   Card 2 — Inactive & rejected, collapsed by default.
 //
 // No row actions. The whole row links to /dawson/agencies/[id]; invite,
@@ -169,10 +173,15 @@ function AgencyRow({ a, staffCount, matched }: {
   )
 }
 
-type PillKey = 'all' | 'active' | 'unclaimed'
+type PillKey = 'all' | 'active' | 'invited' | 'unclaimed'
 
 const isActive = (s: string) => s === 'Approved'
-const isUnclaimed = (s: string) => s === 'Unclaimed' || s === 'Invited'
+const isInvited = (s: string) => s === 'Invited'
+// Strictly the Unclaimed status now — Invited used to be lumped in here
+// (an agency with a pending invite read as "unclaimed" too), but it has
+// its own pill now, between Active and Unclaimed. Unclaimed alone means
+// no invite has gone out yet.
+const isUnclaimed = (s: string) => s === 'Unclaimed'
 const isEnded = (s: string) => s === 'Inactive' || s === 'Rejected'
 
 export default function AgenciesPage() {
@@ -205,7 +214,7 @@ export default function AgenciesPage() {
   const rowMatches = (a: Agency) => fieldMatch(a) || staffMatches(a.id, search).length > 0
   const hintFor = (a: Agency) => (fieldMatch(a) ? [] : staffMatches(a.id, search))
 
-  const live = agencies.filter(a => isActive(a.status) || isUnclaimed(a.status))
+  const live = agencies.filter(a => isActive(a.status) || isInvited(a.status) || isUnclaimed(a.status))
   const ended = agencies.filter(a => isEnded(a.status))
 
   // Counts are of the whole pool, not the search-filtered view — they show
@@ -213,12 +222,16 @@ export default function AgenciesPage() {
   const counts = {
     all: live.length,
     active: live.filter(a => isActive(a.status)).length,
+    invited: live.filter(a => isInvited(a.status)).length,
     unclaimed: live.filter(a => isUnclaimed(a.status)).length,
   }
 
   const card1 = live
     .filter(a =>
-      pill === 'all' ? true : pill === 'active' ? isActive(a.status) : isUnclaimed(a.status),
+      pill === 'all' ? true
+      : pill === 'active' ? isActive(a.status)
+      : pill === 'invited' ? isInvited(a.status)
+      : isUnclaimed(a.status),
     )
     .filter(rowMatches)
   const card2 = ended.filter(rowMatches)
@@ -243,6 +256,7 @@ export default function AgenciesPage() {
         <div style={{ display: 'flex', gap: '6px', marginBottom: '20px' }}>
           <FilterPill label="All" count={counts.all} active={pill === 'all'} onClick={() => setPill('all')} />
           <FilterPill label="Active" count={counts.active} active={pill === 'active'} onClick={() => setPill('active')} />
+          <FilterPill label="Invited" count={counts.invited} active={pill === 'invited'} onClick={() => setPill('invited')} />
           <FilterPill label="Unclaimed" count={counts.unclaimed} active={pill === 'unclaimed'} onClick={() => setPill('unclaimed')} />
         </div>
 
