@@ -17,10 +17,13 @@
 //   • The client receipt PDF, which the cron generates into an Airtable
 //     attachment; this page only links to it.
 //
-// Editing closes after the Monday before the appointment, and only while the
-// referral is still open. That rule lives in lib/referrals/edit-window.ts
+// Editing closes after the Thursday before a Scheduled appointment, reopens
+// for a no-show inside its reschedule window, and is otherwise gated purely
+// on status. That rule lives in lib/referrals/edit-window.ts (agencyEditWindow)
 // because PATCH /api/referrals/[id] enforces the same thing server-side —
-// hiding the button is presentation, not permission.
+// hiding the button is presentation, not permission. No banner announces any
+// of this — the Edit button is simply there while editing is open and absent
+// once it's not, same as Dawson's side.
 
 import { useState, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
@@ -127,10 +130,11 @@ const STATES = ['NJ', 'NY', 'PA', 'CT', 'DE']
 // pattern, second portal — not a new one.
 //
 // Strictly: teal only while the card actually accepts an edit. Once the edit
-// window closes — past the Monday cutoff or a terminal status — the three
-// editable cards go grey too, and status colour lives solely in the header
-// pill. (Your Notes has no Monday cutoff, so it stays teal a little longer
-// than the other two — see agencyNotesEditable.)
+// window closes — past the Thursday cutoff, a terminal status, or (for a
+// no-show) past its reschedule window — the three editable cards go grey
+// too, and status colour lives solely in the header pill. (Your Notes has no
+// Thursday cutoff, so it stays teal a little longer than the other two — see
+// agencyNotesEditable.)
 const EDIT_ACCENT = '#2A7F6F'  // teal — editable card
 const READ_ACCENT = '#7A8899'  // muted grey — read-only card
 
@@ -310,16 +314,13 @@ function EditButton({ onClick, label = 'Edit' }: { onClick: () => void; label?: 
   )
 }
 
-function LockedBadge() {
-  return (
-    <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', fontSize: '11px', fontWeight: 700, color: '#9AA6B2', flexShrink: 0 }}>
-      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" /><path d="M7 11V7a5 5 0 0 1 10 0v4" />
-      </svg>
-      Locked
-    </span>
-  )
-}
+// A locked card's header shows nothing in place of the Edit button — no
+// icon, no "Locked" label, no banner elsewhere on the page either. Same call
+// as Dawson's side (see the Card comment near EditButton on
+// app/dawson/referrals/[id]/page.tsx): the Edit button is present while
+// editing is open and simply absent after; the accent already going grey
+// (READ_ACCENT) carries the read-only signal. (An earlier round here had a
+// LockedBadge and a page-level banner; both are gone.)
 
 // Header action buttons. Three tiers, all sharing one geometry — 7px 16px,
 // radius 7px, Montserrat 700 at 11px, transparent fill — so the row reads as
@@ -420,10 +421,9 @@ function toClientEditState(r: Referral): ClientEditState {
   }
 }
 
-function ClientInfoCard({ referral, locked, showLockedBadge, onSaved }: {
+function ClientInfoCard({ referral, locked, onSaved }: {
   referral: Referral
   locked: boolean
-  showLockedBadge: boolean
   onSaved: (u: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -486,7 +486,7 @@ function ClientInfoCard({ referral, locked, showLockedBadge, onSaved }: {
       <Card
         accent={locked ? READ_ACCENT : EDIT_ACCENT}
         title="Client Information"
-        headerRight={locked ? (showLockedBadge ? <LockedBadge /> : null) : <EditButton onClick={startEdit} />}
+        headerRight={locked ? null : <EditButton onClick={startEdit} />}
       >
         {/* Two rows per line above 1280px, one below. Column count lives in
             globals.css (.fa-inforow-pairs). */}
@@ -599,10 +599,9 @@ function ClientInfoCard({ referral, locked, showLockedBadge, onSaved }: {
 
 // -------------------------------------------------------- Items Requested
 
-function ItemsRequestedCard({ referral, locked, showLockedBadge, onSaved }: {
+function ItemsRequestedCard({ referral, locked, onSaved }: {
   referral: Referral
   locked: boolean
-  showLockedBadge: boolean
   onSaved: (u: Partial<Referral>) => void
 }) {
   const [editing, setEditing] = useState(false)
@@ -654,7 +653,7 @@ function ItemsRequestedCard({ referral, locked, showLockedBadge, onSaved }: {
       <Card
         accent={locked ? READ_ACCENT : EDIT_ACCENT}
         title="Items Requested"
-        headerRight={locked ? (showLockedBadge ? <LockedBadge /> : null) : <EditButton onClick={startEdit} />}
+        headerRight={locked ? null : <EditButton onClick={startEdit} />}
       >
         {list.length > 0 ? (
           // Two bullets per line above 1280px, one below. Column count lives in
@@ -709,10 +708,10 @@ function ItemsRequestedCard({ referral, locked, showLockedBadge, onSaved }: {
 
 // Rendered only when editable, or when read-only with notes already on file
 // (the caller gates that — see showNotesCard). `editable` follows
-// agencyNotesEditable, which is laxer than the other cards' lock: no Monday
-// cutoff, just a terminal-state one. Read-only means content but no Edit
-// button and no lock badge — an empty read-only card says nothing, so it
-// isn't shown at all.
+// agencyNotesEditable, which is laxer than the other cards' lock: no
+// Thursday cutoff, just a terminal-state one (plus its own no-show carve-out
+// — see agencyNotesEditable). Read-only means content but no Edit button —
+// an empty read-only card says nothing, so it isn't shown at all.
 function YourNotesCard({ referral, editable, onSaved }: {
   referral: Referral
   editable: boolean
@@ -1012,11 +1011,16 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     status === 'Submitted' || status === 'Scheduling' || status === 'Scheduled' ||
     status === 'Reschedule' || status === 'Rejected'
 
-  // Your Notes: editable on its own laxer rule (agencyNotesEditable — no Monday
-  // cutoff, just terminal states). On a terminal referral the card is read-only
-  // if notes exist and hidden entirely if they don't — an empty read-only card
-  // is just wasted rail space.
-  const notesEditable = agencyNotesEditable(referral.referralReview, referral.appointmentStatus)
+  // Your Notes: editable on its own laxer rule (agencyNotesEditable — no
+  // Thursday cutoff, just terminal states, plus its own no-show-in-window
+  // carve-out). On a terminal referral the card is read-only if notes exist
+  // and hidden entirely if they don't — an empty read-only card is just
+  // wasted rail space.
+  const notesEditable = agencyNotesEditable(
+    referral.referralReview,
+    referral.appointmentStatus,
+    referral.appointmentDate,
+  )
   const showNotesCard = notesEditable || !!referral.externalNotes
 
   const editWindow = agencyEditWindow({
@@ -1024,12 +1028,6 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
     appointmentDate: referral.appointmentDate,
   })
   const locked = !editWindow.editable
-  // The Locked badge is only worth showing when editing was actively cut off
-  // while the referral was still live — a Scheduled referral past the Monday
-  // deadline, which also gets the explanatory banner below. On a Completed or
-  // Cancelled referral there is nothing to "lock": the record is closed, the
-  // status pill already says so, and the badge was just noise.
-  const showLockedBadge = locked && status !== 'Completed' && status !== 'Cancelled'
 
   // Header actions, by portal status:
   //
@@ -1177,28 +1175,19 @@ export default function ReferralDetailPage({ params }: { params: Promise<{ id: s
           (.fa-referral-detail-grid) so they can stack below 1280px. */}
       <div className="fa-referral-detail-grid" style={{ padding: '28px 32px', margin: '0 auto', display: 'grid', gap: '20px', alignItems: 'start' }}>
 
-        {/* Why the Edit buttons are gone. Spans both columns — the lock applies
-            to the whole record, including Your Notes in the right rail — and
-            reads as a page-level note: gold left accent + tint kept, padding
-            and type stepped down from the old boxed warning.
-            Shown for EVERY locked state: 'past-cutoff' (a Scheduled referral
-            past the Monday deadline) and 'status' (Completed / Cancelled /
-            Withdrawn / Rejected). A locked card with no reason reads as a bug. */}
-        {locked && (
-          <div style={{ gridColumn: '1 / -1', background: 'rgba(201,168,76,0.10)', borderLeft: '3px solid #C9A84C', borderRadius: '8px', padding: '7px 14px', fontSize: '11.5px', color: '#7A6A28', lineHeight: 1.5 }}>
-            {editWindow.reason === 'past-cutoff' ? (
-              <>Editing closed on {formatDate(editWindow.cutoffDate)}, the Monday before this appointment. Contact Furniture Assist if something needs to change.</>
-            ) : (
-              <>This referral is closed and can no longer be edited. Contact Furniture Assist if something needs to change.</>
-            )}
-          </div>
-        )}
+        {/* No page-level "editing is closed" banner, for any lock reason —
+            status or date alike. It used to sit here for every locked state
+            and, on a no-show still inside its reschedule window, said the
+            referral "is closed and can no longer be edited" directly above a
+            working Reschedule button. The only signal now is whether the
+            Edit button is on the card — same as Dawson's side (see the Card
+            comment near EditButton on his detail page). */}
 
         {/* LEFT */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
-          <ClientInfoCard referral={referral} locked={locked} showLockedBadge={showLockedBadge} onSaved={applyUpdate} />
-          <ItemsRequestedCard referral={referral} locked={locked} showLockedBadge={showLockedBadge} onSaved={applyUpdate} />
+          <ClientInfoCard referral={referral} locked={locked} onSaved={applyUpdate} />
+          <ItemsRequestedCard referral={referral} locked={locked} onSaved={applyUpdate} />
           {showItemsReceived && <ItemsReceivedCard disbursed={referral.itemsDisbursed} />}
         </div>
 
