@@ -84,17 +84,19 @@ export async function PATCH(
 
   // "Your Notes" (External Notes) has a laxer rule than everything else: no
   // warehouse pick list rides on a note, so it edits until the referral reaches
-  // a terminal state, with no Monday cutoff — see agencyNotesEditable(). Every
-  // other field stays on agencyEditWindow (portal status + Monday cutoff). A
-  // payload touching both is held to the stricter agencyEditWindow; the portal
-  // never sends a mixed one (each card saves on its own).
+  // a terminal state (plus its own no-show-in-window carve-out), with no
+  // Thursday cutoff — see agencyNotesEditable(). Every other field stays on
+  // agencyEditWindow (portal status + Thursday cutoff for Scheduled, or the
+  // no-show window). A payload touching both is held to the stricter
+  // agencyEditWindow; the portal never sends a mixed one (each card saves on
+  // its own).
   const touchesOther =
     'items' in body || 'hhSize' in body || 'children' in body ||
     !!(body.client && typeof body.client === 'object')
   const notesOnly = 'externalNotes' in body && !touchesOther
 
   if (notesOnly) {
-    if (!agencyNotesEditable(referral.referralReview, referral.appointmentStatus)) {
+    if (!agencyNotesEditable(referral.referralReview, referral.appointmentStatus, referral.appointmentDate)) {
       return NextResponse.json(
         { error: 'This referral can no longer be edited.', reason: 'status', cutoffDate: null },
         { status: 409 },
@@ -112,7 +114,7 @@ export async function PATCH(
           error:
             window.reason === 'status'
               ? 'This referral can no longer be edited.'
-              : 'Editing closed on the Monday before the appointment. Contact Furniture Assist to make a change.',
+              : 'Editing closed on the Thursday before the appointment. Contact Furniture Assist to make a change.',
           reason: window.reason,
           cutoffDate: window.cutoffDate,
         },
