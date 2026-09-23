@@ -19,26 +19,34 @@
 //   3. History        — every referral on file for that client, each row a
 //                       link to the referral, opening in a new tab.
 //
-// Then three equal actions. The red is on the HEADER ONLY and the buttons
-// stay neutral: a repeat client is not an error, and the card exists to make
-// Dawson stop and read the history, not to tell him he did something wrong.
+// Then three equal actions. For a completed / cancelled / aged no-show match
+// the red is on the HEADER ONLY and the buttons stay neutral: a repeat client
+// is not an error, and the card exists to make Dawson stop and read the
+// history, not to tell him he did something wrong.
 //
-// Scenario still drives which action the teal button offers (see `primary`
-// in MatchCard), but no longer drives the card's colour — all three cases
-// look identical:
+// The ACTIVE case is the documented exception. Booking on top of an
+// appointment that already exists is the one path on this card that creates a
+// real duplicate booking, so it keeps the gold override outline it has always
+// had, and the header names the situation instead of using the generic line.
+// (Built neutral first, on a reading of "red header only, neutral buttons"
+// that Ben corrected: that rule was written for the completed case and was
+// never meant to reach this one.)
+//
+// Scenario drives the header wording and which single booking action is
+// offered (see MatchCard):
 //   1. 'reschedule' -- a No Show within the reschedule window, same
 //      agency, nothing already active. The teal button reschedules the
 //      existing record in place rather than creating a new one, so its
 //      label says exactly that — "Book another appointment" would
 //      misdescribe reopening a record that already exists.
 //   2. 'active'      -- a Scheduled / Pending Schedule appointment already
-//      exists. Takes priority over #1. The fact itself is carried by the
-//      Scheduled / Pending Schedule pill in the history table, which is
-//      what the card is asking him to read, rather than by colouring the
-//      button. (This replaced a gold-outlined "Book a second appointment"
-//      override button — see the PR for that tradeoff.)
+//      exists. Takes priority over #1: if they are already back on the
+//      books there is nothing left to reopen. Gold-outlined "Book a second
+//      appointment", and a header that says which of the two active states
+//      it is — a Pending Schedule referral has no Saturday yet, so calling
+//      it "scheduled" would be wrong.
 //   3. 'history'     -- Completed / Cancelled / an older or
-//      different-agency No Show.
+//      different-agency No Show. Teal, neutral, generic header.
 //
 // DNS (Clients.Status === 'DNS') still replaces all of the above: the header
 // says so and there is NO booking action at all, only "Different person" and
@@ -166,18 +174,20 @@ const MONT = 'var(--font-montserrat)'
 // places — Ben's explicit ask. Keyed on the RAW Airtable Appointment Status,
 // since that is what the history rows carry.
 //
-// NOTE the No Show pair is that list's own #C9A84C-on-gold-tint, which
-// measures 1.99:1. Carried over deliberately rather than quietly corrected
-// here: matching the list was the instruction, and fixing it in one of the
-// two places would make them disagree. Flagged in the PR with the one-line
-// change (#8A6D14, already used by the Reschedule pill) if Ben wants it in
-// both.
+// The No Show pill's text is #8A6D14, NOT the brand gold #C9A84C, and the
+// referrals list was changed to match in the same commit — Ben's call, since
+// #C9A84C on its own 15% tint measures 2.04:1 and is genuinely unreadable.
+// #8A6D14 is already the Reschedule pill's colour, so this introduces no new
+// value. It measures 4.39:1 at rest and 4.06:1 on a hovered row: a large
+// improvement, still marginally under 4.5. Keep the two files in step — the
+// whole point of matching the list is that the same referral reads the same
+// in both places.
 const STATUS_UI: Record<string, { label: string; bg: string; color: string }> = {
   'Scheduled': { label: 'Scheduled', bg: 'rgba(42,127,111,0.12)', color: TEAL },
   'Pending Schedule': { label: 'Pending', bg: 'rgba(122,136,153,0.14)', color: MUTED },
   'Reschedule': { label: 'Reschedule requested', bg: 'rgba(201,168,76,0.18)', color: '#8A6D14' },
   'Completed': { label: 'Completed', bg: 'rgba(27,43,75,0.08)', color: NAVY },
-  'No Show': { label: 'No Show', bg: 'rgba(201,168,76,0.15)', color: '#C9A84C' },
+  'No Show': { label: 'No Show', bg: 'rgba(201,168,76,0.15)', color: '#8A6D14' },
   'Cancelled': { label: 'Cancelled', bg: 'rgba(192,57,43,0.10)', color: ERROR },
 }
 
@@ -312,7 +322,45 @@ function AlertIcon() {
   )
 }
 
-function HeaderStrip({ doNotServe }: { doNotServe: boolean }) {
+// The header says the most specific true thing about this match, because the
+// three cases are not equally serious:
+//
+//   dns     — a decision already taken; there is no booking action at all.
+//   active  — the client is ALREADY on the books. This is the one path on
+//             this card that creates a genuine duplicate booking, so the
+//             header names it rather than using the generic line, and the
+//             booking button keeps its gold override outline (see
+//             ActionButton 'override'). Ben's correction: "red header only,
+//             neutral buttons" was written for the completed-appointment
+//             case and was never meant to cover this one.
+//   default — completed / cancelled / an aged or other-agency no-show.
+//
+// 'Scheduled' and 'Pending Schedule' are both "active", but only one of them
+// is actually scheduled: a Pending Schedule referral has no Saturday yet.
+// Saying "scheduled" there would be the generic-line problem again, one level
+// down, so the two get their own wording.
+function HeaderStrip({
+  doNotServe,
+  activeStatus,
+}: {
+  doNotServe: boolean
+  /** Raw Airtable status of the active referral, when there is one. */
+  activeStatus: string | null
+}) {
+  const heading = doNotServe
+    ? 'This client is marked do not serve'
+    : activeStatus === 'Pending Schedule'
+      ? 'This client already has an appointment awaiting a date'
+      : activeStatus
+        ? 'This client already has an appointment scheduled'
+        : 'This client is already in the system'
+
+  const sub = doNotServe
+    ? "They can't be referred. Check the appointment history below to confirm it's the right person."
+    : activeStatus
+      ? 'Booking here adds a second one. Check the appointment history below, then choose what to do.'
+      : 'Check the appointment history below, then choose what to do.'
+
   return (
     <div style={{
       background: ERROR_BG, borderBottom: `2px solid ${ERROR}`,
@@ -321,12 +369,10 @@ function HeaderStrip({ doNotServe }: { doNotServe: boolean }) {
       <AlertIcon />
       <div style={{ minWidth: 0 }}>
         <div style={{ fontFamily: MONT, fontWeight: 800, fontSize: '20px', color: NAVY, lineHeight: 1.25 }}>
-          {doNotServe ? 'This client is marked do not serve' : 'This client is already in the system'}
+          {heading}
         </div>
         <div style={{ fontSize: '13px', color: MUTED, lineHeight: 1.5, marginTop: '3px' }}>
-          {doNotServe
-            ? "They can't be referred. Check the appointment history below to confirm it's the right person."
-            : 'Check the appointment history below, then choose what to do.'}
+          {sub}
         </div>
       </div>
     </div>
@@ -501,22 +547,32 @@ function AppointmentHistoryBox({ history }: { history: ReferralHistoryItem[] }) 
 //   white on teal #2A7F6F .......... 4.81:1
 //   #5A6878 on white ............... 5.70:1
 //   #8E3227 on #FDF0EE ............. 7.16:1
+//   #8A6A00 on white (override) .... 5.07:1
 // The teal button's second line is FULL white, deliberately — the usual
 // trick of dropping it to ~85% opacity lands at 4.06:1 and fails.
+//
+// 'override' is the gold-outlined booking button used ONLY when the client
+// already has an active appointment — the one action on this card that
+// creates a real duplicate booking. Gold marks it; it is not made louder
+// than the others. The #C9A84C border measures 2.29:1 against white as a
+// graphic; the label and second line both sit at #8A6A00 (5.07:1), so the
+// button's meaning never rests on the border colour alone.
 function ActionButton({
   onClick, label, sub, variant,
 }: {
   onClick: () => void
   label: string
   sub: string
-  variant: 'primary' | 'neutral' | 'quiet'
+  variant: 'primary' | 'override' | 'neutral' | 'quiet'
 }) {
   const skin =
     variant === 'primary'
       ? { background: TEAL, border: `2px solid ${TEAL}`, color: 'white', subColor: 'white' }
-      : variant === 'neutral'
-        ? { background: 'white', border: '2px solid #C3BFB6', color: NAVY, subColor: MUTED }
-        : { background: ERROR_BG, border: '2px solid #E0B4AD', color: '#8E3227', subColor: '#8E3227' }
+      : variant === 'override'
+        ? { background: 'white', border: '2px solid #C9A84C', color: '#8A6A00', subColor: '#8A6A00' }
+        : variant === 'neutral'
+          ? { background: 'white', border: '2px solid #C3BFB6', color: NAVY, subColor: MUTED }
+          : { background: ERROR_BG, border: '2px solid #E0B4AD', color: '#8E3227', subColor: '#8E3227' }
 
   return (
     <button
@@ -580,7 +636,10 @@ function MatchCard({
       border: `2px solid ${ERROR}`, borderRadius: '10px',
       overflow: 'hidden', background: 'white', marginBottom: '14px',
     }}>
-      <HeaderStrip doNotServe={doNotServe} />
+      <HeaderStrip
+        doNotServe={doNotServe}
+        activeStatus={activeScenario?.referral.appointmentStatus ?? null}
+      />
 
       <div style={{ padding: '18px' }}>
         <ClientOnFileBox match={match} form={form} />
@@ -594,7 +653,18 @@ function MatchCard({
             different DOBs and pass it; the same person dismissed here does not.
             Keep both checks, in that order. */}
         <div className="fa-dupe-actions">
-          {!doNotServe && (
+          {/* One booking action, three wordings. `activeScenario` wins over
+              `canReschedule` — that priority is set above, and if they are
+              already back on the books there is nothing left to reopen. */}
+          {!doNotServe && activeScenario && (
+            <ActionButton
+              variant="override"
+              onClick={() => onResolve('book-new', match)}
+              label="Book a second appointment"
+              sub="Adds a second one alongside the appointment already on file."
+            />
+          )}
+          {!doNotServe && !activeScenario && (
             <ActionButton
               variant="primary"
               onClick={() => onResolve(canReschedule ? 'reschedule' : 'book-new', match)}
