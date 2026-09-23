@@ -27,7 +27,11 @@ export default function EmailLogReportPage() {
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
       <DawsonPageControls>
-        <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#C9A84C' }}>
+        {/* #7A6111, not the brand gold #C9A84C: this pill's 15% gold tint sits
+            on the page's cream #F7F5F1 rather than white, where #C9A84C
+            measures 1.89:1 — the worst of the gold pills. Same darkened gold
+            the other Dawson gold pills use. */}
+        <span style={{ fontSize: '12px', fontWeight: 700, padding: '2px 10px', borderRadius: '20px', background: 'rgba(201,168,76,0.15)', color: '#7A6111' }}>
           Coming soon
         </span>
       </DawsonPageControls>

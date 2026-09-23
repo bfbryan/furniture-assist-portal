@@ -134,7 +134,10 @@ const MUTED_EMPTY: React.CSSProperties = { fontSize: '13px', color: '#7A8899', f
 const STATUS_COLORS: Record<string, { accent: string; badgeBg: string; badgeText: string }> = {
   Unclaimed: { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' },
   Invited:   { accent: '#5B8DB8', badgeBg: 'rgba(91,141,184,0.12)', badgeText: '#5B8DB8' },
-  Pending:   { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)', badgeText: '#C9A84C' },
+  // badgeText is #7A6111, not the brand gold #C9A84C: on this pill's own 15%
+  // gold tint #C9A84C measures 2.04:1. `accent` stays #C9A84C — it is a 4px
+  // card border, not text, and is unchanged here.
+  Pending:   { accent: '#C9A84C', badgeBg: 'rgba(201,168,76,0.15)', badgeText: '#7A6111' },
   Approved:  { accent: '#2A7F6F', badgeBg: 'rgba(42,127,111,0.12)', badgeText: '#2A7F6F' },
   Rejected:  { accent: '#C0392B', badgeBg: 'rgba(192,57,43,0.1)', badgeText: '#C0392B' },
   Inactive:  { accent: '#7A8899', badgeBg: '#F0F0F0', badgeText: '#7A8899' },

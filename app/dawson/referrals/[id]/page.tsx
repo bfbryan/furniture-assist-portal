@@ -298,13 +298,17 @@ function twoColumn(count: number): React.CSSProperties {
 const APPOINTMENT_STATUS_COLORS: Record<string, { badgeBg: string; badgeText: string }> = {
   'Pending Schedule': { badgeBg: 'rgba(91,141,184,0.12)', badgeText: '#5B8DB8' },
   Scheduled:          { badgeBg: 'rgba(42,127,111,0.12)', badgeText: '#2A7F6F' },
-  Reschedule:         { badgeBg: 'rgba(201,168,76,0.15)', badgeText: '#C9A84C' },
+  // #7A6111, not the brand gold #C9A84C: on this pill's own 15% gold tint
+  // #C9A84C measures 2.04:1. Same darkened gold the No Show pill on the
+  // referrals list and the duplicate-client card use. The FILL is unchanged.
+  Reschedule:         { badgeBg: 'rgba(201,168,76,0.15)', badgeText: '#7A6111' },
   Completed:          { badgeBg: 'rgba(27,43,75,0.08)',   badgeText: '#1B2B4B' },
   Cancelled:          { badgeBg: 'rgba(192,57,43,0.1)',   badgeText: '#C0392B' },
   'No Show':          { badgeBg: 'rgba(192,57,43,0.1)',   badgeText: '#C0392B' },
 }
 const REVIEW_STATUS_COLORS: Record<string, { badgeBg: string; badgeText: string }> = {
-  Pending:   { badgeBg: 'rgba(201,168,76,0.15)', badgeText: '#C9A84C' },
+  // #7A6111 for the same reason as Reschedule above — 2.04:1 on its own tint.
+  Pending:   { badgeBg: 'rgba(201,168,76,0.15)', badgeText: '#7A6111' },
   Rejected:  { badgeBg: 'rgba(192,57,43,0.1)',   badgeText: '#C0392B' },
   Withdrawn: { badgeBg: 'rgba(192,57,43,0.1)',   badgeText: '#C0392B' },
 }

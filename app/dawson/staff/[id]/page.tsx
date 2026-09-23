@@ -188,7 +188,10 @@ const STATUS_COLORS: Record<string, { badgeBg: string; badgeText: string }> = {
   Active:    { badgeBg: 'rgba(42,127,111,0.12)', badgeText: '#2A7F6F' },
   Invited:   { badgeBg: 'rgba(91,141,184,0.12)', badgeText: '#5B8DB8' },
   Unclaimed: { badgeBg: '#F0F0F0',               badgeText: '#7A8899' },
-  Pending:   { badgeBg: 'rgba(201,168,76,0.15)', badgeText: '#C9A84C' },
+  // #7A6111, not the brand gold #C9A84C: on this pill's own 15% gold tint
+  // #C9A84C measures 2.04:1. Same darkened gold used by the gold pills on
+  // the referrals list, referral detail and agency detail pages.
+  Pending:   { badgeBg: 'rgba(201,168,76,0.15)', badgeText: '#7A6111' },
   Inactive:  { badgeBg: '#F0F0F0',               badgeText: '#7A8899' },
 }
 
