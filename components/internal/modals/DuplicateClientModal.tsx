@@ -174,20 +174,22 @@ const MONT = 'var(--font-montserrat)'
 // places — Ben's explicit ask. Keyed on the RAW Airtable Appointment Status,
 // since that is what the history rows carry.
 //
-// The No Show pill's text is #8A6D14, NOT the brand gold #C9A84C, and the
-// referrals list was changed to match in the same commit — Ben's call, since
-// #C9A84C on its own 15% tint measures 2.04:1 and is genuinely unreadable.
-// #8A6D14 is already the Reschedule pill's colour, so this introduces no new
-// value. It measures 4.39:1 at rest and 4.06:1 on a hovered row: a large
-// improvement, still marginally under 4.5. Keep the two files in step — the
-// whole point of matching the list is that the same referral reads the same
-// in both places.
+// The No Show pill's text is #7A6111, NOT the brand gold #C9A84C, and the
+// referrals list was changed to match — Ben's call, since #C9A84C on its own
+// 15% tint measures 2.04:1 and is genuinely unreadable. #7A6111 is the only
+// one of the three golds that clears 4.5:1 everywhere this pill renders:
+// 5.30:1 on a resting row, 5.10:1 on the list's hover, 4.89:1 on this card's
+// own #F7F5F1 hover. (#8A6D14, the Reschedule pill's colour below, reaches
+// only 4.39 / 4.23 / 4.06 — better than the brand gold, still short.)
+//
+// Keep the two files in step — the whole point of matching the list is that
+// the same referral reads the same in both places.
 const STATUS_UI: Record<string, { label: string; bg: string; color: string }> = {
   'Scheduled': { label: 'Scheduled', bg: 'rgba(42,127,111,0.12)', color: TEAL },
   'Pending Schedule': { label: 'Pending', bg: 'rgba(122,136,153,0.14)', color: MUTED },
   'Reschedule': { label: 'Reschedule requested', bg: 'rgba(201,168,76,0.18)', color: '#8A6D14' },
   'Completed': { label: 'Completed', bg: 'rgba(27,43,75,0.08)', color: NAVY },
-  'No Show': { label: 'No Show', bg: 'rgba(201,168,76,0.15)', color: '#8A6D14' },
+  'No Show': { label: 'No Show', bg: 'rgba(201,168,76,0.15)', color: '#7A6111' },
   'Cancelled': { label: 'Cancelled', bg: 'rgba(192,57,43,0.10)', color: ERROR },
 }
 
