@@ -80,20 +80,23 @@ type AccentKind = keyof typeof ACCENT
 const GREY = '#7A8899'
 const NAVY = '#1B2B4B'
 
-// client / details / actions. Both side columns are fixed; the middle takes
-// all the slack. Col 1 is deliberately tight — a client name over an agency
-// name, truncating past ~24 chars (the name is a link to the full record).
-// Col 3 holds a secondary + primary button on ONE line — Pick another · Accept,
-// or Cancel · Confirm accept when the two-step arms — right-aligned; row height
-// is set by the info block, not the buttons. Widest line ≈ 203px (armed), so
-// col 3 at 240 keeps ~37px of slack. The divider was moved left (rail 552 →
-// 600) to unclamp the rail; col 3 dropping from 312 (it lost the Reject button)
-// funds most of that and leaves col2 at ~247px — comfortably over the longest
-// info line, "Requested: Flexible — no date given" (~215px).
+// Row layout: name+agency on the left, the decision info on the right,
+// actions on their own line underneath at the right-hand edge. Two columns,
+// not the three this used to have — moving the buttons out of the row is
+// what buys the info block enough width to stop squeezing it.
 //
-// The grid itself lives in globals.css now (.fa-na-row), not inline — it
-// needs a stack breakpoint (below 1279.98px: client, then info, then
-// actions at full width, one column) that an inline style can't carry.
+// The rule lives in globals.css (.fa-na-row) rather than inline, because it
+// is a CONTAINER query against the cards column (.fa-needs-action-cards),
+// not a window media query — and an inline style can carry neither. That
+// distinction is the whole point: the capacity rail takes 600px out of this
+// column from 1440px up, so the column is narrower at 1440 than at 1280, and
+// a window-width rule hands the wide layout to the narrowest column on the
+// page. See the measurements in globals.css above .fa-na-row.
+//
+// Col 1 is still deliberately tight — a client name over an agency name, the
+// name truncating past ~24 chars (it is a link to the full record). The
+// agency name and every value in col 2 wrap instead; nothing there
+// truncates. See VAL below.
 
 const SECTION_TITLE: React.CSSProperties = {
   fontFamily: 'var(--font-montserrat)', fontSize: '13px', fontWeight: 800,
@@ -230,12 +233,15 @@ const VAL: React.CSSProperties = { fontSize: '12px', lineHeight: 1.5, overflowWr
 const SUBLINE: React.CSSProperties = { fontSize: '11px', lineHeight: 1.4, overflowWrap: 'anywhere' }
 const AGE: React.CSSProperties = { ...SUBLINE, fontStyle: 'italic', color: '#9AA6B2', marginTop: '2px' }
 
-// Col 3 — one horizontal line, flush to the column's right edge: secondary
-// action (Pick another / Cancel) on the left, primary (Accept / Confirm accept
-// / Review) on the right. Every card now has one primary + at most one
-// secondary, so the primary's right edge lands at the same x on every row —
-// his eye doesn't move between rows. Buttons size to their label; ROW_GRID's
-// col 3 is sized to the widest line.
+// The row's third cell — one horizontal line, flush to the row's right edge:
+// secondary action (Pick another / Cancel) on the left, primary (Accept /
+// Confirm accept / Review) on the right. Every card has one primary + at most
+// one secondary, so the primary's right edge lands at the same x on every row
+// — his eye doesn't move between rows. Buttons size to their label.
+//
+// Side-by-side this sits on its own grid row spanning both columns, pushed
+// right by justify-self (see .fa-na-row in globals.css), so it is never the
+// thing squeezing the info block. Stacked, it goes full width.
 function Actions({ children }: { children: React.ReactNode }) {
   return (
     <div className="fa-na-actions">
@@ -778,8 +784,12 @@ export default function NeedsActionPage() {
 
       <div style={{ padding: '36px 32px', maxWidth: '1440px', margin: '0 auto' }}>
         <div className="fa-needs-action-grid">
-          {/* LEFT — the cards */}
-          <div style={{ minWidth: 0 }}>
+          {/* LEFT — the cards. .fa-needs-action-cards makes this column a
+              query container (globals.css): the card rows inside size
+              themselves against THIS column's width, not the window's, so
+              the rail appearing beside them at 1440px narrows the column and
+              the rows respond to that directly. */}
+          <div className="fa-needs-action-cards" style={{ minWidth: 0 }}>
             {withheldNotices.map((n, i) => (
               <div key={i} style={{
                 background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.35)',
