@@ -150,7 +150,18 @@ const STATUS_UI: Record<DerivedStatus, { label: string; bg: string; color: strin
   scheduled: { label: 'Scheduled', bg: 'rgba(42,127,111,0.12)', color: '#2A7F6F' },
   awaiting: { label: 'Awaiting outcome', bg: '#EDEBE7', color: '#7A8899' },
   completed: { label: 'Completed', bg: 'rgba(27,43,75,0.08)', color: '#1B2B4B' },
-  missed: { label: 'No Show', bg: 'rgba(201,168,76,0.15)', color: '#C9A84C' },
+  // #7A6111, not the brand gold #C9A84C: on this pill's own 15% gold tint
+  // #C9A84C measures 2.04:1 and is unreadable. #7A6111 is the darkest of the
+  // three golds and the only one that clears 4.5:1 in every state this pill
+  // renders in — 5.30:1 on a resting row, 5.10:1 on a hovered one, 4.89:1 on
+  // the duplicate-client card's own hover fill. (#8A6D14, the Reschedule
+  // pill's colour just above, reaches only 4.39 / 4.23 / 4.06.)
+  //
+  // The duplicate-client card (components/internal/modals/DuplicateClientModal.tsx)
+  // mirrors this map, so change the two together or the same referral stops
+  // reading the same in both places. The gold FILL is unchanged; only the
+  // text moved.
+  missed: { label: 'No Show', bg: 'rgba(201,168,76,0.15)', color: '#7A6111' },
   cancelled: { label: 'Cancelled', bg: 'rgba(192,57,43,0.10)', color: '#C0392B' },
   withdrawn: { label: 'Withdrawn', bg: 'rgba(192,57,43,0.10)', color: '#C0392B' },
 }
