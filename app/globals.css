@@ -503,6 +503,28 @@ h1, h2, h3, h4, h5, h6 {
   grid-template-columns: 1fr 300px;
 }
 
+/* Duplicate-client card (components/internal/modals/DuplicateClientModal.tsx).
+   "Client on file" beside the teal "matches what you typed" panel; the panel
+   is a fixed-ish sidebar so the client's name and address get the elastic
+   track. Collapses with the rest below 1280. */
+.fa-dupe-client-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 280px);
+  gap: 18px;
+}
+
+/* The card's three actions, equal width. Flex rather than three grid tracks
+   because a do-not-serve card has no booking action and renders only two —
+   fixed tracks would leave a hole where the third used to be. */
+.fa-dupe-actions {
+  display: flex;
+  gap: 10px;
+}
+.fa-dupe-actions > * {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
 /* ---------- Fixed column tracks inside cards and forms ---------- */
 
 /* New referral form. The address row declares four tracks for three inputs;
@@ -725,8 +747,16 @@ h1, h2, h3, h4, h5, h6 {
   .fa-profile-row,
   .fa-inforow-pairs,
   .fa-items-requested-grid,
+  .fa-dupe-client-grid,
   .fa-profile-citystatezip {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  /* Duplicate-client actions stack rather than squeeze: each carries a
+     second line of real text, and three of those side by side below 1280
+     wrap into unreadable slivers. */
+  .fa-dupe-actions {
+    flex-direction: column;
   }
 
   /* The 960px cap the referral detail page used to carry inline. Kept here so
