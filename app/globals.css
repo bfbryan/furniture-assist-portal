@@ -610,32 +610,37 @@ h1, h2, h3, h4, h5, h6 {
   }
 }
 
-/* Needs Action card rows — client | info | actions, the row shape shared by
-   CardSection's own header row and every RowShell. Same three-column idea
-   as .fa-active-row above, but nothing here needs that one's nth-child
-   reordering: all three children already sit in the order the stacked
-   layout wants (client, then the decision info, then actions), so a plain
-   single column is enough.
+/* The cards column is a QUERY CONTAINER, so the rows below size themselves
+   against the space they actually have rather than against the window.
+   This is the whole point: .fa-needs-action-grid above drops a 600px rail
+   beside these cards from exactly 1440px up, so the column is NARROWER at
+   1440 (512px) than it is at 1280 (976px), where the rail has already
+   stacked underneath and the cards get the full row. A max-width media
+   query cannot express that — it only knows the window, so it hands the
+   wide-screen layout to the narrowest column on the page. Measured, this
+   branch, real browser:
 
-   Stacks at 1699.98px, NOT the 1279.98 .fa-active-row/.fa-team-row already
-   use — checked live in a browser (Playwright, real gridTemplateColumns
-   measurements) before picking this, because 1279.98 alone leaves a real
-   gap: .fa-needs-action-grid (above) puts the 600px rail beside the cards
-   starting at exactly 1440px, and from 1440px up to roughly 1650px the
-   card column is narrower than it is even at 1280px, where the rail has
-   already dropped below and cards get the full row's width. Measured at
-   1440px specifically: the middle (info) column collapsed to 4px — the
-   original bug, but reproducible at a WIDER viewport than the sidebar
-   breakpoint alone would suggest, not just below it. 1699.98 is where the
-   middle column clears ~260px with the rail still beside it — comfortable
-   again. Below it the info column (dates/times — see the VAL comment in
-   needs-action/page.tsx) had nowhere near enough room at 200px client +
-   240px actions either side of it; squeezing three columns is what cut the
-   time off "Currently: Sep 19, …" on Dawson's own laptop. */
+     window   rail      cards column
+     1280     stacked       976px
+     1440     beside        512px
+     1728     beside        752px
+
+   Nothing below mentions the rail; the rail changes the column's width and
+   the container query follows it. Add or remove the rail and the rows
+   re-lay themselves out with no width rule touched. */
+.fa-needs-action-cards {
+  container-type: inline-size;
+}
+
+/* Needs Action card rows — the shape shared by CardSection's own header row
+   and every RowShell. Stacked is the BASE state, not the exception: a
+   browser without container-query support, or a genuinely narrow column,
+   gets the one-column layout, and the side-by-side arrangement is layered
+   on top only once the column is provably wide enough for it. */
 .fa-na-row {
   display: grid;
-  grid-template-columns: 200px minmax(0, 1fr) 240px;
-  gap: 16px;
+  grid-template-columns: minmax(0, 1fr);
+  row-gap: 10px;
 }
 .fa-na-actions {
   display: flex;
@@ -643,24 +648,67 @@ h1, h2, h3, h4, h5, h6 {
   gap: 8px;
   align-items: center;
   justify-content: flex-end;
+  /* Stacked, the buttons take the row's full width — see the container
+     query below, which hands this back to auto once side-by-side. */
+  width: 100%;
+}
+/* Column headers ("Client" / "Currently / Requested" / "") describe columns
+   that don't exist while the row is stacked — same reasoning
+   .fa-active-row--head is hidden at its own breakpoint. Each stacked block
+   already carries its own "Currently:"/"Requested:" prefix in the text
+   itself, so nothing goes unlabeled. */
+.fa-na-row-headers {
+  display: none;
 }
 
-@media (max-width: 1699.98px) {
+/* 480px — derived from content, measured in a real browser with the real
+   Montserrat/Lato faces against the longest values in the live base, not
+   picked by eye. The binding pieces, widest realistic value of each:
+
+     "Cancel" + "Confirm accept" + 8px gap ........ 195.18px  <- widest
+     "Requested: Flexible — no date given" ........ 186.86px
+     "Appointment: Dec 28, 2026 · 12pm" ........... 183.11px
+     "Currently: Dec 28, 2026 · 12pm" ............. 164.74px
+     longest client name in the base (32 chars) ... 240.63px
+     p50 client name .............................. 94.49px
+
+   The right track's floor is 220px: it has to hold the widest button row
+   (195.18) and the widest single info line (186.86) without either wrapping
+   or truncating, with slack left over. The left track needs ~200px for a
+   normal client name at Montserrat 700 14px. So the row needs
+   200 + 16 gap + 220 = 436px, and the card's own chrome (3px accent border
+   + 15px/18px section padding) costs another 36px: 472px. Rounded to 480
+   for headroom.
+
+   Both tracks then grow together above that, because both sides have long
+   real content — agency names reach 410px unwrapped, and the agency card's
+   contact/website/EIN block is the longest info of any row type. */
+@container (min-width: 480px) {
   .fa-na-row {
-    grid-template-columns: 1fr;
-    row-gap: 10px;
+    grid-template-columns: minmax(0, 1fr) minmax(220px, 1fr);
+    column-gap: 16px;
+    grid-template-areas:
+      "name info"
+      "actions actions";
   }
-  /* Column headers ("Client" / "Currently / Requested" / "") describe
-     columns that no longer exist once the row stacks — same reasoning
-     .fa-active-row--head is hidden at its own breakpoint. Each stacked
-     block already carries its own "Currently:"/"Requested:" prefix in the
-     text itself, so nothing here goes unlabeled. */
-  .fa-na-row-headers {
-    display: none;
-  }
-  .fa-na-actions {
-    width: 100%;
-  }
+  /* The three children stay in DOM order (name, info, actions) — the areas
+     just place the third one on its own row, right-aligned, instead of in a
+     third column. No reordering, so the stacked reading order is the same
+     order as the side-by-side one. */
+  .fa-na-row > :nth-child(1) { grid-area: name; }
+  .fa-na-row > :nth-child(2) { grid-area: info; }
+  /* Bottom-right. justify-self (not the flex justify-content inside
+     .fa-na-actions) so the rows whose third cell is a plain advisory line
+     rather than buttons — Awaiting outcome, Flagged duplicates — land in
+     the same place. */
+  .fa-na-row > :nth-child(3) { grid-area: actions; justify-self: end; }
+
+  .fa-na-actions { width: auto; }
+
+  .fa-na-row-headers { display: grid; }
+  /* The third column header is an empty string; left in the actions area it
+     would open a second grid row and add a stray row-gap under the headers. */
+  .fa-na-row-headers > :nth-child(3) { display: none; }
 }
 
 /* ==========================================================================
