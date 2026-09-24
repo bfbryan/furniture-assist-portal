@@ -88,7 +88,9 @@ export type ReferralHistoryItem = {
   id: string
   appointmentStatus: string
   appointmentDate: string
+  appointmentTime: string
   preferredDate: string
+  preferredTime: string
   referringAgency: string
   referringStaff: string
   itemsRequested: string[]
@@ -246,6 +248,25 @@ function formatDate(dateStr: string): string {
 // to Preferred Date so the row isn't just blank.
 function displayDate(h: ReferralHistoryItem): string {
   return h.appointmentDate || h.preferredDate
+}
+
+// The hour belonging to whichever DATE displayDate picked. Paired deliberately
+// rather than read independently: a Pending Schedule row falls back to
+// Preferred Date, and reading Appointment Time beside it would print one
+// appointment's hour against another's day. Blank when that slot has no hour
+// yet, which is the normal state of a Pending Schedule row.
+function displayTime(h: ReferralHistoryItem): string {
+  return h.appointmentDate ? h.appointmentTime : h.preferredTime
+}
+
+// "Oct 17, 2026 · 11am", the separator the Needs Action rows use. Note
+// lib/referrals/slot-display.ts's formatSlot() renders the same pair as
+// "<date> at <time>" for the referrals list — /dawson genuinely carries both
+// today. Ben asked for the dot here.
+function displaySlot(h: ReferralHistoryItem): string {
+  const date = formatDate(displayDate(h))
+  const time = displayTime(h)
+  return time ? `${date} · ${time}` : date
 }
 
 function fullAddress(parts: { address: string; address2?: string; city: string; state: string; zip: string }): string {
@@ -457,7 +478,13 @@ function ClientOnFileBox({ match, form }: { match: ClientMatch; form: FormSnapsh
   )
 }
 
-const HISTORY_GRID = 'minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 130px)'
+// The date track has a 125px FLOOR, not minmax(0, …): "Dec 28, 2026 · 12pm"
+// measures 120.8px at Lato 13px, and with a 0 floor the track collapsed to
+// about 59px at the narrowest card width — cutting the slot mid-date. Adding
+// the time is what made the column too narrow, so the floor comes in with it.
+// Agency and staff keep a 0 floor and their ellipsis: a shortened name is a
+// readable inconvenience, a shortened date is wrong information.
+const HISTORY_GRID = 'minmax(125px, 1.1fr) minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 130px)'
 
 function HistoryRow({ h }: { h: ReferralHistoryItem }) {
   const [hover, setHover] = useState(false)
@@ -480,8 +507,12 @@ function HistoryRow({ h }: { h: ReferralHistoryItem }) {
         borderRadius: '6px',
       }}
     >
-      <span style={{ fontSize: '13px', color: TEAL, textDecoration: 'underline', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {formatDate(displayDate(h))}
+      {/* Date and time are ONE string in ONE span, so they underline as a
+          single link rather than two adjacent ones. The whole row is already
+          the anchor (see the <a> above) and each row carries its own
+          referral id, so this link goes to this row's referral. */}
+      <span style={{ fontSize: '13px', color: TEAL, textDecoration: 'underline' }}>
+        {displaySlot(h)}
       </span>
       <span style={{ fontSize: '13px', color: MUTED, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {h.referringAgency || '—'}
