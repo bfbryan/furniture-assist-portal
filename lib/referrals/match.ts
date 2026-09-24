@@ -554,16 +554,53 @@ export async function findClientByIdentity(input: {
 
   const uniqueId = `${last}-${first}-${dobKey}`
   const formula = `{Unique ID} = "${uniqueId.replace(/"/g, '\\"')}"`
+  // NO maxRecords=1 HERE, deliberately.
+  //
+  // {Unique ID} is the Clients table's primary key by intent, but Airtable
+  // does not enforce uniqueness — and measured on the live base it is not
+  // unique: several name+DOB values carry two Client rows. Until PR #107 this
+  // lookup was maxRecords=1 with no sort, which is not a choice of record at
+  // all, just whatever Airtable happened to return first. That was tolerable
+  // while this only reported "does a client exist"; it is not now that its
+  // answer decides which Client a referral is LINKED to. The same two inputs
+  // could resolve to different rows on different days.
+  //
+  // So: take every match and pick the OLDEST. The older row is the one with
+  // the longer appointment history, which is the one worth keeping and the
+  // one Ben keeps when merging these by hand.
+  //
+  // Sorted in JS rather than in the query because Clients has no createdTime
+  // FIELD to sort on (checked against the base — its only time field is a
+  // lastModifiedTime). Airtable returns `createdTime` on every record
+  // regardless, so the true creation order is available here even though it
+  // cannot be expressed as a sort parameter. Adding such a field would be a
+  // schema change, which is Ben's to make, not this function's to require.
   const url =
     `https://api.airtable.com/v0/${BASE_ID}/${encodeURIComponent(CLIENTS_TABLE)}` +
-    `?filterByFormula=${encodeURIComponent(formula)}&maxRecords=1`
+    `?filterByFormula=${encodeURIComponent(formula)}`
 
   const res = await fetch(url, { headers: HEADERS })
   if (!res.ok) {
     throw new Error(`findClientByIdentity lookup failed: ${res.status} ${await res.text()}`)
   }
   const data = await res.json()
-  return data.records?.[0]?.id ?? null
+  const records: { id: string; createdTime?: string }[] = data.records ?? []
+  if (records.length === 0) return null
+
+  // Loud, because a duplicate under the primary key is a data fault that
+  // wants merging, not a normal condition to absorb quietly. The referral
+  // still links — to the oldest row — so this reports rather than blocks.
+  if (records.length > 1) {
+    console.error(
+      `findClientByIdentity: ${records.length} Clients share {Unique ID} "${uniqueId}" ` +
+      `(${records.map(r => r.id).join(', ')}). Linking to the oldest. These want merging.`,
+    )
+  }
+
+  const oldest = [...records].sort(
+    (a, b) => String(a.createdTime ?? '').localeCompare(String(b.createdTime ?? '')),
+  )[0]
+  return oldest?.id ?? null
 }
 
 /**
