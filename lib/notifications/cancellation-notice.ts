@@ -88,13 +88,31 @@ export async function sendCancellationNotice(
   originalApptDate: string | null,
   originalApptTime: string | null
 ): Promise<CancellationNoticeResult> {
+  // Captured as soon as the automation row is read so the catch at the bottom
+  // can still write an Email Log row for a throw that happens much later.
+  // Same shape as reschedule-notice.ts — see the note on logSkip below.
+  let automationId: string | null = null;
+
   try {
     const automation = await getAutomationSettings(AUTOMATION_NAME);
     if (!automation) {
       console.error(`Cancellation Notice: no "${AUTOMATION_NAME}" row found in Email Automations`);
       return { skipped: true, reason: "no automation row" };
     }
+    automationId = automation.id;
+
+    // Every non-send from here down writes an Email Log row. This file had the
+    // identical blind spot reschedule-notice.ts did (fixed in #104): four skip
+    // branches and the outer catch all returned without recording anything, so
+    // a cancellation notice that never went out looked exactly like one that
+    // did — on the referral, in the Email Log, and on screen. That is what let
+    // a thrown TypeError sit unnoticed for two weeks on the reschedule side.
+    // This file shares the same failure mode by construction: both are
+    // event-fired, both have exactly one caller, and neither has a cron or a
+    // view that would notice a miss.
     if (!automation.fields.Enabled) {
+      await logSkip(automation.id, recordId, null, "disabled",
+        "Cancellation Notice is disabled in Email Automations, so no email was sent for this cancellation.");
       return { skipped: true, reason: "disabled" };
     }
 
@@ -106,6 +124,8 @@ export async function sendCancellationNotice(
     const record = await getFullReferral(recordId);
     if (!record) {
       console.error(`Cancellation Notice: referral ${recordId} not found`);
+      await logSkip(automation.id, recordId, null, "referral not found",
+        "The referral could not be read back when the cancellation notice was due, so no email was sent.");
       return { skipped: true, reason: "referral not found" };
     }
     const f = record.fields;
@@ -119,6 +139,8 @@ export async function sendCancellationNotice(
 
     if (toList.length === 0) {
       console.error(`Cancellation Notice: no Agency Email on ${recordId}`);
+      await logSkip(automation.id, recordId, null, "no agency email",
+        "This referral has no Agency Email, so there was nobody to send the cancellation notice to.");
       return { skipped: true, reason: "no agency email" };
     }
 
@@ -193,11 +215,64 @@ export async function sendCancellationNotice(
 
     return { skipped: false, sent: true };
   } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     console.error("Cancellation Notice failed:", err);
-    return {
-      skipped: false,
-      sent: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+
+    // The cancellation itself is already committed by the time this runs, so
+    // nothing here can undo it — but the failure must leave a mark. This used
+    // to console.error and return, writing nothing: exactly the silence that
+    // hid a thrown TypeError on the reschedule side for two weeks.
+    if (automationId) {
+      try {
+        await logEmailSend({
+          automationRecordId: automationId,
+          clientReferralRecordId: recordId,
+          recipientEmail: "",
+          status: "Failed",
+          bounceReason: `Cancellation Notice threw before sending: ${message}`,
+        });
+      } catch (logErr) {
+        console.error(
+          `Cancellation Notice: could not log the failure for ${recordId}:`,
+          logErr,
+        );
+      }
+    }
+
+    return { skipped: false, sent: false, error: message };
+  }
+}
+
+/**
+ * One Email Log row for a decided non-send, so the referral carries the fact.
+ * Never throws: the decision has already been made and must not be changed by
+ * a failure to record it.
+ *
+ * Deliberately a local twin of the one in reschedule-notice.ts rather than a
+ * shared helper. The two differ in the automation they name and the sentences
+ * they write, and a shared version would need both passed in — at which point
+ * it is the same six lines with more indirection. If a third notice ever needs
+ * this, extract then, with three real call sites to shape it.
+ */
+async function logSkip(
+  automationRecordId: string,
+  recordId: string,
+  recipientEmail: string | null,
+  reason: string,
+  explanation: string,
+): Promise<void> {
+  try {
+    await logEmailSend({
+      automationRecordId,
+      clientReferralRecordId: recordId,
+      recipientEmail: recipientEmail ?? "",
+      status: "Skipped",
+      bounceReason: `${reason}: ${explanation}`,
+    });
+  } catch (logErr) {
+    console.error(
+      `Cancellation Notice: skipped (${reason}) for ${recordId}, and the log row failed too:`,
+      logErr,
+    );
   }
 }

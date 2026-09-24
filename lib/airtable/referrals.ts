@@ -267,6 +267,13 @@ export function shapeDawsonReferral(record: any) {
     // days ago" age on a reschedule card; null on rows that pre-date the
     // field, rendered there as "request date unknown".
     rescheduleRequestedAt: (f['Reschedule Requested At'] as string) ?? null,
+    // Written by markRescheduleNoticeSent() and ONLY on a successful send, so
+    // a value older than rescheduleRequestedAt above means the most recent
+    // reschedule was never announced to the agency. That comparison is the
+    // whole of the "booked but never told" check on Needs Action — no Email
+    // Log traversal needed, because this field already is the success marker.
+    // Previously mapped only into the detail page's emailSentAt shape.
+    rescheduleEmailSentAt: (f['Reschedule Email Sent At'] as string) ?? null,
     referralReview: f['Referral Review'] as string,
     appointmentStatus: f['Appointment Status'] as string,
     appointmentSlipUrl: attachmentUrl(f['Appt Slip']),
@@ -336,6 +343,11 @@ export async function getAllReferrals(filters?: {
   // runs the same way — so they can be windowed by Preferred Date in code
   // rather than lost at the query.
   effectiveDateBlank?: boolean
+  // Sep 2026: booked, an agency asked for the move, and the Reschedule Notice
+  // either never sent or last sent BEFORE the request. Drives the "Booked,
+  // agency not told" card on Needs Action. See the condition below for why it
+  // needs no Email Log join.
+  rescheduleNoticeMissing?: boolean
   agency?: string                // Agencies record id — matched against {Referring Agency ID}
   limit?: number                 // cap total rows (server-side maxRecords, applied after sort)
   // Substring match on client name / agency / staff, applied in JS AFTER the
@@ -390,6 +402,30 @@ export async function getAllReferrals(filters?: {
       `AND({Cancellation Email Sent At} != "", ` +
       `OR(IS_AFTER({Cancellation Email Sent At}, "${filters.cancellationFrom}"), ` +
       `IS_SAME({Cancellation Email Sent At}, "${filters.cancellationFrom}", 'day')))`
+    )
+  }
+
+  if (filters?.rescheduleNoticeMissing) {
+    // "Booked but never told": the referral is on the books, an agency asked
+    // for the move, and the notice that should have gone out either never did
+    // or predates the request.
+    //
+    // {Reschedule Email Sent At} is written by markRescheduleNoticeSent() and
+    // ONLY on a successful send, so a stale value is itself the signal — no
+    // Email Log traversal, no rollup, no new Airtable field. That stale
+    // marker is exactly what the three Sep 2026 referrals carried: a Sep 1
+    // timestamp against a Sep 23 request.
+    //
+    // != "" rather than != BLANK(): on a dateTime field BLANK() comparison
+    // does not behave, and the first version of this check returned 63 rows
+    // (60 of them with the field empty) before it was tested against the live
+    // base. IS_BEFORE for the same reason — a bare < on two dateTimes is not
+    // reliable.
+    conditions.push(
+      `AND({Appointment Status} = "Scheduled", ` +
+      `{Reschedule Requested At} != "", ` +
+      `OR({Reschedule Email Sent At} = "", ` +
+      `IS_BEFORE({Reschedule Email Sent At}, {Reschedule Requested At})))`
     )
   }
 

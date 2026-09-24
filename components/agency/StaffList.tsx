@@ -470,7 +470,24 @@ export default function StaffList({
       const res = await req[action]()
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
-        setFlash({ tone: 'err', text: body.error || 'That did not go through. Please try again.' })
+        // Show Clerk's own reason when the route sends one.
+        //
+        // /api/admin/invite already captures it — detailOf() puts Clerk's
+        // longMessage/message into `detail` alongside the generic `error`.
+        // This line rendered `error` only, so a real refusal ("Forbidden", a
+        // membership cap, a rejected role) reached the browser in the response
+        // body and was thrown away, leaving the admin with "Could not add the
+        // user to your agency." and no way to act on it. Sep 2026: an invite
+        // 500'd exactly that way and the reason was only findable in the
+        // Vercel logs.
+        //
+        // `error` stays first — it is the sentence written for this audience.
+        // `detail` is appended, not substituted, because Clerk's wording is
+        // accurate but not always self-explanatory to an agency admin.
+        const text = body.error
+          ? (body.detail ? `${body.error} ${body.detail}` : body.error)
+          : 'That did not go through. Please try again.'
+        setFlash({ tone: 'err', text })
         return false
       }
       const ok: Record<ActionKey, string> = {
