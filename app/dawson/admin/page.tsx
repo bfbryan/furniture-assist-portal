@@ -9,9 +9,17 @@
 // which used to sit under Agencies. Ben asked for those three in one place.
 //
 // Deliberately plain: a labelled link and one line of description each, not a
-// dashboard. No counts, no data fetching, nothing that needs to stay in sync
-// with the pages it points at. Header chrome and card styling are copied from
-// the other Dawson pages so it reads as one of them.
+// dashboard. Header chrome and card styling are copied from the other Dawson
+// pages so it reads as one of them.
+//
+// Sep 2026 — it is no longer true that this page holds no data. The links
+// above still hold none, but UntoldReschedules at the foot fetches and can act
+// on real records. Ben's call, made knowingly: "booked, agency not told" is a
+// system fault rather than scheduling work, so it does not belong on Dawson's
+// Needs Action queue, where every other card is a decision he has to take.
+// Putting it here makes it Ben's to act on, on the page only Ben opens. He has
+// said he will redesign this page around it and the Email Log data later; this
+// is the first thing on it that is not a link, not the shape it settles into.
 //
 // ON ACCESS. isPortalAdmin decides who sees the link, not who can open the
 // page. Every route below is still behind requireDawsonAccess like the rest of
@@ -20,6 +28,7 @@
 // change, and closing a route is a separate decision for Ben to make.
 
 import Link from 'next/link'
+import UntoldReschedules from '@/components/internal/UntoldReschedules'
 
 const LINKS = [
   {
@@ -72,6 +81,12 @@ export default function DawsonAdminPage() {
             </Link>
           ))}
         </div>
+
+        {/* Renders its heading even when empty — see the component's own note.
+            This page is opened to check something, and a section that vanishes
+            when there is nothing cannot be told apart from one that was never
+            built. */}
+        <UntoldReschedules />
       </div>
     </div>
   )

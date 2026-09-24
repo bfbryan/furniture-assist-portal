@@ -48,10 +48,6 @@ type Referral = {
   preferredTime: string | null
   schedulingFlexibility: string | null
   rescheduleRequestedAt: string | null
-  // Written only on a successful send. Older than rescheduleRequestedAt means
-  // the last reschedule was never announced — see the "Booked, agency not
-  // told" card.
-  rescheduleEmailSentAt: string | null
   referredBy: string | null
   referringAgency: string | null
   phone: string | null
@@ -448,87 +444,6 @@ function NewReferralRow({ r, availableDates, todayISO, onApprove, onPick }: {
   )
 }
 
-// "Booked, agency not told" — the referral is on the books, an agency asked
-// for the move, and the Reschedule Notice either never sent or last sent
-// BEFORE the request. The filter is server-side (rescheduleNoticeMissing in
-// lib/airtable/referrals.ts); this row just reports it and offers the resend.
-//
-// Resend calls POST /api/dawson/referrals/[id]/resend-reschedule-notice, which
-// re-sends the notice and NOTHING else — it re-books nothing and writes no
-// appointment field. See that route's header for the full list of what it
-// refuses to touch. Two-step (Resend -> Confirm resend) for the same reason
-// Accept is: it puts real mail in front of a real agency.
-function UntoldRow({
-  r, todayISO, onResend,
-}: {
-  r: Referral
-  todayISO: string
-  onResend: (r: Referral) => Promise<{ ok: boolean; message?: string }>
-}) {
-  const [armed, setArmed] = useState(false)
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [done, setDone] = useState(false)
-
-  async function click() {
-    if (!armed) { setArmed(true); setError(null); return }
-    setLoading(true)
-    setError(null)
-    const res = await onResend(r)
-    if (!res.ok) { setError(res.message ?? 'That did not go through.'); setArmed(false) }
-    else setDone(true)
-    setLoading(false)
-  }
-
-  return (
-    <div>
-      <RowShell>
-        <NameCell href={`/dawson/referrals/${r.id}`} name={r.clientName} sub={r.referringAgency} />
-
-        <div style={{ minWidth: 0 }}>
-          <div style={{ ...VAL, color: NAVY }}>
-            Booked: {fmtSlot(r.appointmentDate, r.appointmentTime)}
-          </div>
-          <div style={{ ...VAL, color: '#8B7724', fontWeight: 600 }}>
-            {r.rescheduleEmailSentAt
-              ? `Last notice ${fmtDate(r.rescheduleEmailSentAt)} — before the request`
-              : 'No reschedule notice ever sent'}
-          </div>
-          <div style={AGE}>{agePhrase(daysAgo(r.rescheduleRequestedAt, todayISO), 'requested')}</div>
-        </div>
-
-        {done ? (
-          <div style={{ fontSize: '11px', color: '#2A7F6F', fontWeight: 700, lineHeight: 1.4 }}>
-            ✓ Sent
-          </div>
-        ) : (
-          <Actions>
-            {armed && (
-              <ActionBtn label="Cancel" tone="cancel" onClick={() => setArmed(false)} disabled={loading} />
-            )}
-            <ActionBtn
-              label={loading ? '…' : armed ? 'Confirm resend' : 'Resend'}
-              tone="accept"
-              onClick={click}
-              disabled={loading}
-              title="Re-send the reschedule notice. Does not re-book or change the appointment."
-            />
-          </Actions>
-        )}
-      </RowShell>
-      {armed && !error && !done && (
-        <div style={{ fontSize: '11px', color: GREY, padding: '0 0 8px', lineHeight: 1.5 }}>
-          → emails {r.referringAgency ?? 'the agency'} that this moved to{' '}
-          {fmtSlot(r.appointmentDate, r.appointmentTime)}. Nothing on the record changes.
-        </div>
-      )}
-      {error && (
-        <div style={{ fontSize: '11px', color: '#C0392B', padding: '0 0 8px' }}>{error}</div>
-      )}
-    </div>
-  )
-}
-
 function AwaitingOutcomeRow({ r, todayISO }: { r: Referral; todayISO: string }) {
   return (
     <RowShell>
@@ -664,8 +579,6 @@ export default function NeedsActionPage() {
   const [newReferrals, setNewReferrals] = useState<Referral[]>([])
   const [awaiting, setAwaiting] = useState<Referral[]>([])
   const [agencies, setAgencies] = useState<Agency[]>([])
-  // Booked, an agency asked for the move, and the notice never went out.
-  const [untold, setUntold] = useState<Referral[]>([])
   const [availableDates, setAvailableDates] = useState<AvailableDate[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -700,9 +613,8 @@ export default function NeedsActionPage() {
       fetch('/api/dawson/referrals?review=Pending', { cache: 'no-store' }).then((r) => r.json()).catch(() => []),
       fetch(`/api/dawson/referrals?status=Scheduled&appointmentDateTo=${yesterdayISO}`, { cache: 'no-store' }).then((r) => r.json()).catch(() => []),
       fetch('/api/dawson/agencies?status=Pending', { cache: 'no-store' }).then((r) => r.json()).catch(() => []),
-      fetch('/api/dawson/referrals?rescheduleNoticeMissing=true', { cache: 'no-store' }).then((r) => r.json()).catch(() => []),
     ])
-      .then(([resch, pending, scheduledPast, pendingAgencies, untold]) => {
+      .then(([resch, pending, scheduledPast, pendingAgencies]) => {
         setReschedules(Array.isArray(resch) ? resch : [])
         setNewReferrals(
           (Array.isArray(pending) ? pending : []).filter((r: Referral) => r.appointmentStatus !== 'Reschedule'),
@@ -713,7 +625,6 @@ export default function NeedsActionPage() {
           ),
         )
         setAgencies(Array.isArray(pendingAgencies) ? pendingAgencies : [])
-        setUntold(Array.isArray(untold) ? untold : [])
         setLoading(false)
       })
       .catch(() => setLoading(false))
@@ -777,38 +688,6 @@ export default function NeedsActionPage() {
       }
       setReschedules((prev) => prev.filter((r) => r.id !== id))
       bumpGrid() // this Saturday's counts just changed
-      return { ok: true }
-    } catch {
-      return { ok: false, message: 'Network error — please try again.' }
-    }
-  }
-
-  // Resend a reschedule notice that never went out. Calls the replay route,
-  // which sends the email and touches no appointment field — so unlike
-  // applyReschedule below there is no slot to re-check and no grid to bump.
-  // The row is left in place showing "✓ Sent" rather than removed: the record
-  // still matches the server-side filter until Reschedule Email Sent At is
-  // re-read, and a row vanishing under his cursor would read as "did that
-  // work?". The next refetch drops it.
-  const resendRescheduleNotice = async (r: Referral): Promise<{ ok: boolean; message?: string }> => {
-    try {
-      const res = await fetch(`/api/dawson/referrals/${r.id}/resend-reschedule-notice`, {
-        method: 'POST',
-      })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) return { ok: false, message: body.error || `Resend failed (${res.status})` }
-
-      // The route always 200s when it reached the notice — the notice reports
-      // its own outcome in `result`. A skip or a failure here is not a
-      // successful resend and must not show as one.
-      const result = body?.result
-      if (result && !result.sent) {
-        const why = result.message
-          ?? (result.skipped
-            ? `not sent (${result.reason})`
-            : `failed — ${result.error}`)
-        return { ok: false, message: `Notice ${why}` }
-      }
       return { ok: true }
     } catch {
       return { ok: false, message: 'Network error — please try again.' }
@@ -899,8 +778,7 @@ export default function NeedsActionPage() {
   const flagged = getFlaggedDuplicates()
   const total =
     sorted.reschedules.length + sorted.newReferrals.length +
-    sorted.awaiting.length + sorted.agencies.length + flagged.length +
-    untold.length
+    sorted.awaiting.length + sorted.agencies.length + flagged.length
 
   return (
     <div style={{ background: '#F7F5F1', minHeight: '100vh' }}>
@@ -940,20 +818,6 @@ export default function NeedsActionPage() {
               <CaughtUp />
             ) : (
               <>
-                {/* First card deliberately: every other card is work Dawson
-                    has yet to do, but this one is work he believes he has
-                    already done. An agency is sitting on a date nobody told
-                    them about, and the longer it sits the more likely the
-                    client turns up on the wrong Saturday. Hides itself when
-                    empty like the rest, so it costs nothing on a normal day. */}
-                {untold.length > 0 && (
-                  <CardSection title="Booked, agency not told" accent="gold" columns={['Client', 'Booked / notice', '']}>
-                    {untold.map((r) => (
-                      <UntoldRow key={r.id} r={r} todayISO={todayISO} onResend={resendRescheduleNotice} />
-                    ))}
-                  </CardSection>
-                )}
-
                 {sorted.reschedules.length > 0 && (
                   <CardSection title="Reschedule requested" accent="gold" columns={['Client', 'Currently / Requested', '']}>
                     {sorted.reschedules.map((r) => (
