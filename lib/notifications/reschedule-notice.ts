@@ -120,19 +120,38 @@ export async function sendRescheduleNotice(
   previousApptDate: string | null,
   previousApptTime: string | null
 ): Promise<RescheduleNoticeResult> {
+  // Set as soon as the automation row is read, so the catch at the bottom can
+  // write an Email Log row for a throw. Null only while we genuinely don't
+  // know which automation this is — i.e. the lookup itself failed.
+  let automationId: string | null = null;
+
   try {
     const automation = await getAutomationSettings(AUTOMATION_NAME);
     if (!automation) {
       console.error(`Reschedule Notice: no "${AUTOMATION_NAME}" row found in Email Automations`);
       return { skipped: true, reason: "no automation row" };
     }
+    automationId = automation.id;
+
+    // Every non-send below this point writes an Email Log row. Before Sep 2026
+    // only 'unconfirmed' and the two send outcomes did, so 'disabled',
+    // 'referral not found', 'no agency email' and ANY thrown exception left no
+    // trace in Airtable at all — a console.error in Vercel and nothing else.
+    // Three referrals were rescheduled with no notice sent and it took two
+    // weeks to notice, because every surface that could have shown it was
+    // blank rather than wrong. A skipped send is a fact about a referral; it
+    // belongs on the referral.
     if (!automation.fields.Enabled) {
+      await logSkip(automation.id, recordId, null, "disabled",
+        "Reschedule Notice is disabled in Email Automations, so no email was sent for this reschedule.");
       return { skipped: true, reason: "disabled" };
     }
 
     const record = await getFullReferral(recordId);
     if (!record) {
       console.error(`Reschedule Notice: referral ${recordId} not found`);
+      await logSkip(automation.id, recordId, null, "referral not found",
+        "The referral could not be read back when the reschedule notice was due, so no email was sent.");
       return { skipped: true, reason: "referral not found" };
     }
     const f = record.fields;
@@ -146,6 +165,8 @@ export async function sendRescheduleNotice(
 
     if (toList.length === 0) {
       console.error(`Reschedule Notice: no Agency Email on ${recordId}`);
+      await logSkip(automation.id, recordId, null, "no agency email",
+        "This referral has no Agency Email, so there was nobody to send the reschedule notice to.");
       return { skipped: true, reason: "no agency email" };
     }
 
@@ -311,11 +332,61 @@ export async function sendRescheduleNotice(
     // Never let a PDF/email failure surface as a failed reschedule — by the
     // time this runs, the Airtable write (the part that actually matters
     // operationally) has already succeeded.
+    const message = err instanceof Error ? err.message : String(err);
     console.error("Reschedule Notice failed:", err);
-    return {
-      skipped: false,
-      sent: false,
-      error: err instanceof Error ? err.message : String(err),
-    };
+
+    // ...but it must leave a mark. This catch used to log to the console and
+    // return, writing nothing: a TypeError thrown here (Sep 2026) took two
+    // weeks to find because the referral, the Email Log and the Needs Action
+    // screen all looked exactly like a clean send. `automationId` is captured
+    // at the top precisely so this row can be written even when the throw
+    // happened long after the automation was read.
+    if (automationId) {
+      try {
+        await logEmailSend({
+          automationRecordId: automationId,
+          clientReferralRecordId: recordId,
+          recipientEmail: "",
+          status: "Failed",
+          bounceReason: `Reschedule Notice threw before sending: ${message}`,
+        });
+      } catch (logErr) {
+        console.error(
+          `Reschedule Notice: could not log the failure for ${recordId}:`,
+          logErr,
+        );
+      }
+    }
+
+    return { skipped: false, sent: false, error: message };
+  }
+}
+
+/**
+ * One Email Log row for a decided non-send, so the referral carries the fact.
+ * Never throws: the decision has already been made and must not be changed by
+ * a failure to record it — the same reasoning the 'unconfirmed' withheld log
+ * above carries.
+ */
+async function logSkip(
+  automationRecordId: string,
+  recordId: string,
+  recipientEmail: string | null,
+  reason: RescheduleNoticeSkipReason,
+  explanation: string,
+): Promise<void> {
+  try {
+    await logEmailSend({
+      automationRecordId,
+      clientReferralRecordId: recordId,
+      recipientEmail: recipientEmail ?? "",
+      status: "Skipped",
+      bounceReason: `${reason}: ${explanation}`,
+    });
+  } catch (logErr) {
+    console.error(
+      `Reschedule Notice: skipped (${reason}) for ${recordId}, and the log row failed too:`,
+      logErr,
+    );
   }
 }
