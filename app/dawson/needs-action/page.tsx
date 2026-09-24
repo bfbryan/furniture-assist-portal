@@ -671,8 +671,20 @@ export default function NeedsActionPage() {
       }
       const body = await res.json().catch(() => ({}))
       const notice = body?.rescheduleNotice
-      if (notice && notice.skipped && notice.message) {
-        setWithheldNotices((prev) => [...prev, `${name}: ${notice.message}`])
+      // Surface EVERY outcome that isn't a completed send.
+      //
+      // This used to read `notice.skipped && notice.message`, and `message` is
+      // only ever set on the 'unconfirmed' withheld case — so a hard failure
+      // (skipped:false, sent:false) failed the first test and the other three
+      // skip reasons failed the second. Dawson saw a clean success for every
+      // way this can not-send except one. Three referrals were rescheduled in
+      // Sep 2026 with the notice throwing, and the screen said nothing.
+      if (notice && !notice.sent) {
+        const why = notice.message
+          ?? (notice.skipped
+            ? `the reschedule notice was not sent (${notice.reason}).`
+            : `the reschedule notice failed to send — ${notice.error}`)
+        setWithheldNotices((prev) => [...prev, `${name}: ${why}`])
       }
       setReschedules((prev) => prev.filter((r) => r.id !== id))
       bumpGrid() // this Saturday's counts just changed

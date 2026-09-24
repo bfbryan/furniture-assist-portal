@@ -26,19 +26,40 @@
 //                 confirmation, reschedule) and might need to change.
 
 import { formatDateOnly } from "@/lib/dates";
+import { toTokenValue } from "@/lib/notifications/template";
 
 const CHANGE_FALLBACK_ADDRESS = "agencies@furnitureassist.com";
 
 export type AgencyMailtoPurpose = "missed" | "cancelled" | "upcoming";
 
+/**
+ * Every field here is `unknown` ON PURPOSE, and every one is pushed through
+ * toTokenValue() before it is used.
+ *
+ * These used to be typed `string | null`, which was a lie that cost two weeks
+ * of silent non-delivery (Sep 2026). Callers pass raw Airtable fields, and
+ * First Name / Last Name on Client Referrals are LOOKUPS through the Client
+ * link — they arrive as `["Edward"]`, not `"Edward"`. TypeScript never caught
+ * it because reschedule-notice.ts and cancellation-notice.ts read their record
+ * through a `Record<string, any>`, so `any` satisfied `string | null` at every
+ * call site. At runtime `(["Edward"] ?? "").trim()` threw
+ * "TypeError: (e ?? '').trim is not a function" inside the name .map() below,
+ * which aborted the whole notice before a single row was written anywhere.
+ *
+ * Declaring the real shape (unknown) rather than the hoped-for one is the
+ * point: it forces the coercion to happen here, once, at the choke point all
+ * five callers already share, instead of relying on each of them to remember
+ * a String() or a toTokenValue() wrapper. The three cron callers happened to
+ * wrap theirs and survived; the two event-fired notices did not and did not.
+ */
 export type AgencyMailtoInfo = {
-  clientFirstName?: string | null;
-  clientLastName?: string | null;
-  /** 'YYYY-MM-DD'. */
-  apptDateStr?: string | null;
+  clientFirstName?: unknown;
+  clientLastName?: unknown;
+  /** 'YYYY-MM-DD', or an Airtable lookup wrapping one. */
+  apptDateStr?: unknown;
   /** e.g. '10am' — used for 'cancelled' and 'upcoming'; 'missed' never
    *  shows a time. */
-  apptTime?: string | null;
+  apptTime?: unknown;
 };
 
 /**
@@ -82,24 +103,32 @@ export function buildAgencyMailtoFallback(
 
   const lines: string[] = [];
 
+  // toTokenValue is the codebase's existing coercion for exactly this —
+  // undefined/null -> "", an Airtable lookup array -> its values joined, and
+  // anything else -> String(). Reused rather than reimplemented as a second
+  // near-identical helper; the three cron callers already wrap their own
+  // arguments with it, so this makes all five consistent by construction.
   const name = [info.clientFirstName, info.clientLastName]
-    .map((s) => (s ?? "").trim())
+    .map((s) => toTokenValue(s).trim())
     .filter(Boolean)
     .join(" ");
   if (name) lines.push(`Client: ${name}`);
 
-  const dateLabel = info.apptDateStr
-    ? formatDateOnly(info.apptDateStr, { month: "short", day: "numeric" })
+  const apptDateStr = toTokenValue(info.apptDateStr).trim();
+  const apptTime = toTokenValue(info.apptTime).trim();
+
+  const dateLabel = apptDateStr
+    ? formatDateOnly(apptDateStr, { month: "short", day: "numeric" })
     : "";
 
   if (purpose === "missed") {
     if (dateLabel) lines.push(`Missed appointment: ${dateLabel}`);
-  } else if (dateLabel && info.apptTime) {
+  } else if (dateLabel && apptTime) {
     // 'cancelled' and 'upcoming' both need date AND time, or the whole
     // line drops — half of "<Mon D>, <time>" isn't a genuinely useful
     // partial line.
     const label = purpose === "cancelled" ? "Cancelled appointment" : "Appointment";
-    lines.push(`${label}: ${dateLabel}, ${info.apptTime}`);
+    lines.push(`${label}: ${dateLabel}, ${apptTime}`);
   }
 
   lines.push(purpose === "upcoming" ? "Change needed (cancel or new date):" : "Preferred new date:");

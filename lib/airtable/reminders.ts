@@ -140,7 +140,11 @@ export async function logEmailSend(params: {
   clientReferralRecordId: string;
   recipientEmail: string;
   resendMessageId?: string;
-  status: "Sent" | "Delivered" | "Bounced" | "Complained" | "Failed" | "Withheld";
+  // "Skipped" is a live option on Email Log's Status field (verified against
+  // the base) and logAgencyEmailSend already accepted it; this union had just
+  // never caught up. Used by the reschedule notice for a decided non-send —
+  // disabled automation, missing recipient, unreadable referral.
+  status: "Sent" | "Delivered" | "Bounced" | "Complained" | "Failed" | "Withheld" | "Skipped";
   bounceReason?: string;
 }): Promise<void> {
   // typecast: true matters here specifically for `Status` — it's a single
