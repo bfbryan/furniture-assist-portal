@@ -18,6 +18,8 @@ export async function GET(req: NextRequest) {
     ?? undefined
   const appointmentDateTo = searchParams.get('appointmentDateTo') ?? undefined
   const effectiveDateBlank = searchParams.get('effectiveDateBlank') === 'true'
+  // ?rescheduleNoticeMissing=true — the "Booked, agency not told" card.
+  const rescheduleNoticeMissing = searchParams.get('rescheduleNoticeMissing') === 'true'
   const agency = searchParams.get('agency') ?? undefined
   const limitRaw = searchParams.get('limit')
   const limit = limitRaw && /^\d+$/.test(limitRaw) ? Number(limitRaw) : undefined
@@ -28,6 +30,7 @@ export async function GET(req: NextRequest) {
     appointmentDateFrom,
     appointmentDateTo,
     effectiveDateBlank: effectiveDateBlank || undefined,
+    rescheduleNoticeMissing: rescheduleNoticeMissing || undefined,
     agency,
     limit,
   })
