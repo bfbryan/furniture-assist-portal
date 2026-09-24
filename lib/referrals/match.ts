@@ -98,7 +98,14 @@ export type ReferralHistoryItem = {
   id: string
   appointmentStatus: string
   appointmentDate: string // as stored on the record; expected ISO-ish
+  // Sep 2026: the hour, so the duplicate-client card's history table can show
+  // "Oct 17, 2026 · 11am" rather than a bare date. Paired with the two date
+  // fields either side of it — a row falling back to Preferred Date for its
+  // date must fall back to Preferred Time for its time, or it shows one
+  // appointment's hour against another's day.
+  appointmentTime: string
   preferredDate: string // fallback display for Pending Schedule records, which usually have no Appointment Date yet
+  preferredTime: string
   referringAgency: string // lookup off Referring Staff Link -- also used to gate the no-show "reschedule" option to same-agency only
   referringStaff: string // lookup off Referring Staff Link
   // Carried along so the Add Referral form can prefill these onto a new
@@ -322,7 +329,9 @@ async function fetchReferralHistory(referralIds: string[]): Promise<ReferralHist
       `?filterByFormula=${encodeURIComponent(formula)}&` +
       `fields%5B%5D=${encodeURIComponent('Appointment Status')}&` +
       `fields%5B%5D=${encodeURIComponent('Appointment Date')}&` +
+      `fields%5B%5D=${encodeURIComponent('Appointment Time')}&` +
       `fields%5B%5D=${encodeURIComponent('Preferred Date')}&` +
+      `fields%5B%5D=${encodeURIComponent('Preferred Time')}&` +
       `fields%5B%5D=${encodeURIComponent('Referring Agency')}&` +
       `fields%5B%5D=${encodeURIComponent('Referring Staff')}&` +
       `fields%5B%5D=${encodeURIComponent('Items Requested')}&` +
@@ -339,7 +348,9 @@ async function fetchReferralHistory(referralIds: string[]): Promise<ReferralHist
     const data = await res.json()
     for (const r of data.records || []) {
       const rawDate = r.fields['Appointment Date']
+      const rawTime = r.fields['Appointment Time']
       const rawPreferredDate = r.fields['Preferred Date']
+      const rawPreferredTime = r.fields['Preferred Time']
       const rawAgency = r.fields['Referring Agency']
       const rawStaff = r.fields['Referring Staff']
       const rawItems = r.fields['Items Requested']
@@ -347,7 +358,9 @@ async function fetchReferralHistory(referralIds: string[]): Promise<ReferralHist
         id: r.id,
         appointmentStatus: r.fields['Appointment Status'] || '',
         appointmentDate: Array.isArray(rawDate) ? rawDate[0] || '' : rawDate || '',
+        appointmentTime: Array.isArray(rawTime) ? rawTime[0] || '' : rawTime || '',
         preferredDate: Array.isArray(rawPreferredDate) ? rawPreferredDate[0] || '' : rawPreferredDate || '',
+        preferredTime: Array.isArray(rawPreferredTime) ? rawPreferredTime[0] || '' : rawPreferredTime || '',
         referringAgency: Array.isArray(rawAgency) ? rawAgency[0] || '' : rawAgency || '',
         referringStaff: Array.isArray(rawStaff) ? rawStaff[0] || '' : rawStaff || '',
         itemsRequested: Array.isArray(rawItems) ? rawItems : rawItems ? [rawItems] : [],

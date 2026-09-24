@@ -88,7 +88,9 @@ export type ReferralHistoryItem = {
   id: string
   appointmentStatus: string
   appointmentDate: string
+  appointmentTime: string
   preferredDate: string
+  preferredTime: string
   referringAgency: string
   referringStaff: string
   itemsRequested: string[]
@@ -248,6 +250,25 @@ function displayDate(h: ReferralHistoryItem): string {
   return h.appointmentDate || h.preferredDate
 }
 
+// The hour belonging to whichever DATE displayDate picked. Paired deliberately
+// rather than read independently: a Pending Schedule row falls back to
+// Preferred Date, and reading Appointment Time beside it would print one
+// appointment's hour against another's day. Blank when that slot has no hour
+// yet, which is the normal state of a Pending Schedule row.
+function displayTime(h: ReferralHistoryItem): string {
+  return h.appointmentDate ? h.appointmentTime : h.preferredTime
+}
+
+// "Oct 17, 2026 · 11am", the separator the Needs Action rows use. Note
+// lib/referrals/slot-display.ts's formatSlot() renders the same pair as
+// "<date> at <time>" for the referrals list — /dawson genuinely carries both
+// today. Ben asked for the dot here.
+function displaySlot(h: ReferralHistoryItem): string {
+  const date = formatDate(displayDate(h))
+  const time = displayTime(h)
+  return time ? `${date} · ${time}` : date
+}
+
 function fullAddress(parts: { address: string; address2?: string; city: string; state: string; zip: string }): string {
   const line1 = parts.address2 ? `${parts.address}, ${parts.address2}` : parts.address
   const cityStateZip = [parts.city, [parts.state, parts.zip].filter(Boolean).join(' ')].filter(Boolean).join(', ')
@@ -270,7 +291,19 @@ function joinList(items: string[]): string {
 // agrees with the client on file. A field he has NOT typed produces no row at
 // all — the old compare table rendered those as "—", which read as missing
 // data on the client's record rather than as "you haven't got there yet".
-type FieldCompare = { key: string; label: string; typed: boolean; matches: boolean }
+// `onFile` / `entered` carry the actual VALUES, not just the verdict. The
+// panel used to say only "Phone differs", which is the least useful half of
+// what Dawson needs: it withheld the very thing he decides on — what the other
+// number actually is — and made a routine situation (he has a newer number)
+// read as a fault.
+type FieldCompare = {
+  key: string
+  label: string
+  typed: boolean
+  matches: boolean
+  onFile: string
+  entered: string
+}
 
 function compareFields(match: ClientMatch, form: FormSnapshot): FieldCompare[] {
   const c = match.client
@@ -296,11 +329,20 @@ function compareFields(match: ClientMatch, form: FormSnapshot): FieldCompare[] {
     typedAddress && !!fullAddress(c).trim() &&
     normalizeForCompare(fullAddress(form)) === normalizeForCompare(fullAddress(c))
 
+  // Values shown as STORED and as TYPED — not normalised. The comparison
+  // ignores formatting (digits only for phone), but the display must not:
+  // "(908) 656-6439" and "908-656-6439" compare equal and never reach the
+  // differing list, so anything that does reach it differs in substance and
+  // should be shown exactly as each side holds it.
   return [
-    { key: 'name', label: 'Name', typed: typedName, matches: nameMatches },
-    { key: 'dob', label: 'Date of birth', typed: typedDob, matches: dobMatches },
-    { key: 'phone', label: 'Phone', typed: typedPhone, matches: phoneMatches },
-    { key: 'address', label: 'Address', typed: typedAddress, matches: addressMatches },
+    { key: 'name', label: 'Name', typed: typedName, matches: nameMatches,
+      onFile: `${c.firstName} ${c.lastName}`.trim(), entered: `${form.firstName} ${form.lastName}`.trim() },
+    { key: 'dob', label: 'Date of birth', typed: typedDob, matches: dobMatches,
+      onFile: c.dob ? formatDate(c.dob) : '', entered: form.dob ? formatDate(form.dob) : '' },
+    { key: 'phone', label: 'Phone', typed: typedPhone, matches: phoneMatches,
+      onFile: c.phone ?? '', entered: form.phone ?? '' },
+    { key: 'address', label: 'Address', typed: typedAddress, matches: addressMatches,
+      onFile: fullAddress(c), entered: fullAddress(form) },
   ]
 }
 
@@ -436,15 +478,28 @@ function ClientOnFileBox({ match, form }: { match: ClientMatch; form: FormSnapsh
               </div>
             ))}
             {/* A field he HAS typed that does not agree is the one thing this
-                panel must not swallow — it is what makes the submit route fork
-                a fresh Client instead of linking to this one
-                (clientDataDiverges). Marked, not ticked. */}
+                panel must not swallow. It states BOTH values and lets Dawson
+                judge, rather than calling it a fault: the ordinary reason a
+                phone disagrees is that he has a newer number, and "differs"
+                framed that as an error while hiding the one thing needed to
+                decide — what the other value actually is. */}
             {differing.map(f => (
-              <div key={f.key} style={{ display: 'flex', alignItems: 'center', gap: '7px', fontSize: '13px', color: '#8E3227', padding: '2px 0' }}>
+              <div key={f.key} style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', fontSize: '13px', color: '#8E3227', padding: '2px 0', lineHeight: 1.5 }}>
                 <span aria-hidden="true" style={{ fontWeight: 700, flexShrink: 0 }}>✗</span>
-                {f.label} differs
+                <span>
+                  {f.label} on file: {f.onFile || '—'} — you typed {f.entered || '—'}
+                </span>
               </div>
             ))}
+            {/* The consequence, stated once rather than per field. Without it
+                the panel reports a discrepancy and leaves Dawson to guess what
+                saving will do with it — and what it does is not obvious. */}
+            {differing.length > 0 && (
+              <div style={{ fontSize: '12px', color: MUTED, lineHeight: 1.5, marginTop: '6px' }}>
+                Saving links this referral to the client above and keeps the
+                details already on file. What you typed will not replace them.
+              </div>
+            )}
           </div>
           {notEntered.length > 0 && (
             <div style={{ fontSize: '12px', color: MUTED, lineHeight: 1.5, marginTop: '8px' }}>
@@ -457,7 +512,13 @@ function ClientOnFileBox({ match, form }: { match: ClientMatch; form: FormSnapsh
   )
 }
 
-const HISTORY_GRID = 'minmax(0, 1.1fr) minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 130px)'
+// The date track has a 125px FLOOR, not minmax(0, …): "Dec 28, 2026 · 12pm"
+// measures 120.8px at Lato 13px, and with a 0 floor the track collapsed to
+// about 59px at the narrowest card width — cutting the slot mid-date. Adding
+// the time is what made the column too narrow, so the floor comes in with it.
+// Agency and staff keep a 0 floor and their ellipsis: a shortened name is a
+// readable inconvenience, a shortened date is wrong information.
+const HISTORY_GRID = 'minmax(125px, 1.1fr) minmax(0, 1.3fr) minmax(0, 1.1fr) minmax(0, 130px)'
 
 function HistoryRow({ h }: { h: ReferralHistoryItem }) {
   const [hover, setHover] = useState(false)
@@ -480,8 +541,12 @@ function HistoryRow({ h }: { h: ReferralHistoryItem }) {
         borderRadius: '6px',
       }}
     >
-      <span style={{ fontSize: '13px', color: TEAL, textDecoration: 'underline', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-        {formatDate(displayDate(h))}
+      {/* Date and time are ONE string in ONE span, so they underline as a
+          single link rather than two adjacent ones. The whole row is already
+          the anchor (see the <a> above) and each row carries its own
+          referral id, so this link goes to this row's referral. */}
+      <span style={{ fontSize: '13px', color: TEAL, textDecoration: 'underline' }}>
+        {displaySlot(h)}
       </span>
       <span style={{ fontSize: '13px', color: MUTED, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
         {h.referringAgency || '—'}
