@@ -93,7 +93,7 @@
 //     Household Items (including kitchen & linens), Clothes, Baby Items
 
 import { NextResponse } from 'next/server'
-import { findClientMatches, createClient, clientDataDiverges } from '@/lib/referrals/match'
+import { findClientMatches, createClient, clientDataDiverges, findClientByIdentity } from '@/lib/referrals/match'
 import { rescheduleReferral } from '@/lib/referrals/reschedule'
 import { requireDawsonAccess } from '@/lib/auth/dawson-access'
 import { pickFirstOpenSlot, VALID_TIMES, type TimeSlot } from '@/lib/schedule/capacity'
@@ -465,6 +465,29 @@ export async function POST(req: Request) {
   let isDuplicate = false
 
   try {
+    // IDENTITY FIRST, on every branch below.
+    //
+    // {Unique ID} on Clients is {Last}-{First}-{MM/DD/YYYY DOB}. If a row with
+    // that key already exists, a second row with the same key is a duplicate
+    // by the base's own definition — so findClientByIdentity() is consulted
+    // before any createClient() here, exactly as POST /api/referrals/submit
+    // already does for the agency side.
+    //
+    // Sep 2026: this route had THREE unguarded createClient() calls while the
+    // agency route had none. Measured on the live base, 4 name+DOB groups held
+    // 2 Client records each — 8 records, 8 referrals, one client's appointment
+    // history divided across two rows that neither duplicate-check card can
+    // show together. The most recent was created the same day this was found,
+    // so the leak was live, not historical.
+    //
+    // NOT the cause, checked before fixing: clientDataDiverges() normalises
+    // DOB, phone (digits only) and address before comparing, and for three of
+    // those four pairs all three fields normalise EQUAL — it would have
+    // returned false and linked them. Nothing on this path compares a raw
+    // phone string. The duplicates came from creating without asking, not from
+    // asking and getting the wrong answer.
+    const identityMatch = await findClientByIdentity({ firstName, lastName, dob: dobFormatted })
+
     if (clientId) {
       // Frontend already ran check-duplicate and the user confirmed this
       // is the same person -- but the demographic fields on the form were
@@ -476,10 +499,28 @@ export async function POST(req: Request) {
       // what they actually typed instead.
       const diverges = await clientDataDiverges(clientId, { dob: dobFormatted, phone, address, city, state, zip })
       if (diverges) {
-        isDuplicate = false
-        resolvedClientId = await createClient({
-          firstName, lastName, dob: dobFormatted, address, address2, city, state, zip, county, phone, language,
-        })
+        // The fork is now subordinate to identity. A divergence in DOB
+        // changes the Unique ID, so identityMatch is null and this still
+        // forks as it always did. A divergence in phone or address alone
+        // does NOT change the key — and forking on those is precisely what
+        // produced the duplicate pair found on the live base, where both
+        // rows carried the same name, DOB and address and differed only in
+        // the phone typed on the form.
+        //
+        // CONSEQUENCE, deliberate and worth knowing: when identity matches,
+        // the edited phone/address is NOT written to the Client row. The
+        // referral links to the record already on file and that record keeps
+        // its stored values. Silently keeping the old number is a smaller
+        // wrong than silently minting a second client — but it is still a
+        // wrong, and updating the Client from the form is a separate change
+        // that needs Ben's word, since it would let any referral overwrite
+        // identity data on an existing client.
+        isDuplicate = !!identityMatch
+        resolvedClientId =
+          identityMatch ??
+          (await createClient({
+            firstName, lastName, dob: dobFormatted, address, address2, city, state, zip, county, phone, language,
+          }))
       } else {
         resolvedClientId = clientId
         isDuplicate = true
@@ -487,42 +528,53 @@ export async function POST(req: Request) {
     } else if (skipDuplicateCheck) {
       // Frontend already resolved this (modal shown and dismissed as "not
       // the same person", or check-duplicate found nothing worth
-      // surfacing) -- trust it rather than re-running the check and
+      // surfacing) -- trust it rather than re-running the fuzzy check and
       // potentially flagging a false positive Dawson already ruled out.
-      isDuplicate = false
-      resolvedClientId = await createClient({
-        firstName,
-        lastName,
-        dob: dobFormatted,
-        address,
-        address2,
-        city,
-        state,
-        zip,
-        county,
-        phone,
-        language,
-      })
+      //
+      // But "not the same person" is a judgement about a FUZZY match, and
+      // this is an EXACT one: same last name, same first name, same date of
+      // birth. Dismissing a scored candidate cannot license creating a
+      // second row under an identical primary key. This branch was the
+      // widest of the three — it created unconditionally, on the
+      // frontend's say-so — and is how the most recent duplicate forked.
+      isDuplicate = !!identityMatch
+      resolvedClientId =
+        identityMatch ??
+        (await createClient({
+          firstName,
+          lastName,
+          dob: dobFormatted,
+          address,
+          address2,
+          city,
+          state,
+          zip,
+          county,
+          phone,
+          language,
+        }))
     } else {
       // No confirmed match passed in and the frontend never resolved this
       // (e.g. programmatic call bypassing the UI) -- double-check
       // server-side so 'Possible Duplicate' still reflects reality.
       const matches = await findClientMatches({ firstName, lastName, dob: dobFormatted, phone })
-      isDuplicate = matches.length > 0
+      isDuplicate = matches.length > 0 || !!identityMatch
 
-      resolvedClientId = await createClient({
-        firstName,
-        lastName,
-        dob: dobFormatted,
-        address,
-        address2,
-        city,
-        state,
-        zip,
-        county,
-        phone,
-        language,
-      })
+      resolvedClientId =
+        identityMatch ??
+        (await createClient({
+          firstName,
+          lastName,
+          dob: dobFormatted,
+          address,
+          address2,
+          city,
+          state,
+          zip,
+          county,
+          phone,
+          language,
+        }))
     }
   } catch (e: any) {
     return NextResponse.json({ error: `Client resolution failed: ${e.message}` }, { status: 500 })
