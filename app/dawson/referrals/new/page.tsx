@@ -256,6 +256,11 @@ export default function DawsonAddReferralPage() {
   const [submitted, setSubmitted] = useState(false)
   const [isDuplicate, setIsDuplicate] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  // Separate from `error` on purpose. `error` means "this did not happen".
+  // This means "we cannot tell whether it happened", which calls for a
+  // different colour, different words, and a link out to go and look —
+  // see the block that renders it, and the fetch below.
+  const [uncertain, setUncertain] = useState<string | null>(null)
 
   // Duplicate-check step (app/api/dawson/referrals/check-duplicate) and the
   // inline banner it can surface (DuplicateClientBanner -- not a popup,
@@ -886,15 +891,42 @@ useEffect(() => {
 
 
     setLoading(true)
+    setUncertain(null)
     try {
       const res = await fetch('/api/dawson/referrals/submit', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-            const data = await res.json()
-      if (!res.ok) throw new Error(data.error || 'Submission failed')
-      setIsDuplicate(!!data.duplicate)
+
+      // GUARDED, like the other eleven res.json() call sites in this codebase.
+      // This one was not, since the commit that first wrote it: an unreadable
+      // body threw straight past setSubmitted(true) into the catch below, and
+      // Dawson saw "Submission failed" with no success screen.
+      //
+      // That is the dangerous wording, because it is not what happened. The
+      // request REACHED the server; only the reply came back unreadable. This
+      // route does a do-not-serve check, resolves or creates a Client, books a
+      // Saturday, generates a slip and sends mail — a gateway timeout partway
+      // through returns a non-JSON error page while the referral itself may
+      // already exist. Telling Dawson it failed invites him to type it again,
+      // which is a duplicate-referral generator sitting in the same form we
+      // just finished de-duplicating clients in.
+      //
+      // So an unreadable body is its own outcome, claiming neither result.
+      // Deliberately not conditioned on res.ok: a 504 carries an HTML error
+      // page AND a referral that may have been written, which is exactly the
+      // case that matters.
+      let data: { error?: string; duplicate?: boolean } | null = null
+      try {
+        data = await res.json()
+      } catch {
+        setUncertain(`${form.firstName} ${form.lastName}`.trim() || 'this client')
+        return
+      }
+
+      if (!res.ok) throw new Error(data?.error || 'Submission failed')
+      setIsDuplicate(!!data?.duplicate)
       setSubmitted(true)
       loadAvailability()  // refresh slot counts for next referral
       // And the agency list, for the same reason: a submission in newAgencyMode
@@ -1117,7 +1149,10 @@ useEffect(() => {
               style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid #EDE9E1', background: 'white', color: '#2C3A4A', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
               Add Another
             </button>
-            <button onClick={() => router.push('/dawson/referrals/scheduled')}
+            {/* /dawson/referrals/scheduled is retired and 307-redirects to
+                /dawson/referrals (see that page's header). Pointing straight
+                at the live route drops a redirect on every use. */}
+            <button onClick={() => router.push('/dawson/referrals')}
               style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: '#2A7F6F', color: 'white', fontFamily: 'var(--font-montserrat)', fontWeight: 700, fontSize: '13px', cursor: 'pointer' }}>
               View Scheduled
             </button>
@@ -1699,6 +1734,31 @@ useEffect(() => {
           {error && (
             <div style={{ background: '#FDEDEC', border: '1px solid #C0392B', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: '#C0392B' }}>
               {error}
+            </div>
+          )}
+
+          {/* Amber, not red, and worded to claim neither outcome. Red here
+              would read as "it failed", which is the one thing we do not
+              know. The link is the point of the message: the only way to
+              find out is to look, and re-typing the referral before looking
+              is how a duplicate gets made. */}
+          {uncertain && (
+            <div style={{ background: 'rgba(201,168,76,0.10)', border: '1px solid rgba(201,168,76,0.45)', borderRadius: '8px', padding: '12px 16px', marginBottom: '20px', fontSize: '13px', color: '#7A6A28', lineHeight: 1.6 }}>
+              <strong style={{ fontFamily: 'var(--font-montserrat)', fontWeight: 700 }}>
+                This may or may not have saved.
+              </strong>{' '}
+              The referral reached the server but the reply came back
+              unreadable, so we can&rsquo;t tell whether it was created.{' '}
+              <a
+                href="/dawson/referrals"
+                target="_blank"
+                rel="noopener"
+                style={{ color: '#7A6A28', fontWeight: 700 }}
+              >
+                Check the referrals list for {uncertain}
+              </a>{' '}
+              before entering it again — submitting a second time would create
+              a duplicate.
             </div>
           )}
 
